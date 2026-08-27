@@ -124,7 +124,7 @@ Provisioned on account `Masoud` (`fdfb5a64d3ba5cf9680d372ae66487a2`) on 2026-08-
 DB            → D1 database "buddy"          id 9cac77ca-1f50-4036-a470-0211dfa7c753  ✅ created
 STORAGE       → R2 bucket "buddy-media"                                               ✅ created
 CACHE         → KV namespace "buddy-cache"   id 8a946df02c8b4308b4266b3a191b4bec      ✅ created
-EMAIL         → Email Sending binding (from e.g. no-reply@yourdomain.com)
+EMAIL         → Email Sending binding, from no-reply@localrack.xyz          (decided 2026-08-27)
 GROUP_CHAT    → Durable Object class GroupChat (SQLite-backed)
 PUSH_QUEUE    → Queue "buddy-push"
 RATE_LIMITER  → Rate limiting binding
@@ -360,7 +360,7 @@ Each phase ends deployable and testable end-to-end.
 2. **Apple Developer Program** (TestFlight, APNs key) and **Google Play Console** ($25 one-time) — needed by Phase 6, not for local development.
 3. **Firebase project** (free) just to obtain FCM credentials for Android push (Phase 4).
 4. **Expo account** (free) for EAS Build / push.
-5. **Cloudflare**: Workers Paid plan ✅ confirmed; API token with write access ✅ verified; D1/KV/R2 ✅ created. Still needed: **a sender domain for Email Sending** (`no-reply@<domain>`) — the account's zones are `jingleai.app`, `localrack.xyz`, `oexchange.app`; none is a Buddy domain. Needed by Phase 1, not Phase 0.
+5. **Cloudflare**: Workers Paid plan ✅ confirmed; API token with write access ✅ verified; D1/KV/R2 ✅ created. Sender domain for Email Sending: **`no-reply@localrack.xyz`** (decided 2026-08-27) — the binding is wired in Phase 1.
 6. Tools: `wrangler` 4.127 ✅ already installed. `eas-cli` and Watchman are installed later, when Phase 6 (EAS builds) needs them.
 
 ---
@@ -377,4 +377,4 @@ Each phase ends deployable and testable end-to-end.
 - [ ] Photo proofs in v1? (proposal: text only; image field already in the schema)
 - [ ] Goal / occupation suggestion lists in §2.1 — add or remove entries
 - [x] App name **"Buddy"**, slug `buddy`, bundle/package id **`com.buddyapp.buddy`** (iOS `bundleIdentifier` + Android `package`) — decided 2026-08-27
-- [ ] Sender domain for verification/reset emails (`no-reply@<domain>` on Cloudflare)
+- [x] Sender domain for verification/reset emails: **`no-reply@localrack.xyz`** — decided 2026-08-27
