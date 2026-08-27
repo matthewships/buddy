@@ -4,6 +4,8 @@ export { Card } from './Card';
 export { Chips, type ChipOption } from './Chips';
 export { ErrorText } from './ErrorText';
 export { Field } from './Field';
+export { RatingPicker } from './RatingPicker';
 export { RequestBanner } from './RequestBanner';
 export { Screen } from './Screen';
+export { StatusPill, TaskRow, STATUS_LABEL } from './TaskRow';
 export { WaitingCard } from './WaitingCard';
