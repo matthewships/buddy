@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import type { BlankEnv, ExtractSchema } from 'hono/types';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
@@ -62,8 +63,16 @@ app.notFound((c) => {
   return c.json(body, 404);
 });
 
-/** The contract the Expo app compiles against. */
-export type AppType = typeof routes;
+/**
+ * The contract the Expo app compiles against.
+ *
+ * Deliberately stripped of the Bindings generic: `typeof routes` would carry
+ * `Cloudflare.Env` with it, which would drag the Worker's runtime types into
+ * the React Native tsconfig, where they don't resolve and don't belong. Only
+ * the route schema — paths, methods, input and output shapes — crosses the
+ * package boundary, which is all `hc<AppType>()` needs.
+ */
+export type AppType = Hono<BlankEnv, ExtractSchema<typeof routes>, '/'>;
 
 export default {
   fetch: app.fetch,

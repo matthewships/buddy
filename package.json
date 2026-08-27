@@ -2,7 +2,7 @@
   "name": "buddy",
   "private": true,
   "version": "0.1.0",
-  "description": "Buddy — accountability buddies, daily tasks, peer review.",
+  "description": "Buddy \u2014 accountability buddies, daily tasks, peer review.",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -19,6 +19,11 @@
     "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "6.0.3"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "typescript": "6.0.3"
   }
 }

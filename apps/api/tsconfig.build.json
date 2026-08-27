@@ -1,0 +1,17 @@
+{
+  // Emits declarations only, so the Expo app can compile against the API's
+  // route types without pulling the Worker's source (and therefore the
+  // Cloudflare runtime globals) into the React Native TypeScript program.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": true,
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
+}

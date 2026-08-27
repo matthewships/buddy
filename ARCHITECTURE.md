@@ -340,7 +340,7 @@ FindBuddy/
 
 | Phase | Deliverable |
 |---|---|
-| 0 | Monorepo scaffold, `packages/shared`, wrangler config, D1 schema + migration `0000_init`, Cloudflare D1 + KV + R2 created (all three provisioned 2026-08-27, see §4.1), Expo app skeleton with Expo Router + NativeWind + typed Hono RPC client + secure session store. Exit criteria: `npm run typecheck`, `npm test` (workerd + D1), `expo-doctor`, Metro bundle export and `wrangler deploy --dry-run` all pass. |
+| 0 ✅ | Monorepo scaffold, `packages/shared`, wrangler config, D1 schema + migration `0000_init`, Cloudflare D1 + KV + R2 created (all three provisioned 2026-08-27, see §4.1), Expo app skeleton with Expo Router + NativeWind + typed Hono RPC client + secure session store. **Done 2026-08-27** — all exit criteria verified: `npm run typecheck` clean, `npm test` 52 passing (7 API in workerd against real D1, 12 app, 33 shared), `expo-doctor` 21/21, Metro export bundles 1,657 modules, `wrangler deploy --dry-run` resolves every binding. |
 | 1 | Auth (register / verify email / login / refresh / reset), profile + onboarding (goal, occupation, buddy profile), avatar upload |
 | 2 | Buddy directory with matching + filters, buddy requests with 5-min expiry + countdown + push, groups & invites |
 | 3 | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop |
@@ -349,6 +349,34 @@ FindBuddy/
 | 6 | Polish, tests, EAS builds → TestFlight + Play internal testing |
 
 Each phase ends deployable and testable end-to-end.
+
+### Phase 0 — deviations from this document, and why
+
+Five things differed from what was written above once the current versions were
+checked. All are settled in code; they are recorded here so the next phase
+doesn't rediscover them.
+
+| Assumed | Actual | Consequence |
+|---|---|---|
+| Expo SDK 54 | **SDK 57** (RN 0.86, React 19.2) | Current release. New Architecture has been mandatory since SDK 55, so `newArchEnabled` and Android's `edgeToEdgeEnabled` are no longer valid `app.json` keys — `expo-doctor` rejects them. |
+| TypeScript ~5.9 | **6.0.3** | The version Expo SDK 57 expects. TypeScript 7.0.2 exists but Expo does not yet support it. TS 6 also stopped auto-including `@types` from the workspace root, so `apps/mobile` lists `types: ["jest"]` explicitly. |
+| `@cloudflare/vitest-pool-workers` | **`@cloudflare/vitest-plugin` v1** | Renamed 2026-08-19. `cloudflareTest()` replaces `defineWorkersConfig`, and it requires vitest ≥ 4.1 — so the whole monorepo is on vitest 4 rather than mixing majors. |
+| RNTL `render()` returns queries | **`render()` returns a promise** in RNTL 14 | Every render in a test must be awaited. |
+| NativeWind peer range `>3.3.0` | **pinned `tailwindcss@^3.4`** | The range admits Tailwind 4.x, which NativeWind 4 does not support and npm will happily install. React is also pinned via a root `overrides` block: transitive deps ask for `^19` and npm hoists a second copy, which breaks native builds. |
+
+Two structural decisions worth carrying forward:
+
+- **`AppType` is stripped of its Bindings generic.** `typeof routes` carries
+  `Cloudflare.Env` with it, which drags the Worker's runtime globals into the
+  React Native TypeScript program, where they neither resolve nor belong. The
+  API exports `Hono<BlankEnv, ExtractSchema<typeof routes>, '/'>` instead — only
+  paths, methods and input/output shapes cross the package boundary, which is
+  all `hc<AppType>()` needs. The app compiles against the API's emitted
+  declarations (`tsconfig.build.json`), not its source.
+- **NativeWind styling is not assertable in Jest.** Class-to-style compilation
+  happens in the Metro transform, which `jest-expo` does not run, so under Jest
+  `className` passes through untouched. Component tests assert the class strings
+  they build; the real pipeline is covered by `npm run export`.
 
 ---
 
