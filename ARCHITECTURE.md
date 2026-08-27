@@ -8,7 +8,7 @@
 
 | Layer | Choice | Why |
 |---|---|---|
-| Mobile app | **React Native + Expo (SDK 54, TypeScript)**, Expo Router, iOS + Android | One codebase for both platforms, same language as the backend, and end-to-end type sharing with the API through a shared package. |
+| Mobile app | **React Native + Expo (SDK 57, TypeScript)**, Expo Router, iOS + Android | One codebase for both platforms, same language as the backend, and end-to-end type sharing with the API through a shared package. |
 | API | **Cloudflare Workers + Hono (TypeScript)** | Standard Workers framework: tiny, typed routing, middleware, and **Hono RPC** gives the app a fully typed client straight from the route definitions. |
 | Shared code | `packages/shared` — Zod schemas, types, constants (credit rules, goal/occupation lists, badge definitions) | Validation rules and enums live once and are used by both API and app. |
 | Database | **D1 (SQLite) + Drizzle ORM** | Relational data (users, groups, tasks, reviews, credits). Drizzle gives typed queries and migration files that `wrangler d1 migrations` applies. |
@@ -118,10 +118,12 @@ One Worker (`api`) with `fetch` (REST + WebSocket upgrade), `queue` (push delive
 ## 4. Backend design (Cloudflare)
 
 ### 4.1 Bindings (wrangler.jsonc)
+Provisioned on account `Masoud` (`fdfb5a64d3ba5cf9680d372ae66487a2`) on 2026-08-27:
+
 ```
-DB            → D1 database "buddy"
-STORAGE       → R2 bucket "buddy-media"
-CACHE         → KV namespace (leaderboard snapshots, misc)
+DB            → D1 database "buddy"          id 9cac77ca-1f50-4036-a470-0211dfa7c753  ✅ created
+STORAGE       → R2 bucket "buddy-media"                                               ✅ created
+CACHE         → KV namespace "buddy-cache"   id 8a946df02c8b4308b4266b3a191b4bec      ✅ created
 EMAIL         → Email Sending binding (from e.g. no-reply@yourdomain.com)
 GROUP_CHAT    → Durable Object class GroupChat (SQLite-backed)
 PUSH_QUEUE    → Queue "buddy-push"
@@ -268,16 +270,16 @@ apps/api/
 ## 5. Mobile app design (Expo)
 
 ### 5.1 Stack
-- **Expo SDK 54, React Native, TypeScript (strict)**, **Expo Router** (file-based navigation, deep links for push).
+- **Expo SDK 57** (React Native 0.86, React 19.2, **New Architecture — mandatory since SDK 55, no opt-out**), **TypeScript (strict)**, **Expo Router** (file-based navigation, deep links for push). Requires Node ≥ 22.13 (this machine: 22.23 ✅).
 - **State**: TanStack Query for server data (caching, refetch, optimistic updates) + a small Zustand store for session/auth.
 - **API client**: Hono `hc<AppType>()` wrapped with auth (token attach, refresh-on-401, retry).
 - **Storage**: `expo-secure-store` for tokens; TanStack Query persistence (AsyncStorage) for a snappy cold start. No offline editing in v1.
 - **Chat**: built-in `WebSocket` with reconnect/backoff; messages merged into the Query cache.
 - **Push**: `expo-notifications` (token registration, foreground banners, tap → deep link).
 - **Media**: `expo-image-picker` + direct PUT to the presigned R2 URL; `expo-image` for rendering.
-- **UI**: **NativeWind (Tailwind for RN)** + a small in-house component kit (Button, Card, TaskRow, RatingPicker, BadgeChip, Countdown). `[DECISION]` alternative: plain StyleSheet, or Tamagui.
+- **UI**: **NativeWind v4 (`nativewind@4.2.6`) pinned with `tailwindcss@^3.4`** + a small in-house component kit (Button, Card, TaskRow, RatingPicker, BadgeChip, Countdown). NativeWind 4's peer range (`>3.3.0`) would silently pull Tailwind 4.x, which it does not support — both versions are pinned. NativeWind 5 is still `preview` and is not used. `[DECISION]` alternative: plain StyleSheet, or Tamagui.
 - **Countdown**: a `useCountdown(expiresAt)` hook (server time + measured clock offset) renders `m:ss` under the buddy's name and flips the UI when it reaches 0.
-- **Dev workflow**: `expo-dev-client` development builds (Expo Go can't do push on Android any more), iOS Simulator + Android Emulator, EAS Build for TestFlight / Play internal testing.
+- **Dev workflow**: `expo-dev-client` development builds (Expo Go can't do push on Android any more, and the SDK 57 Expo Go build was still awaiting store approval at release). Dev-client binaries are produced by **EAS Build in the cloud** — this Linux box has neither Xcode nor the Android SDK. EAS Build for TestFlight / Play internal testing.
 - **Tests**: Jest + React Native Testing Library for hooks/components; type-check + ESLint in CI.
 
 ### 5.2 Screens (v1)
@@ -338,7 +340,7 @@ FindBuddy/
 
 | Phase | Deliverable |
 |---|---|
-| 0 ✅ | Monorepo scaffold, `packages/shared`, wrangler config, D1 schema + migration `0000_init`, Cloudflare D1 + KV created (R2 bucket pending: enable R2 in the dashboard first), Expo app skeleton with Expo Router + NativeWind + typed Hono RPC client + secure session store. Verified: `npm run typecheck`, `npm test` (workerd + D1), `expo-doctor`, Metro bundle export, `wrangler deploy --dry-run`. |
+| 0 | Monorepo scaffold, `packages/shared`, wrangler config, D1 schema + migration `0000_init`, Cloudflare D1 + KV + R2 created (all three provisioned 2026-08-27, see §4.1), Expo app skeleton with Expo Router + NativeWind + typed Hono RPC client + secure session store. Exit criteria: `npm run typecheck`, `npm test` (workerd + D1), `expo-doctor`, Metro bundle export and `wrangler deploy --dry-run` all pass. |
 | 1 | Auth (register / verify email / login / refresh / reset), profile + onboarding (goal, occupation, buddy profile), avatar upload |
 | 2 | Buddy directory with matching + filters, buddy requests with 5-min expiry + countdown + push, groups & invites |
 | 3 | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop |
@@ -351,12 +353,15 @@ Each phase ends deployable and testable end-to-end.
 ---
 
 ## 8. Prerequisites on your side
-1. **Xcode 16+** (iOS Simulator) — `xcodebuild` isn't on this machine yet — and **Android Studio** (emulator).
+1. **Running the app.** This dev machine is a **Linux container** (Node 22, no Xcode, no Android SDK), so simulators/emulators can't run here. Two options, both fine:
+   - **A dev-client build on your own phone** (built by EAS in the cloud) — Metro runs here, you scan the QR code. Simplest for daily work. Plain Expo Go is not sufficient: it can't do Android push, and the SDK 57 Expo Go release was still pending store approval.
+   - **Your own Mac** (**Xcode 16+** for the iOS Simulator) and/or **Android Studio** for an emulator. iOS *binaries* for TestFlight can also be produced by **EAS Build** in the cloud without a Mac.
+   Everything server-side (Worker, D1, Durable Objects, KV, queues, crons) runs and is tested locally here via workerd/Miniflare.
 2. **Apple Developer Program** (TestFlight, APNs key) and **Google Play Console** ($25 one-time) — needed by Phase 6, not for local development.
 3. **Firebase project** (free) just to obtain FCM credentials for Android push (Phase 4).
 4. **Expo account** (free) for EAS Build / push.
-5. **Cloudflare**: Workers Paid plan; a domain on Cloudflare for Email Sending (`no-reply@yourdomain`); `wrangler login` from this machine.
-6. Tools I'll install: `wrangler`, `eas-cli`, Watchman.
+5. **Cloudflare**: Workers Paid plan ✅ confirmed; API token with write access ✅ verified; D1/KV/R2 ✅ created. Still needed: **a sender domain for Email Sending** (`no-reply@<domain>`) — the account's zones are `jingleai.app`, `localrack.xyz`, `oexchange.app`; none is a Buddy domain. Needed by Phase 1, not Phase 0.
+6. Tools: `wrangler` 4.127 ✅ already installed. `eas-cli` and Watchman are installed later, when Phase 6 (EAS builds) needs them.
 
 ---
 
@@ -371,4 +376,5 @@ Each phase ends deployable and testable end-to-end.
 - [ ] UI styling: NativeWind (proposed) vs StyleSheet vs Tamagui
 - [ ] Photo proofs in v1? (proposal: text only; image field already in the schema)
 - [ ] Goal / occupation suggestion lists in §2.1 — add or remove entries
-- [ ] App name "Buddy", bundle/package id (e.g. `com.<you>.buddy`), sender domain for emails
+- [x] App name **"Buddy"**, slug `buddy`, bundle/package id **`com.buddyapp.buddy`** (iOS `bundleIdentifier` + Android `package`) — decided 2026-08-27
+- [ ] Sender domain for verification/reset emails (`no-reply@<domain>` on Cloudflare)
