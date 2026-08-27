@@ -2,44 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useSession } from '@/auth/store';
 
-import { api } from './client';
+import { ApiError, api, unwrap } from './client';
 
 /**
- * Auth and profile hooks.
- *
- * Every mutation surfaces the API's `error.message`, which is written to be
- * shown to a user, rather than inventing client-side copy that could contradict
- * the server.
+ * Auth and profile hooks. Response unwrapping and the error envelope live in
+ * client.ts, since every resource shares them.
  */
 
-interface ApiErrorBody {
-  error?: { code?: string; message?: string };
-}
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-  }
-}
-
-async function unwrap<T>(response: Response): Promise<T> {
-  if (response.ok) return (await response.json()) as T;
-
-  let message = 'Something went wrong';
-  let code: string | undefined;
-  try {
-    const body = (await response.json()) as ApiErrorBody;
-    if (body.error?.message) message = body.error.message;
-    code = body.error?.code;
-  } catch {
-    // A non-JSON error body (a gateway page, say) keeps the default message.
-  }
-  throw new ApiError(message, response.status, code);
-}
+export { ApiError };
 
 export function useRegister() {
   return useMutation({

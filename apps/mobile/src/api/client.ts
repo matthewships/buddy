@@ -39,3 +39,37 @@ const authedFetch: typeof fetch = async (input, init) => {
 };
 
 export const api = hc<AppType>(API_URL, { fetch: authedFetch });
+
+/**
+ * The API's error envelope: `{ error: { code, message } }`. `message` is written
+ * to be shown to a user, so it is surfaced as-is rather than replaced with
+ * client-side copy that could contradict the server.
+ */
+interface ApiErrorBody {
+  error?: { code?: string; message?: string };
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
+export async function unwrap<T>(response: Response): Promise<T> {
+  if (response.ok) return (await response.json()) as T;
+
+  let message = 'Something went wrong';
+  let code: string | undefined;
+  try {
+    const body = (await response.json()) as ApiErrorBody;
+    if (body.error?.message) message = body.error.message;
+    code = body.error?.code;
+  } catch {
+    // A non-JSON error body (a gateway page, say) keeps the default message.
+  }
+  throw new ApiError(message, response.status, code);
+}

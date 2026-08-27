@@ -127,7 +127,7 @@ CACHE         → KV namespace "buddy-cache"   id 8a946df02c8b4308b4266b3a191b4b
 EMAIL         → Email Sending binding, from no-reply@localrack.xyz          (decided 2026-08-27)
 GROUP_CHAT    → Durable Object class GroupChat (SQLite-backed)
 PUSH_QUEUE    → Queue "buddy-push"
-RATE_LIMITER  → Rate limiting binding
+RATE_LIMITER  → (not used) rate limiting is KV-based — see lib/rate-limit.ts
 AI            → Workers AI (phase 2)
 secrets:  JWT_SECRET, EXPO_ACCESS_TOKEN, ADMIN_TOKEN
 ```
@@ -341,8 +341,8 @@ FindBuddy/
 | Phase | Deliverable |
 |---|---|
 | 0 ✅ | Monorepo scaffold, `packages/shared`, wrangler config, D1 schema + migration `0000_init`, Cloudflare D1 + KV + R2 created (all three provisioned 2026-08-27, see §4.1), Expo app skeleton with Expo Router + NativeWind + typed Hono RPC client + secure session store. **Done 2026-08-27** — all exit criteria verified: `npm run typecheck` clean, `npm test` 52 passing (7 API in workerd against real D1, 12 app, 33 shared), `expo-doctor` 21/21, Metro export bundles 1,657 modules, `wrangler deploy --dry-run` resolves every binding. |
-| 1 | Auth (register / verify email / login / refresh / reset), profile + onboarding (goal, occupation, buddy profile), avatar upload |
-| 2 | Buddy directory with matching + filters, buddy requests with 5-min expiry + countdown + push, groups & invites |
+| 1 ✅ | Auth (register / verify email / login / refresh / reset), profile + onboarding (goal, occupation, buddy profile), avatar upload. **Done 2026-08-27.** |
+| 2 ✅ | Buddy directory with matching + filters, buddy requests with 5-min expiry + countdown + push, groups & invites. **Done 2026-08-27.** |
 | 3 | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop |
 | 4 | Chat (Durable Object + WebSocket), full push notification coverage |
 | 5 | Leaderboard, reports, admin endpoints, account deletion |
