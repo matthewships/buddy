@@ -10,8 +10,8 @@ import {
   reviewTaskSchema,
   timezoneSchema,
   updateMeSchema,
-} from '../src/schemas.js';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, creditsForRating, earnedBadges } from '../src/index.js';
+} from '../src/schemas';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, creditsForRating, earnedBadges } from '../src/index';
 
 describe('emailSchema', () => {
   it('normalises case and surrounding whitespace', () => {

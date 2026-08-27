@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { GOAL_KEYS } from './goals.js';
-import { OCCUPATION_KEYS } from './occupations.js';
-import { MAX_RATING, MIN_RATING } from './credits.js';
+import { GOAL_KEYS } from './goals';
+import { OCCUPATION_KEYS } from './occupations';
+import { MAX_RATING, MIN_RATING } from './credits';
 import {
   DEFAULT_PAGE_SIZE,
   EMAIL_CODE_LENGTH,
@@ -25,14 +25,14 @@ import {
   MIN_HANDLE,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
-} from './limits.js';
+} from './limits';
 import {
   EMAIL_CODE_PURPOSES,
   LEADERBOARD_SCOPES,
   PLATFORMS,
   REPORT_TARGETS,
   REVIEW_ACTIONS,
-} from './enums.js';
+} from './enums';
 
 /* ------------------------------------------------------------------ *
  * Primitives

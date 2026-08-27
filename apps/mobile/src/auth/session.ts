@@ -1,14 +1,18 @@
+import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
 /**
  * Token storage and refresh (§5.1).
  *
- * Tokens live in expo-secure-store (Keychain / Keystore), never in
- * AsyncStorage: AsyncStorage is unencrypted and readable on a rooted device.
- * The TanStack Query cache is persisted separately and holds no credentials.
+ * Tokens live in expo-secure-store (Keychain / Keystore), never AsyncStorage,
+ * which is unencrypted and readable on a rooted device. The persisted TanStack
+ * Query cache holds no credentials.
  */
 const ACCESS_KEY = 'buddy.accessToken';
 const REFRESH_KEY = 'buddy.refreshToken';
+
+export const API_URL: string =
+  (Constants.expoConfig?.extra?.['apiUrl'] as string | undefined) ?? 'http://localhost:8787';
 
 export interface Tokens {
   accessToken: string;
@@ -17,6 +21,13 @@ export interface Tokens {
 
 /** In-flight refresh, shared so concurrent 401s trigger only one round trip. */
 let refreshInFlight: Promise<boolean> | null = null;
+
+/** Called when a refresh fails, so the session store can drop to signed-out. */
+let onSessionLost: (() => void) | null = null;
+
+export function setSessionLostHandler(handler: () => void): void {
+  onSessionLost = handler;
+}
 
 export async function saveTokens(tokens: Tokens): Promise<void> {
   await Promise.all([
@@ -41,16 +52,36 @@ export async function getRefreshToken(): Promise<string | null> {
 }
 
 /**
- * Exchanges the refresh token for a new pair. Phase 1 wires this to
- * POST /auth/refresh; until that route exists it fails closed, which is the
- * correct behaviour for a missing endpoint — the caller signs the user out.
+ * Exchanges the refresh token for a rotated pair.
+ *
+ * Deliberately uses bare `fetch` rather than the API client: the client retries
+ * through this function on a 401, so calling it here would recurse.
  */
 export async function refreshSession(): Promise<boolean> {
   refreshInFlight ??= (async () => {
     try {
       const refreshToken = await getRefreshToken();
       if (!refreshToken) return false;
-      // TODO(phase 1): POST /auth/refresh, rotate the pair, saveTokens().
+
+      const response = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        // The server revoked this family; the tokens are dead, not merely stale.
+        await clearTokens();
+        onSessionLost?.();
+        return false;
+      }
+
+      const tokens = (await response.json()) as Tokens;
+      await saveTokens(tokens);
+      return true;
+    } catch {
+      // A network failure is not a revoked session — keep the tokens and let
+      // the caller retry later.
       return false;
     } finally {
       refreshInFlight = null;

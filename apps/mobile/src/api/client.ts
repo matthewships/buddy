@@ -1,9 +1,8 @@
-import Constants from 'expo-constants';
 import { hc } from 'hono/client';
 
 import type { AppType } from '@buddy/api';
 
-import { getAccessToken, refreshSession } from '../auth/session';
+import { API_URL, getAccessToken, refreshSession } from '../auth/session';
 
 /**
  * The typed API client (§5.1).
@@ -12,8 +11,7 @@ import { getAccessToken, refreshSession } from '../auth/session';
  * a route removed or a response shape changed in apps/api becomes a type error
  * here rather than a runtime surprise.
  */
-export const API_URL: string =
-  (Constants.expoConfig?.extra?.['apiUrl'] as string | undefined) ?? 'http://localhost:8787';
+export { API_URL };
 
 /**
  * Attaches the access token and, on a 401, refreshes once and replays the
