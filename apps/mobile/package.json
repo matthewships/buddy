@@ -14,7 +14,6 @@
     "export": "expo export --platform ios --output-dir dist"
   },
   "dependencies": {
-    "@buddy/api": "*",
     "@buddy/shared": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@tanstack/react-query": "^5.102.8",
@@ -44,6 +43,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@buddy/api": "*",
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.4",

@@ -359,7 +359,7 @@ doesn't rediscover them.
 | Assumed | Actual | Consequence |
 |---|---|---|
 | Expo SDK 54 | **SDK 57** (RN 0.86, React 19.2) | Current release. New Architecture has been mandatory since SDK 55, so `newArchEnabled` and Android's `edgeToEdgeEnabled` are no longer valid `app.json` keys — `expo-doctor` rejects them. |
-| TypeScript ~5.9 | **6.0.3** | The version Expo SDK 57 expects. TypeScript 7.0.2 exists but Expo does not yet support it. TS 6 also stopped auto-including `@types` from the workspace root, so `apps/mobile` lists `types: ["jest"]` explicitly. |
+| TypeScript ~5.9 | **6.0.3** | The version Expo SDK 57 expects. TypeScript 7.0.2 exists but Expo does not yet support it. Root-hoisted `@types` were not picked up automatically in the app's program under TS 6, so `apps/mobile` lists `types: ["jest"]` explicitly. |
 | `@cloudflare/vitest-pool-workers` | **`@cloudflare/vitest-plugin` v1** | Renamed 2026-08-19. `cloudflareTest()` replaces `defineWorkersConfig`, and it requires vitest ≥ 4.1 — so the whole monorepo is on vitest 4 rather than mixing majors. |
 | RNTL `render()` returns queries | **`render()` returns a promise** in RNTL 14 | Every render in a test must be awaited. |
 | NativeWind peer range `>3.3.0` | **pinned `tailwindcss@^3.4`** | The range admits Tailwind 4.x, which NativeWind 4 does not support and npm will happily install. React is also pinned via a root `overrides` block: transitive deps ask for `^19` and npm hoists a second copy, which breaks native builds. |
