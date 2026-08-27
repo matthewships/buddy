@@ -66,12 +66,20 @@ export interface Session {
   email: string;
 }
 
-/** Registers, verifies and returns a usable session. */
+/**
+ * Registers, verifies and returns a usable session.
+ *
+ * Clears the rate-limit counters first: registration is capped at 5/hour per IP
+ * and every test shares one IP, so a test that needs several accounts would
+ * otherwise trip a limiter it isn't testing. The limits themselves have their
+ * own dedicated tests.
+ */
 export async function signUp(
   email: string,
   password = 'correct-horse-battery',
   displayName = 'Test User',
 ): Promise<Session> {
+  await resetRateLimits();
   const { codes } = await captureCodes(async () => {
     const res = await post('/api/auth/register', { email, password, displayName });
     expect(res.status).toBe(201);

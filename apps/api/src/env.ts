@@ -21,6 +21,13 @@ export interface Env extends Cloudflare.Env {
    * without it — see services/email.ts for the fallback.
    */
   EMAIL?: SendEmail;
+
+  /**
+   * Push delivery queue (§4.6). Optional for the same reason as EMAIL: routes
+   * enqueue through a helper that no-ops when the binding is absent, so tests
+   * and a queue-less local run still work.
+   */
+  PUSH_QUEUE?: Queue<unknown>;
 }
 
 /**

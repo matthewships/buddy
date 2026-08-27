@@ -7,9 +7,14 @@ import { secureHeaders } from 'hono/secure-headers';
 
 import type { AppEnv } from './env.js';
 import type { ApiErrorBody } from './lib/errors.js';
+import { db } from './db/client.js';
 import { authRoutes } from './routes/auth.js';
+import { buddyRequestRoutes } from './routes/buddy-requests.js';
+import { buddyRoutes } from './routes/buddies.js';
+import { groupRoutes, inviteRoutes } from './routes/groups.js';
 import { meRoutes } from './routes/me.js';
 import { userRoutes } from './routes/users.js';
+import { deliverPush, type PushMessage } from './services/push.js';
 
 /**
  * The Buddy API (§3): a single Worker with three entry points — `fetch` for
@@ -49,7 +54,11 @@ const routes = app
   })
   .route('/api/auth', authRoutes)
   .route('/api/me', meRoutes)
-  .route('/api/users', userRoutes);
+  .route('/api/users', userRoutes)
+  .route('/api/buddies', buddyRoutes)
+  .route('/api/buddy-requests', buddyRequestRoutes)
+  .route('/api/groups', groupRoutes)
+  .route('/api/invites', inviteRoutes);
 
 /** Any thrown ApiError already carries its JSON body; everything else is a 500. */
 app.onError((err, c) => {
@@ -82,4 +91,24 @@ export type AppType = Hono<BlankEnv, ExtractSchema<typeof routes>, '/'>;
 
 export default {
   fetch: app.fetch,
+
+  /**
+   * Push delivery (§4.6). Kept off the request path so a slow Expo response
+   * never delays the action that triggered it, and so failures retry.
+   *
+   * A thrown error retries the whole batch, which is the right default for a
+   * transient Expo outage. Individual bad tokens are handled inside
+   * deliverPush by deleting them, not by failing the batch.
+   */
+  async queue(batch, env) {
+    const messages = batch.messages.map((m) => m.body as PushMessage);
+    try {
+      const { sent, removed } = await deliverPush(env, db(env.DB), messages);
+      console.log(`[push] delivered=${sent} pruned=${removed} batch=${batch.messages.length}`);
+      batch.ackAll();
+    } catch (error) {
+      console.error('[push:batch-failed]', error);
+      batch.retryAll();
+    }
+  },
 } satisfies ExportedHandler<AppEnv['Bindings']>;

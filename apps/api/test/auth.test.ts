@@ -170,6 +170,23 @@ describe('login', () => {
     expect(body).not.toHaveProperty('accessToken');
   });
 
+  it('rate limits repeated registrations from one IP', async () => {
+    await resetRateLimits();
+    let sawLimit = false;
+    for (let i = 0; i < 8; i += 1) {
+      const res = await post('/api/auth/register', {
+        email: `flood-${i}@example.com`,
+        password: 'correct-horse-battery',
+        displayName: 'Flood',
+      });
+      if (res.status === 429) {
+        sawLimit = true;
+        break;
+      }
+    }
+    expect(sawLimit).toBe(true);
+  });
+
   it('rate limits repeated attempts on one email', async () => {
     await signUp('brute@example.com');
     await resetRateLimits();
