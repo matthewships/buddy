@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "buddy-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "buddy",
+      "database_id": "9cac77ca-1f50-4036-a470-0211dfa7c753",
+      "migrations_dir": "drizzle"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "8a946df02c8b4308b4266b3a191b4bec"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "buddy-media"
+    }
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "development",
+    "EMAIL_FROM": "no-reply@localrack.xyz",
+    "EMAIL_FROM_NAME": "Buddy"
+  }
+
+  // Bindings added in later phases, kept here as a checklist so the shape of
+  // the finished Worker stays visible:
+  //   EMAIL       Email Sending binding            -> phase 1 (§4.1)
+  //   GROUP_CHAT  Durable Object class GroupChat   -> phase 4 (§4.7)
+  //   PUSH_QUEUE  Queue "buddy-push" + consumer    -> phase 2/4 (§4.6)
+  //   RATE_LIMITER Rate limiting binding           -> phase 1 (§4.3)
+  //   AI          Workers AI                       -> phase 2, optional (§1)
+  //   triggers.crons hourly rollover + weekly      -> phase 3/5 (§4.9)
+  // Secrets (wrangler secret put): JWT_SECRET, EXPO_ACCESS_TOKEN, ADMIN_TOKEN
+}

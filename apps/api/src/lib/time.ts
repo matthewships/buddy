@@ -1,0 +1,66 @@
+/**
+ * Time helpers. Everything the database stores is an ISO-8601 UTC string with
+ * milliseconds, matching the `strftime` default in the schema, so values
+ * written by SQL and by application code sort and compare identically.
+ */
+
+export function nowIso(): string {
+  return new Date().toISOString();
+}
+
+export function isoIn(ms: number, from: Date = new Date()): string {
+  return new Date(from.getTime() + ms).toISOString();
+}
+
+export function isPast(iso: string, at: Date = new Date()): boolean {
+  return Date.parse(iso) <= at.getTime();
+}
+
+/**
+ * The calendar day (YYYY-MM-DD) it currently is for someone in `timezone`.
+ * Tasks are planned against a local day, and the rollover cron decides "has
+ * midnight passed for this user" by comparing local days, never UTC instants.
+ */
+export function localDate(timezone: string, at: Date = new Date()): string {
+  // en-CA formats as YYYY-MM-DD, which is exactly the stored shape.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(at);
+}
+
+/** The local wall-clock hour (0-23) in `timezone` — the hourly cron's trigger. */
+export function localHour(timezone: string, at: Date = new Date()): number {
+  return Number(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      hour: '2-digit',
+      hour12: false,
+    }).format(at),
+  );
+}
+
+/** The previous calendar day, for the rollover job. */
+export function previousLocalDate(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * ISO week key, e.g. "2026-W35" — the bucket `user_stats.weekly_credits`
+ * belongs to. The leaderboard resets Monday 00:00 UTC (§2.5), which is exactly
+ * the ISO week boundary.
+ */
+export function isoWeekKey(at: Date = new Date()): string {
+  const d = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  // ISO weeks run Monday(1)..Sunday(7); shift to the week's Thursday, which
+  // always falls in the correct ISO year.
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
+  const week = Math.ceil(((d.getTime() - yearStart) / 86_400_000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}

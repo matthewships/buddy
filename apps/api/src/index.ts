@@ -1,0 +1,70 @@
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
+
+import type { AppEnv } from './env.js';
+import type { ApiErrorBody } from './lib/errors.js';
+
+/**
+ * The Buddy API (§3): a single Worker with three entry points — `fetch` for
+ * REST plus the chat WebSocket upgrade, `queue` for push delivery, and
+ * `scheduled` for the rollover and leaderboard crons.
+ *
+ * Routes are mounted onto one Hono app and the app's type is exported as
+ * `AppType`, which the Expo client consumes through `hc<AppType>()` — that is
+ * what makes the request and response types check at compile time across the
+ * repo (§4.4).
+ */
+const app = new Hono<AppEnv>();
+
+app.use('*', logger());
+app.use('*', secureHeaders());
+// The mobile app is not a browser origin, but Expo web and the dev tools are.
+app.use('/api/*', cors({ origin: '*', maxAge: 86_400 }));
+
+const routes = app
+  .get('/health', (c) =>
+    c.json({
+      status: 'ok' as const,
+      environment: c.env.ENVIRONMENT,
+      time: new Date().toISOString(),
+    }),
+  )
+  /**
+   * Confirms the D1 binding and the applied migrations from inside the Worker.
+   * Phase 0's exit criteria include a real query against real D1, not just a
+   * successful build.
+   */
+  .get('/health/db', async (c) => {
+    const { results } = await c.env.DB.prepare(
+      "SELECT count(*) AS tables FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+    ).all<{ tables: number }>();
+    return c.json({ status: 'ok' as const, tables: results[0]?.tables ?? 0 });
+  });
+
+/** Any thrown ApiError already carries its JSON body; everything else is a 500. */
+app.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    const res = err.getResponse();
+    if (res) return res;
+  }
+  console.error('unhandled error', err);
+  const body: ApiErrorBody = {
+    error: { code: 'internal', message: 'Something went wrong' },
+  };
+  return c.json(body, 500);
+});
+
+app.notFound((c) => {
+  const body: ApiErrorBody = { error: { code: 'not_found', message: 'Not found' } };
+  return c.json(body, 404);
+});
+
+/** The contract the Expo app compiles against. */
+export type AppType = typeof routes;
+
+export default {
+  fetch: app.fetch,
+} satisfies ExportedHandler<AppEnv['Bindings']>;
