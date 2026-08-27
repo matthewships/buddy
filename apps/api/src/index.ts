@@ -7,6 +7,9 @@ import { secureHeaders } from 'hono/secure-headers';
 
 import type { AppEnv } from './env.js';
 import type { ApiErrorBody } from './lib/errors.js';
+import { authRoutes } from './routes/auth.js';
+import { meRoutes } from './routes/me.js';
+import { userRoutes } from './routes/users.js';
 
 /**
  * The Buddy API (§3): a single Worker with three entry points — `fetch` for
@@ -43,7 +46,10 @@ const routes = app
       "SELECT count(*) AS tables FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
     ).all<{ tables: number }>();
     return c.json({ status: 'ok' as const, tables: results[0]?.tables ?? 0 });
-  });
+  })
+  .route('/api/auth', authRoutes)
+  .route('/api/me', meRoutes)
+  .route('/api/users', userRoutes);
 
 /** Any thrown ApiError already carries its JSON body; everything else is a 500. */
 app.onError((err, c) => {

@@ -16,7 +16,14 @@ export default defineConfig({
       return {
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            // Secrets are not in wrangler.jsonc, so the test environment
+            // supplies its own. The EMAIL binding is deliberately absent:
+            // services/email.ts then logs codes instead of sending, which is
+            // what the tests assert against.
+            JWT_SECRET: 'test-secret-not-used-anywhere-real',
+          },
         },
       };
     }),

@@ -1,0 +1,7 @@
+# Copy to .dev.vars for local `wrangler dev`. .dev.vars is gitignored.
+# Generate a strong secret: openssl rand -hex 32
+JWT_SECRET="replace-me-with-32-random-bytes-hex"
+# Only needed once push is wired (phase 4)
+# EXPO_ACCESS_TOKEN=""
+# Guards the /admin/* endpoints (phase 5)
+# ADMIN_TOKEN=""

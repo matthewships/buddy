@@ -29,6 +29,15 @@
     }
   ],
 
+  // Sends verification and password-reset codes. The binding only works once
+  // localrack.xyz is onboarded to Email Service in the dashboard (SPF + DKIM);
+  // until then services/email.ts logs codes instead of failing.
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+
   "vars": {
     "ENVIRONMENT": "development",
     "EMAIL_FROM": "no-reply@localrack.xyz",
@@ -37,7 +46,6 @@
 
   // Bindings added in later phases, kept here as a checklist so the shape of
   // the finished Worker stays visible:
-  //   EMAIL       Email Sending binding            -> phase 1 (§4.1)
   //   GROUP_CHAT  Durable Object class GroupChat   -> phase 4 (§4.7)
   //   PUSH_QUEUE  Queue "buddy-push" + consumer    -> phase 2/4 (§4.6)
   //   RATE_LIMITER Rate limiting binding           -> phase 1 (§4.3)

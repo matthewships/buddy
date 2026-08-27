@@ -76,6 +76,10 @@ export const users = sqliteTable(
     occupationKey: text('occupation_key'),
     occupationText: text('occupation_text'),
     isOpenBuddy: integer('is_open_buddy', { mode: 'boolean' }).notNull().default(false),
+    // Set when the user finishes onboarding (handle, goal, occupation). The app
+    // reads it to decide between the onboarding stack and the tabs; deriving it
+    // from whether other fields look "filled in" would be guesswork.
+    onboardedAt: text('onboarded_at'),
     lastSeenAt: text('last_seen_at'),
     createdAt: text('created_at').notNull().default(now),
     deletedAt: text('deleted_at'),

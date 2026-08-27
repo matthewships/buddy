@@ -14,6 +14,13 @@ export interface Env extends Cloudflare.Env {
   EXPO_ACCESS_TOKEN?: string;
   /** Bearer token guarding the /admin/* report endpoints (§4.4). */
   ADMIN_TOKEN?: string;
+
+  /**
+   * Cloudflare Email Sending binding. Optional because it only exists once the
+   * sender domain is onboarded to Email Service, and the test suite runs
+   * without it — see services/email.ts for the fallback.
+   */
+  EMAIL?: SendEmail;
 }
 
 /**
