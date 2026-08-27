@@ -70,7 +70,8 @@ A user creates a group and invites people they already know by `@handle` (or a s
 - Each member writes the tasks they plan to finish **today** (their local day). Tasks not completed by local midnight become **missed**.
 - Owner marks a task **Done**, optionally attaching a text explanation (proof).
 - A buddy in the group reviews it: **Approve with rating 0–5**, or **Request proof** (task goes back to owner as *proof requested*). Owner submits/updates the proof → buddy reviews again → Approve with rating (0 effectively rejects).
-- `[DECISION]` In groups with 3+ members: **any other member can review, first review is final** (proposed) — or the owner picks a reviewer per task.
+- **Decided 2026-08-27:** in groups with 3+ members, **any other member can review and the first review is final**. Enforced by a guarded `UPDATE ... WHERE status='done' RETURNING`, not by a status read followed by a write — two reviewers tapping simultaneously would both pass the latter.
+- **Decided 2026-08-27:** a rating of **0 still approves**. It closes the task and counts toward the streak and the daily bonus; it simply earns no credits. `TASK_STATUSES` has no rejected state, and adding one would leave tasks stuck with nowhere to go.
 
 ### 2.5 Credits, streaks, badges, leaderboard
 - On approval: `credits = rating × 10`; **+20 daily bonus** if every planned task of the day is approved. `[DECISION]` (constants in `packages/shared/config`)
@@ -343,7 +344,7 @@ FindBuddy/
 | 0 ✅ | Monorepo scaffold, `packages/shared`, wrangler config, D1 schema + migration `0000_init`, Cloudflare D1 + KV + R2 created (all three provisioned 2026-08-27, see §4.1), Expo app skeleton with Expo Router + NativeWind + typed Hono RPC client + secure session store. **Done 2026-08-27** — all exit criteria verified: `npm run typecheck` clean, `npm test` 52 passing (7 API in workerd against real D1, 12 app, 33 shared), `expo-doctor` 21/21, Metro export bundles 1,657 modules, `wrangler deploy --dry-run` resolves every binding. |
 | 1 ✅ | Auth (register / verify email / login / refresh / reset), profile + onboarding (goal, occupation, buddy profile), avatar upload. **Done 2026-08-27.** |
 | 2 ✅ | Buddy directory with matching + filters, buddy requests with 5-min expiry + countdown + push, groups & invites. **Done 2026-08-27.** |
-| 3 | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop |
+| 3 ✅ | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop. **Done 2026-08-27.** |
 | 4 | Chat (Durable Object + WebSocket), full push notification coverage |
 | 5 | Leaderboard, reports, admin endpoints, account deletion |
 | 6 | Polish, tests, EAS builds → TestFlight + Play internal testing |
@@ -396,8 +397,8 @@ Two structural decisions worth carrying forward:
 ## 9. Open decisions — checklist
 - [ ] Buddy request expiry **5 min** (config constant) — and re-request cooldown **1 h** after decline/timeout
 - [ ] Push via **Expo Push Service** (proposed) vs direct APNs + FCM from the Worker
-- [ ] Reviewer rule in 3+ member groups: *any member, first review wins* vs *owner picks reviewer*
-- [ ] Credit formula: `rating × 10` + `20` daily-completion bonus
+- [x] Reviewer rule in 3+ member groups: **any member, first review wins** — decided 2026-08-27
+- [x] Credit formula: **`rating × 10` + `20` daily-completion bonus** — decided 2026-08-27; the bonus is awarded at approval time, not at rollover, because a task may legitimately be approved after its day has ended
 - [ ] Reports: manual admin review only vs auto-hide after N reports
 - [ ] Per-group leaderboard in addition to global
 - [ ] Chat history in D1 (proposed) vs inside the Durable Object

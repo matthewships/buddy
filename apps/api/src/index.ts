@@ -13,7 +13,9 @@ import { buddyRequestRoutes } from './routes/buddy-requests.js';
 import { buddyRoutes } from './routes/buddies.js';
 import { groupRoutes, inviteRoutes } from './routes/groups.js';
 import { meRoutes } from './routes/me.js';
+import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
+import { runRollover } from './jobs/rollover.js';
 import { deliverPush, type PushMessage } from './services/push.js';
 
 /**
@@ -58,7 +60,8 @@ const routes = app
   .route('/api/buddies', buddyRoutes)
   .route('/api/buddy-requests', buddyRequestRoutes)
   .route('/api/groups', groupRoutes)
-  .route('/api/invites', inviteRoutes);
+  .route('/api/invites', inviteRoutes)
+  .route('/api/tasks', taskRoutes);
 
 /** Any thrown ApiError already carries its JSON body; everything else is a 500. */
 app.onError((err, c) => {
@@ -110,5 +113,24 @@ export default {
       console.error('[push:batch-failed]', error);
       batch.retryAll();
     }
+  },
+
+  /**
+   * Cron triggers (§4.9). Hourly, because "local midnight" happens at a
+   * different UTC hour in every timezone.
+   *
+   * The job itself is idempotent rather than schedule-exact — see
+   * jobs/rollover.ts — so a dropped firing self-heals on the next hour instead
+   * of silently skipping a day's rollover for a whole timezone.
+   */
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      (async () => {
+        const result = await runRollover(db(env.DB));
+        console.log(
+          `[rollover] timezones=${result.timezones} missed=${result.missed} streaksReset=${result.streaksReset}`,
+        );
+      })(),
+    );
   },
 } satisfies ExportedHandler<AppEnv['Bindings']>;

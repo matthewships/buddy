@@ -29,6 +29,13 @@
     }
   ],
 
+  // Hourly day rollover (§4.9): marks lapsed `planned` tasks missed and breaks
+  // streaks. Hourly rather than daily because local midnight lands on a
+  // different UTC hour in every timezone.
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+
   // Push delivery (§4.6). The Worker is both producer (routes enqueue) and
   // consumer (the queue handler batches to Expo).
   "queues": {
@@ -68,6 +75,6 @@
   //   GROUP_CHAT  Durable Object class GroupChat   -> phase 4 (§4.7)
   //   RATE_LIMITER Rate limiting binding           -> phase 1 (§4.3)
   //   AI          Workers AI                       -> phase 2, optional (§1)
-  //   triggers.crons hourly rollover + weekly      -> phase 3/5 (§4.9)
+  //   triggers.crons weekly leaderboard snapshot   -> phase 5 (§4.9)
   // Secrets (wrangler secret put): JWT_SECRET, EXPO_ACCESS_TOKEN, ADMIN_TOKEN
 }
