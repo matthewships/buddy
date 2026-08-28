@@ -4,6 +4,16 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://buddy-api.ships.workers.dev"
+      }
+    },
     "development": {
       "developmentClient": true,
       "distribution": "internal",

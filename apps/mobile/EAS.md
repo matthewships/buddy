@@ -5,9 +5,36 @@
 
 | Profile | Points at | For |
 |---|---|---|
-| `development` | the deployed Worker | a dev-client build on your own phone |
+| `simulator` | the deployed Worker | iOS Simulator on a Mac — **no Apple Developer account needed** |
+| `development` | the deployed Worker | a dev-client build on a physical device |
 | `preview` | the deployed Worker | internal testers |
 | `production` | the deployed Worker | TestFlight / Play |
+
+## iOS: which profile, and what it costs
+
+Apple's provisioning rules, not Expo's, decide this:
+
+- **`simulator`** (`ios.simulator: true`) builds an unsigned app that runs only
+  in the iOS Simulator. Nothing is provisioned onto hardware, so **no Apple
+  Developer Program membership is required.** It does need a Mac with Xcode.
+- **`development`** installs on a real iPhone, which means a provisioning profile
+  and a registered device — that requires the **paid Apple Developer Program**
+  ($99/yr). There is no free route onto your own iPhone here.
+- **Expo Go is not an option on iOS right now.** The SDK 57 build of Expo Go was
+  still awaiting App Store approval; `eas go` sideloads it through TestFlight,
+  which itself needs a paid account. So Expo Go saves nothing.
+
+### Running the simulator build from this machine
+
+The simulator runs on your Mac while Metro runs here, so the JS bundle has to be
+tunnelled — a LAN URL will not reach a remote container:
+
+```bash
+npm run start:tunnel        # expo start --dev-client --tunnel
+```
+
+`@expo/ngrok` is a devDependency for this reason: `--tunnel` otherwise tries to
+install it into the global npm prefix, which is not writable on this machine.
 
 **No `channel` on any profile, deliberately.** Channels route EAS Update, which
 requires `expo-updates`; that isn't installed and over-the-air updates are not

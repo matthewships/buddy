@@ -5,6 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --dev-client",
+    "start:tunnel": "expo start --dev-client --tunnel",
     "start:go": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
@@ -12,8 +13,9 @@
     "test": "jest",
     "doctor": "npx expo-doctor",
     "export": "expo export --platform ios --output-dir dist",
-    "build:dev:android": "eas build --profile development --platform android",
+    "build:sim": "eas build --profile simulator --platform ios",
     "build:dev:ios": "eas build --profile development --platform ios",
+    "build:dev:android": "eas build --profile development --platform android",
     "build:prod": "eas build --profile production --platform all"
   },
   "dependencies": {
@@ -48,6 +50,7 @@
   },
   "devDependencies": {
     "@buddy/api": "*",
+    "@expo/ngrok": "^4.1.3",
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.4",
