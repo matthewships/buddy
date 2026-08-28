@@ -40,7 +40,38 @@ Outside production the API logs email verification codes to the console, so you
 can register without a working email sender. It never does this in production.
 
 The app needs a **dev-client build**, not Expo Go: Expo Go cannot deliver Android
-push. This container has no Xcode or Android SDK, so those builds come from EAS.
+push, and the SDK 57 build of Expo Go was still awaiting App Store approval.
+
+### iOS on a Mac (no Expo or Apple account needed)
+
+With Xcode installed, the whole loop runs locally and nothing is provisioned onto
+hardware, so neither an Expo login nor an Apple Developer membership is involved:
+
+```bash
+npm install
+npm run db:migrate:local --workspace @buddy/api   # seeds the local D1 file
+
+# terminal 1 — API on :8787, logs verification codes
+npm run dev:api
+
+# terminal 2 — compiles natively and launches the Simulator (~10-15 min first run)
+cd apps/mobile && npx expo run:ios
+```
+
+After the first build, `npx expo start --dev-client` relaunches in seconds
+without recompiling.
+
+`http://localhost:8787` works from the Simulator because it shares the Mac's
+network, and the generated `Info.plist` sets `NSAllowsLocalNetworking: true` —
+App Transport Security would otherwise block plain HTTP.
+
+Two limits of the Simulator: it cannot receive remote push (the buddy-request
+notification will not fire — the 15-second poll is the fallback, which is why it
+exists), and the review loop needs two accounts, since nobody can approve their
+own task.
+
+Building for a **physical iPhone** or TestFlight needs the paid Apple Developer
+Program; see `apps/mobile/EAS.md`.
 
 ## Checks
 
