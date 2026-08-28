@@ -359,7 +359,7 @@ readable.
 
 | Concern | Mobile | Web | Why |
 | --- | --- | --- | --- |
-| Tokens | `expo-secure-store` (Keychain) | `localStorage` | A cookie is impossible: the API sends `Access-Control-Allow-Origin: *`, which the fetch spec forbids combining with credentialed requests. **An XSS on this origin can read the tokens** — accepted, and mitigated only by the 15-minute access TTL. |
+| Tokens | `expo-secure-store` (Keychain) | `localStorage` | A cookie is impossible: the API sends `Access-Control-Allow-Origin: *`, which the fetch spec forbids combining with credentialed requests. An XSS on this origin could read the tokens, so the CSP below is the mitigation for that specific hole; the 15-minute access TTL limits the window. |
 | Query client | Module singleton | Factory, one per mount | One process per user makes a singleton safe on a phone. A Worker isolate serves many users' requests, where it would be a cross-request cache. |
 | Avatars | `expo-image` | `<img crossOrigin>` | **Load-bearing.** `secureHeaders()` puts `Cross-Origin-Resource-Policy: same-origin` on `/api/media/*`; a plain cross-origin `<img>` is a `no-cors` request and CORP refuses it, so every avatar would fail on web while working in the app, which never applies CORP. `crossOrigin` makes it a CORS request, which CORP does not police and the route's existing `ACAO: *` satisfies. The alternative was weakening CORP in the API. |
 | Avatar upload | `expo-image-picker` (crops, re-encodes) | `<input type="file">` + canvas | The picker was doing the 1:1 crop and quality reduction. The server caps uploads at 5 MB and a phone camera clears that, so the resize had to be reimplemented, not dropped. |
@@ -376,6 +376,41 @@ and `(tabs)/profile` would both have resolved to `/profile` and failed the
 build. Guards are a web addition (`RequireSession`, `RequireAnon`): the Expo
 app has one entry route that picks a stack, whereas every web screen has a URL
 that can be typed, bookmarked or shared.
+
+**Security headers (`src/proxy.ts`).** Added because the app shipped without
+any, which matters here specifically: tokens in `localStorage` made "an XSS on
+this origin reads a session" a real and unmitigated path.
+
+The CSP uses a **per-request nonce**, not `'unsafe-inline'`. The built HTML
+carries four inline scripts — Next's flight-data pushes — so a policy has to
+account for them somehow, and `'unsafe-inline'` would permit exactly the
+injected inline script being defended against. Next stamps the nonce onto its
+script tags (all 15 of them) after reading it from the request's CSP header;
+`'strict-dynamic'` lets those trusted scripts pull the rest of the chunk graph.
+The header and body nonces must match within a response or every script is
+blocked, which is worth asserting rather than assuming.
+
+Nonces normally cost static prerendering. Here that is free: every route is a
+client component behind a session guard, so the prerendered HTML is a spinner
+regardless.
+
+`connect-src` and `img-src` are **derived from `NEXT_PUBLIC_API_URL`**, and the
+WebSocket origin from it the same way `chat/useChatSocket.ts` derives it — so a
+local build names `localhost:8787` instead of shipping a policy that blocks it.
+This is the part that takes the whole app down when it is wrong, which is why it
+is computed rather than typed twice.
+
+`style-src` keeps `'unsafe-inline'` on purpose: Next inlines critical CSS and
+offers no nonce plumbing for style tags. An injected `<style>` is defacement,
+not token theft — a different risk from `script-src`, so a different call.
+
+**One dependency to watch.** The file is `proxy.ts` because Next 16 deprecates
+`middleware.ts`, and a Next 16 proxy *always* runs on the Node runtime —
+`export const runtime = 'edge'` is a build error. `@opennextjs/cloudflare`
+labels its Node-middleware support experimental and unmaintained, so these
+headers ride on that path. It is verified working end to end, but an OpenNext
+upgrade is the moment to re-check that the headers are still served — a smoke
+assertion in CI would be the cheap way to stop that regressing silently.
 
 **Consequence worth knowing.** Because the session lives in `localStorage` and
 every screen is a client component, the server-rendered HTML for every route is

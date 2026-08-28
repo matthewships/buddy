@@ -147,5 +147,14 @@ the deployed Worker for a production build and to `http://localhost:8787` for
 - **Both Workers are on `*.ships.workers.dev`.** Fine for now; a custom domain
   is a DNS record and a `routes` entry in each `wrangler.jsonc`.
 
+- **The web CSP rides on an experimental path.** Next 16 proxies always run on
+  the Node runtime, and `@opennextjs/cloudflare` calls its Node-middleware
+  support experimental and unmaintained. The headers are verified working, but
+  an OpenNext upgrade is the moment to confirm they are still being sent —
+  ideally with a CI assertion, since a silent loss of headers would not fail a
+  build. See ARCHITECTURE.md §5.4.
+
 Resolved 2026-08-28: `localrack.xyz` is onboarded to Cloudflare Email Service
-(SPF + DKIM), so verification and reset codes send in production.
+(SPF + DKIM), so verification and reset codes send in production. The web client
+sends a nonce-based CSP plus HSTS, frame-denial, nosniff, referrer and
+permissions policies (`apps/web/src/proxy.ts`).
