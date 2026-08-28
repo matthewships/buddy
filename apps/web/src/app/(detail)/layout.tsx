@@ -1,4 +1,5 @@
 import { AppFrame, RequireSession } from '@/components';
+import { RequestNotifications } from '@/hooks/useRequestNotifications';
 
 /**
  * The pushed screens: a buddy's profile, a group, a group's chat.
@@ -11,7 +12,17 @@ import { AppFrame, RequireSession } from '@/components';
 export default function DetailLayout({ children }: { children: React.ReactNode }) {
   return (
     <AppFrame>
-      <RequireSession>{children}</RequireSession>
+      <RequireSession>
+        {/*
+          Mounted here as well as in the tabs layout, because these routes are a
+          sibling group rather than a child of it: without this, walking into a
+          group or a chat unmounted the request watch and notifications simply
+          stopped until the user navigated back to a tab. Two lines in two
+          layouts is the honest cost of the tab bar living in only one of them.
+        */}
+        <RequestNotifications />
+        {children}
+      </RequireSession>
     </AppFrame>
   );
 }

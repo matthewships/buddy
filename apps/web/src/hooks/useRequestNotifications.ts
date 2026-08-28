@@ -78,11 +78,19 @@ export function useRequestNotifications(): void {
     for (const request of requests) known.add(request.id);
 
     if (arrivals.length === 0) return;
-    // Only when the user is looking elsewhere. With the tab in front,
+    // Only when the user is looking elsewhere. With the app in front,
     // `RequestBanner` is already on screen and a notification is pure noise.
     // Marking arrivals seen above (before this check) means returning to the tab
     // does not then fire a banner for something already visible.
-    if (document.visibilityState !== 'hidden') return;
+    //
+    // "Looking" needs both halves. `visibilityState` alone is what this
+    // originally tested, and it is wrong: a tab is `visible` whenever it is the
+    // selected tab of its window, *even if that window is behind another
+    // application*. Buddy parked in a second window while you work in the first
+    // is the ordinary case, and it produced no notification at all — the
+    // arrival was marked seen and silently dropped. `document.hasFocus()` is
+    // what distinguishes the two.
+    if (document.visibilityState === 'visible' && document.hasFocus()) return;
     if (!notificationsArmed()) return;
 
     for (const request of arrivals) notify(request, () => router.push('/buddies'));
@@ -95,13 +103,17 @@ export function useRequestNotifications(): void {
      * TanStack Query's interval refetch is skipped unless
      * `refetchIntervalInBackground` is set or `focusManager.isFocused()` is true,
      * and that focus check is `document.visibilityState !== 'hidden'`. So a
-     * hidden tab — the only state in which a notification is raised — never
-     * refetches, and without this tick the feature could never fire. Rather than
-     * change the shared query's options, drive the refetch here while hidden.
+     * hidden tab never refetches, and without this tick nothing would arrive to
+     * notify about. Rather than change the shared query's options, drive the
+     * refetch here while hidden.
      *
-     * The two ticks do not double up: while visible only the query's own
-     * interval fetches, while hidden only this one does. Either way it stays one
-     * request per 15 seconds.
+     * The gate stays `hidden` — deliberately *not* the wider "not looking" test
+     * the notify path uses — because it is the exact complement of
+     * `focusManager`'s. `focusManager` subscribes to `visibilitychange` only and
+     * never to blur, so an unfocused-but-visible window keeps polling on the
+     * query's own interval. The two therefore tile the states exactly: visible
+     * (focused or not) the query fetches, hidden this tick does, and neither
+     * runs twice. One request per 15 seconds throughout.
      *
      * The gates are re-read inside the tick, not around it, so enabling
      * notifications in Profile takes effect without a remount, and a tab that is
