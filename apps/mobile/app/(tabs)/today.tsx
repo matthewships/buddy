@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { MAX_PROOF_TEXT, MAX_REVIEW_COMMENT, MAX_TASK_TITLE } from '@buddy/shared';
 
@@ -21,6 +21,7 @@ import {
   ErrorText,
   Field,
   RatingPicker,
+  ReportSheet,
   Screen,
   TaskRow,
 } from '@/components';
@@ -243,6 +244,7 @@ function ReviewTask({ task }: { task: Task }) {
   const [rating, setRating] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const [mode, setMode] = useState<'idle' | 'approving'>('idle');
+  const [reporting, setReporting] = useState(false);
 
   const award = review.data?.award;
 
@@ -282,6 +284,18 @@ function ReviewTask({ task }: { task: Task }) {
               />
             </View>
           </View>
+          {/* Reporting sits behind the review actions: it is the escalation for
+              a task that is not merely unproven but dishonest (§2.6). */}
+          <Pressable accessibilityRole="button" onPress={() => setReporting(true)}>
+            <Text className="text-center text-xs text-ink-subtle">Report this task</Text>
+          </Pressable>
+          <ReportSheet
+            visible={reporting}
+            onClose={() => setReporting(false)}
+            targetType="task"
+            targetId={task.id}
+            targetLabel="this task"
+          />
         </View>
       ) : (
         <View className="gap-3">

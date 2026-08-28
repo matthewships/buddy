@@ -1,12 +1,13 @@
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, ScrollView, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Switch, Text, View } from 'react-native';
 
 import { GOALS, OCCUPATIONS } from '@buddy/shared';
 
 import { useMe, useUpdateMe } from '@/api/auth';
+import { useDeleteAccount } from '@/api/board';
 import { useProfile } from '@/api/users';
 import { useSession } from '@/auth/store';
-import { Button, Card, Screen } from '@/components';
+import { Button, Card, ErrorText, Screen } from '@/components';
 
 function labelFor(list: readonly { key: string; label: string }[], key: string | null) {
   return list.find((entry) => entry.key === key)?.label ?? null;
@@ -17,6 +18,7 @@ export default function Profile() {
   const me = useMe();
   const updateMe = useUpdateMe();
   const signOut = useSession((s) => s.signOut);
+  const deleteAccount = useDeleteAccount();
   // Stats and badges live on the public profile endpoint, so the same numbers a
   // prospective buddy sees are the ones shown here — no second source of truth.
   const stats = useProfile(me.data?.handle ?? '');
@@ -125,6 +127,35 @@ export default function Profile() {
               router.replace('/(auth)/welcome');
             }}
           />
+
+          {/* Required by both app stores (§4.3). Confirmed first, because it
+              cannot be undone from inside the app. */}
+          <Button
+            label="Delete account"
+            variant="danger"
+            disabled={deleteAccount.isPending}
+            onPress={() =>
+              Alert.alert(
+                'Delete your account?',
+                'Your profile, tasks and buddy connections are removed. Messages and reviews you left stay in your groups without your name. This cannot be undone.',
+                [
+                  { text: 'Keep my account', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () =>
+                      deleteAccount.mutate(undefined, {
+                        onSuccess: async () => {
+                          await signOut();
+                          router.replace('/(auth)/welcome');
+                        },
+                      }),
+                  },
+                ],
+              )
+            }
+          />
+          <ErrorText message={deleteAccount.error?.message} />
         </View>
       </ScrollView>
     </Screen>
