@@ -191,7 +191,11 @@ DELETE /me               account deletion (required by both stores)
 ### 4.4 API surface (v1, beyond auth)
 ```
 GET/PATCH /me                      profile, goal, occupation, timezone, is_open_buddy, buddy profile
-POST   /me/avatar                  → presigned R2 upload URL + key
+POST   /me/avatar                  → upload key + URL (the Worker takes the PUT;
+                                   R2 presigning would need an access-key pair in
+                                   the app, a binding-backed PUT keeps it server-side)
+PUT    /me/avatar/:key             the image bytes, key re-checked against the caller
+GET    /api/media/avatars/...      public read — see routes/media.ts for why
 POST   /me/devices                 {expoPushToken, platform}
 GET    /users/:handle              public profile (goal, occupation, stats, badges, buddy profile if open)
 
@@ -292,7 +296,8 @@ Auth          Welcome → Register (email, password) → Verify code → Login /
 Onboarding    Name & @handle & avatar → Goal (chips + custom) → Occupation (chips + custom)
               → "Willing to be a buddy?" → Buddy profile (headline, about, availability) → Done
 Tab: Today    Today's tasks across my groups; add task; mark done (+proof); buddies' tasks; review actions
-Tab: Groups   List → Group (members, tasks by day, chat) → Invite by @handle / share link → Chat
+Tab: Groups   List → Group (members, tasks by day, chat) → Invite by @handle → Chat
+              (share-link invites are not in v1; @handle covers the same need)
 Tab: Buddies  Directory (cards: goal, occupation, headline, active status, stats) with filters
               → Buddy profile (full) → Send request → pinned card with 5:00 countdown
               → Incoming request banner (Accept / Decline) for recipients

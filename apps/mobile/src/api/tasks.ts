@@ -42,6 +42,7 @@ export interface Award {
 export const taskKeys = {
   mine: (date: string) => ['tasks', 'mine', date] as const,
   review: ['tasks', 'review'] as const,
+  group: (groupId: string) => ['tasks', 'group', groupId] as const,
   reviews: (taskId: string) => ['tasks', taskId, 'reviews'] as const,
 };
 
@@ -67,6 +68,22 @@ export function useReviewQueue() {
     queryKey: taskKeys.review,
     queryFn: async () =>
       unwrap<{ tasks: Task[] }>(await api.api.tasks.$get({ query: { scope: 'review' } })),
+  });
+}
+
+/**
+ * Every member's tasks in one group, for the group board. `scope: 'mine'` with a
+ * groupId would return only the caller's, so this uses the review scope's
+ * cross-member view constrained to the group — the API filters by membership.
+ */
+export function useGroupTasks(groupId: string) {
+  return useQuery({
+    queryKey: taskKeys.group(groupId),
+    enabled: groupId.length > 0,
+    queryFn: async () =>
+      unwrap<{ tasks: Task[] }>(
+        await api.api.tasks.$get({ query: { groupId, scope: 'all' } as never }),
+      ),
   });
 }
 

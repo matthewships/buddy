@@ -4,6 +4,8 @@ import { GOALS, OCCUPATIONS } from '@buddy/shared';
 
 import type { BuddyCard as BuddyCardData } from '@/api/buddies';
 
+import { Avatar } from './Avatar';
+
 function label(list: readonly { key: string; label: string }[], key: string | null) {
   return list.find((entry) => entry.key === key)?.label ?? null;
 }
@@ -33,6 +35,7 @@ export function BuddyCard({
       className="rounded-2xl border border-surface-border bg-surface p-4 active:opacity-70"
     >
       <View className="flex-row items-start justify-between gap-3">
+        <Avatar avatarKey={buddy.avatarKey} displayName={buddy.displayName} size={44} />
         <View className="flex-1">
           <Text className="text-lg font-bold text-ink">{buddy.displayName}</Text>
           <Text className="text-sm text-ink-subtle">@{buddy.handle}</Text>

@@ -316,3 +316,69 @@ describe('account deletion', () => {
     expect(after.buddies.map((b) => b.handle)).not.toContain('delleaving');
   });
 });
+
+describe('media', () => {
+  it('serves an uploaded avatar and refuses anything outside avatars/', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const session = await signUp('media@example.com');
+    await onboard(session, 'mediauser');
+
+    const issued = await post('/api/me/avatar', {}, session.accessToken);
+    const { key } = (await issued.json()) as { key: string };
+
+    // A one-pixel PNG is enough to prove the round trip.
+    const png = Uint8Array.from(
+      atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+      (ch) => ch.charCodeAt(0),
+    );
+
+    const uploaded = await SELF.fetch(`${BASE}/api/me/avatar/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${session.accessToken}`,
+        'content-type': 'image/png',
+      },
+      body: png,
+    });
+    expect(uploaded.status).toBe(200);
+
+    // Readable without a token, which is the point.
+    const served = await SELF.fetch(`${BASE}/api/media/${encodeURIComponent(key)}`);
+    expect(served.status).toBe(200);
+    expect(served.headers.get('cache-control')).toContain('immutable');
+
+    // Nothing outside the avatars prefix is served.
+    const denied = await SELF.fetch(`${BASE}/api/media/${encodeURIComponent('secrets/keys.txt')}`);
+    expect(denied.status).toBe(400);
+  });
+
+  it('refuses an upload key belonging to someone else', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const mine = await signUp('media-mine@example.com');
+    const theirs = await signUp('media-theirs@example.com');
+
+    const issued = await post('/api/me/avatar', {}, theirs.accessToken);
+    const { key } = (await issued.json()) as { key: string };
+
+    const res = await SELF.fetch(`${BASE}/api/me/avatar/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${mine.accessToken}`, 'content-type': 'image/png' },
+      body: new Uint8Array([1, 2, 3]),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a non-image content type', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const session = await signUp('media-type@example.com');
+    const issued = await post('/api/me/avatar', {}, session.accessToken);
+    const { key } = (await issued.json()) as { key: string };
+
+    const res = await SELF.fetch(`${BASE}/api/me/avatar/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${session.accessToken}`, 'content-type': 'text/html' },
+      body: '<script>alert(1)</script>',
+    });
+    expect(res.status).toBe(400);
+  });
+});

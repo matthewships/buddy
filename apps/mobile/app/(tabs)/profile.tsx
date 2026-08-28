@@ -1,13 +1,14 @@
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, Alert, ScrollView, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 
 import { GOALS, OCCUPATIONS } from '@buddy/shared';
 
+import { usePickAndUploadAvatar } from '@/api/avatar';
 import { useMe, useUpdateMe } from '@/api/auth';
 import { useDeleteAccount } from '@/api/board';
 import { useProfile } from '@/api/users';
 import { useSession } from '@/auth/store';
-import { Button, Card, ErrorText, Screen } from '@/components';
+import { Avatar, Button, Card, ErrorText, Screen } from '@/components';
 
 function labelFor(list: readonly { key: string; label: string }[], key: string | null) {
   return list.find((entry) => entry.key === key)?.label ?? null;
@@ -19,6 +20,7 @@ export default function Profile() {
   const updateMe = useUpdateMe();
   const signOut = useSession((s) => s.signOut);
   const deleteAccount = useDeleteAccount();
+  const uploadAvatar = usePickAndUploadAvatar();
   // Stats and badges live on the public profile endpoint, so the same numbers a
   // prospective buddy sees are the ones shown here — no second source of truth.
   const stats = useProfile(me.data?.handle ?? '');
@@ -54,10 +56,32 @@ export default function Profile() {
         <Text className="mb-1 mt-2 text-2xl font-bold text-ink">Profile</Text>
 
         <Card>
-          <Text className="text-xl font-bold text-ink">{profile.displayName}</Text>
-          <Text className="text-base text-ink-muted">@{profile.handle}</Text>
-          {goal ? <Text className="mt-2 text-base text-ink">{goal}</Text> : null}
-          {occupation ? <Text className="text-sm text-ink-muted">{occupation}</Text> : null}
+          <View className="flex-row items-center gap-4">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Change your photo"
+              disabled={uploadAvatar.isPending}
+              onPress={() => uploadAvatar.mutate()}
+            >
+              <Avatar
+                avatarKey={profile.avatarKey}
+                displayName={profile.displayName}
+                size={72}
+              />
+              <Text className="mt-1 text-center text-xs text-brand">
+                {uploadAvatar.isPending ? 'Uploading…' : 'Change'}
+              </Text>
+            </Pressable>
+            <View className="flex-1">
+              <Text className="text-xl font-bold text-ink">{profile.displayName}</Text>
+              <Text className="text-base text-ink-muted">@{profile.handle}</Text>
+              {goal ? <Text className="mt-2 text-base text-ink">{goal}</Text> : null}
+              {occupation ? (
+                <Text className="text-sm text-ink-muted">{occupation}</Text>
+              ) : null}
+            </View>
+          </View>
+          <ErrorText message={uploadAvatar.error?.message} />
         </Card>
 
         <Card>

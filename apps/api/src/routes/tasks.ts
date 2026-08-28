@@ -48,11 +48,14 @@ const listQuerySchema = z.object({
   groupId: ulidSchema.optional(),
   date: localDateSchema.optional(),
   /**
-   * `mine` (default) is the owner's own tasks; `review` is the cross-group queue
-   * of buddies' tasks waiting on a review. The Today tab needs both, and a
-   * per-group round trip would be N requests for N groups.
+   * - `mine` (default): the caller's own tasks.
+   * - `review`: the cross-group queue of buddies' tasks awaiting a review. The
+   *   Today tab needs this in one request; per-group would be N requests.
+   * - `all`: every member's tasks, for a group's board. Requires `groupId`,
+   *   since "all tasks everywhere" is not a view anything needs and would grow
+   *   without bound.
    */
-  scope: z.enum(['mine', 'review']).default('mine'),
+  scope: z.enum(['mine', 'review', 'all']).default('mine'),
 });
 
 /** The owner's local calendar day, used to reject planning into the past. */
@@ -95,6 +98,9 @@ export const taskRoutes = new Hono<AppEnv>()
 
     if (myGroupIds.length === 0) return c.json({ tasks: [] });
     if (groupId && !myGroupIds.includes(groupId)) throw forbidden('You are not in that group');
+    if (scope === 'all' && !groupId) {
+      throw badRequest('A groupId is required to list every member\'s tasks');
+    }
 
     const scopeConditions =
       scope === 'review'
@@ -103,7 +109,10 @@ export const taskRoutes = new Hono<AppEnv>()
             ne(tasks.userId, userId),
             eq(tasks.status, 'done'),
           ]
-        : [eq(tasks.userId, userId)];
+        : scope === 'all'
+          ? // Everyone's tasks in the one group, already membership-checked above.
+            []
+          : [eq(tasks.userId, userId)];
 
     const rows = await client
       .select({

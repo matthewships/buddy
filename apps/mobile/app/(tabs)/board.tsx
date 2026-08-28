@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native
 
 import { useMe } from '@/api/auth';
 import { useLeaderboard, type LeaderboardScope } from '@/api/board';
-import { Card, Screen } from '@/components';
+import { Avatar, Card, Screen } from '@/components';
 
 export default function Board() {
   const [scope, setScope] = useState<LeaderboardScope>('weekly');
@@ -61,6 +61,7 @@ export default function Board() {
             }`}
           >
             <Text className="w-9 text-base font-bold text-ink-muted">#{item.rank}</Text>
+            <Avatar avatarKey={item.avatarKey} displayName={item.displayName} size={36} />
             <View className="flex-1">
               <Text className="text-base font-semibold text-ink">{item.displayName}</Text>
               <Text className="text-xs text-ink-subtle">

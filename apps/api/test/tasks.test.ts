@@ -333,3 +333,35 @@ describe('the review queue', () => {
     expect(tasks[0]?.ownerHandle).toBe(buddyHandle);
   });
 });
+
+describe('the group board', () => {
+  it('lists every members tasks for one group', async () => {
+    const { owner, buddy, groupId } = await pair('board');
+    const mine = await createTask(owner, groupId, 'My task');
+    const theirs = await createTask(buddy, groupId, 'Their task');
+
+    const { tasks } = (await (
+      await get(`/api/tasks?groupId=${groupId}&scope=all`, owner.accessToken)
+    ).json()) as { tasks: { id: string }[] };
+
+    const ids = tasks.map((t) => t.id);
+    expect(ids).toContain(mine);
+    expect(ids).toContain(theirs);
+  });
+
+  it('requires a groupId for the all scope', async () => {
+    const { owner } = await pair('boardnogroup');
+    const res = await get('/api/tasks?scope=all', owner.accessToken);
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses the all scope for a group you are not in', async () => {
+    const a = await pair('boardin');
+    const b = await pair('boardout');
+    const res = await get(
+      `/api/tasks?groupId=${a.groupId}&scope=all`,
+      b.owner.accessToken,
+    );
+    expect(res.status).toBe(403);
+  });
+});

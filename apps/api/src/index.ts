@@ -11,6 +11,7 @@ import { db } from './db/client.js';
 import { authRoutes } from './routes/auth.js';
 import { chatRoutes, chatSocketRoutes } from './routes/chat.js';
 import { leaderboardRoutes } from './routes/leaderboard.js';
+import { mediaRoutes } from './routes/media.js';
 import { adminRoutes, reportRoutes } from './routes/reports.js';
 import { buddyRequestRoutes } from './routes/buddy-requests.js';
 import { buddyRoutes } from './routes/buddies.js';
@@ -80,7 +81,9 @@ const routes = app
   .route('/api/chat', chatSocketRoutes)
   .route('/api/leaderboard', leaderboardRoutes)
   .route('/api/reports', reportRoutes)
-  .route('/api/admin', adminRoutes);
+  .route('/api/admin', adminRoutes)
+  // Public: see routes/media.ts for why avatars are not behind bearer auth.
+  .route('/api/media', mediaRoutes);
 
 /** Any thrown ApiError already carries its JSON body; everything else is a 500. */
 app.onError((err, c) => {

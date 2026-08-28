@@ -6,7 +6,7 @@ import { GOALS, MAX_REQUEST_MESSAGE, OCCUPATIONS } from '@buddy/shared';
 
 import { useCurrentRequest, useSendRequest } from '@/api/buddies';
 import { useProfile } from '@/api/users';
-import { Button, Card, ErrorText, Field, Screen } from '@/components';
+import { Avatar, Button, Card, ErrorText, Field, Screen } from '@/components';
 
 function label(list: readonly { key: string; label: string }[], key: string | null) {
   return list.find((entry) => entry.key === key)?.label ?? null;
@@ -59,9 +59,12 @@ export default function BuddyProfile() {
   return (
     <Screen>
       <ScrollView contentContainerClassName="gap-3 pb-8">
-        <View className="mt-2">
-          <Text className="text-3xl font-bold text-ink">{person.displayName}</Text>
-          <Text className="text-base text-ink-subtle">@{person.handle}</Text>
+        <View className="mt-2 flex-row items-center gap-4">
+          <Avatar avatarKey={person.avatarKey} displayName={person.displayName} size={64} />
+          <View className="flex-1">
+            <Text className="text-3xl font-bold text-ink">{person.displayName}</Text>
+            <Text className="text-base text-ink-subtle">@{person.handle}</Text>
+          </View>
         </View>
 
         <Card>
