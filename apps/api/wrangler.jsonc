@@ -29,6 +29,22 @@
     }
   ],
 
+  // One chat room per group (§4.7), SQLite-backed so it can hibernate.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GROUP_CHAT",
+        "class_name": "GroupChat"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["GroupChat"]
+    }
+  ],
+
   // Hourly day rollover (§4.9): marks lapsed `planned` tasks missed and breaks
   // streaks. Hourly rather than daily because local midnight lands on a
   // different UTC hour in every timezone.
@@ -72,7 +88,6 @@
 
   // Bindings added in later phases, kept here as a checklist so the shape of
   // the finished Worker stays visible:
-  //   GROUP_CHAT  Durable Object class GroupChat   -> phase 4 (§4.7)
   //   RATE_LIMITER Rate limiting binding           -> phase 1 (§4.3)
   //   AI          Workers AI                       -> phase 2, optional (§1)
   //   triggers.crons weekly leaderboard snapshot   -> phase 5 (§4.9)

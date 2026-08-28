@@ -9,6 +9,7 @@ import type { AppEnv } from './env.js';
 import type { ApiErrorBody } from './lib/errors.js';
 import { db } from './db/client.js';
 import { authRoutes } from './routes/auth.js';
+import { chatRoutes, chatSocketRoutes } from './routes/chat.js';
 import { buddyRequestRoutes } from './routes/buddy-requests.js';
 import { buddyRoutes } from './routes/buddies.js';
 import { groupRoutes, inviteRoutes } from './routes/groups.js';
@@ -61,7 +62,12 @@ const routes = app
   .route('/api/buddy-requests', buddyRequestRoutes)
   .route('/api/groups', groupRoutes)
   .route('/api/invites', inviteRoutes)
-  .route('/api/tasks', taskRoutes);
+  .route('/api/tasks', taskRoutes)
+  // Group-scoped chat reads share the /api/groups prefix and its bearer auth.
+  .route('/api/groups', chatRoutes)
+  // The socket upgrade sits outside /api/groups: it authenticates with a
+  // ticket, and that prefix's bearer middleware would reject it first.
+  .route('/api/chat', chatSocketRoutes);
 
 /** Any thrown ApiError already carries its JSON body; everything else is a 500. */
 app.onError((err, c) => {
@@ -91,6 +97,8 @@ app.notFound((c) => {
  * package boundary, which is all `hc<AppType>()` needs.
  */
 export type AppType = Hono<BlankEnv, ExtractSchema<typeof routes>, '/'>;
+
+export { GroupChat } from './durable/GroupChat.js';
 
 export default {
   fetch: app.fetch,

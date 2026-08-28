@@ -209,6 +209,15 @@ export const groupRoutes = new Hono<AppEnv>()
       .delete(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)));
 
+    /**
+     * Tell the chat room the member is gone, so their socket is closed now
+     * rather than lingering until they happen to close the app (§4.7). The DO
+     * also re-checks membership per message, so this is belt and braces — but
+     * leaving a live socket open on a group you left is the kind of thing users
+     * notice.
+     */
+    c.executionCtx.waitUntil(c.env.GROUP_CHAT.getByName(groupId).disconnectMember(userId));
+
     const remaining = await client
       .select({ count: sql<number>`count(*)` })
       .from(groupMembers)

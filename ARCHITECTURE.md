@@ -205,7 +205,10 @@ POST   /buddy-requests/:id/cancel  (requester gives up early)
 
 GET    /groups      POST /groups {name, emoji}      GET /groups/:id      POST /groups/:id/leave
 POST   /groups/:id/invites {handle}      GET /invites      POST /invites/:id/accept|decline
-GET    /groups/:id/messages?before=      POST /groups/:id/chat-ticket      GET /groups/:id/chat (WS)
+GET    /groups/:id/messages?before=      POST /groups/:id/chat-ticket
+GET    /api/chat/:groupId?ticket=  (WS)  ← not under /groups: that prefix is
+                                          wrapped in bearer auth, which would
+                                          reject a ticket-authenticated socket
 
 GET    /tasks?groupId=&date=       POST /tasks   PATCH /tasks/:id   DELETE /tasks/:id
 POST   /tasks/:id/done             {proofText?, proofImageKey?}
@@ -401,7 +404,7 @@ Two structural decisions worth carrying forward:
 - [x] Credit formula: **`rating × 10` + `20` daily-completion bonus** — decided 2026-08-27; the bonus is awarded at approval time, not at rollover, because a task may legitimately be approved after its day has ended
 - [ ] Reports: manual admin review only vs auto-hide after N reports
 - [ ] Per-group leaderboard in addition to global
-- [ ] Chat history in D1 (proposed) vs inside the Durable Object
+- [x] Chat history in **D1** — decided 2026-08-28; the DO does live fan-out only, so reports can query messages across groups
 - [ ] UI styling: NativeWind (proposed) vs StyleSheet vs Tamagui
 - [ ] Photo proofs in v1? (proposal: text only; image field already in the schema)
 - [ ] Goal / occupation suggestion lists in §2.1 — add or remove entries
