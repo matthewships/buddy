@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    /* The app is a phone-shaped column even on a desktop, so the page itself
+       never scrolls horizontally. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface-muted text-ink antialiased;
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+      sans-serif;
+  }
+
+  /* Mobile renders inside a native scroll view with no visible bar; matching
+     that keeps the two clients looking alike on a trackpad. */
+  * {
+    scrollbar-width: thin;
+  }
+}

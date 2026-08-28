@@ -10,6 +10,7 @@ build/
 
 # cloudflare / wrangler
 .wrangler/
+.open-next/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
@@ -49,3 +50,8 @@ coverage/
 
 # expo router generated types
 .expo/types/
+
+# next.js
+.next/
+next-env.d.ts
+.env*.local

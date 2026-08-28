@@ -13,6 +13,8 @@
   "scripts": {
     "dev:api": "npm run dev --workspace @buddy/api",
     "dev:mobile": "npm run start --workspace @buddy/mobile",
+    "dev:web": "npm run dev --workspace @buddy/web",
+    "deploy:web": "npm run deploy --workspace @buddy/web",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",

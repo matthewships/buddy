@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "buddy-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-27",
+  // OpenNext's runtime needs both: `nodejs_compat` for the Node built-ins Next
+  // pulls in, and `global_fetch_strictly_public` so a fetch to our own hostname
+  // leaves the Worker instead of looping back into it.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "observability": { "enabled": true },
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "vars": {
+    // Baked into the client bundle at build time by Next, not read at runtime;
+    // kept here so `wrangler deploy` and the build agree on one value.
+    "NEXT_PUBLIC_API_URL": "https://buddy-api.ships.workers.dev"
+  }
+}
