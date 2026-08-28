@@ -52,6 +52,12 @@ function buildCsp(nonce: string, isDev: boolean): string {
     // 'strict-dynamic' means the nonce'd bootstrap can load Next's chunks.
     // `next dev` compiles with eval, which production never needs.
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${isDev ? "'unsafe-eval'" : ''}`.trim(),
+    // Without this, registering the push service worker is blocked — and only
+    // in production, which is the kind of thing that ships unnoticed.
+    // `worker-src` falls back to `script-src`, and `'strict-dynamic'` there
+    // nullifies `'self'`; a worker script cannot carry a nonce, so the fallback
+    // can never allow one. Naming the directive is the whole fix.
+    "worker-src 'self'",
     // Next inlines critical CSS, and there is no nonce plumbing for style tags.
     // An injected <style> is a defacement risk, not a token-theft one, so this
     // is a deliberately different call from script-src.

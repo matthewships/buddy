@@ -1,0 +1,10 @@
+{
+  "name": "Buddy",
+  "short_name": "Buddy",
+  "description": "Accountability buddies. Plan what you'll finish today, have a buddy approve it.",
+  "start_url": "/today",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5"
+}

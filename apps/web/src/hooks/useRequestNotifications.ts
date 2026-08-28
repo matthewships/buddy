@@ -11,25 +11,30 @@ import {
   type PendingRequest,
 } from '@/api/buddies';
 
+import { pushSubscriptionActive, syncSubscription } from '@/push/subscription';
+
 import { notificationsArmed } from './useNotificationPreference';
 
 /**
- * Browser notifications for incoming buddy requests.
+ * The fallback path for incoming buddy requests, and the place the browser's
+ * push subscription is kept current.
  *
- * The API pushes through Expo, which no browser can receive, so the web client
- * has no push at all. What it does have is the 15-second poll in
- * `useIncomingRequests`, which exists because a request expires in 5 minutes and
- * push may be denied or undelivered. This turns that poll's *new* rows into a
- * real notification, using nothing but the Notifications API.
+ * Web Push (see push/subscription.ts) is the real mechanism now: it delivers
+ * all ten notification types with no tab open. This remains for the browsers
+ * where it cannot run — Safari on iOS until the site is installed to the Home
+ * Screen, or any browser where the service worker failed to register — by
+ * turning *new* rows from the 15-second `useIncomingRequests` poll into a
+ * Notifications API banner. A buddy request expires in five minutes, so it is
+ * the one notification worth a second delivery path.
  *
- * What that buys, stated honestly:
+ * The two never fire together: `notify` stands down as soon as this tab knows a
+ * push subscription is live, and while that is still unknown it does nothing
+ * rather than risk two banners for one request.
  *
- * - It only works **while a tab is open**. There is no service worker here, so
- *   nothing arrives once the browser is closed or the tab is gone.
- * - `new Notification()` is **unsupported on Android Chrome**, where the only
- *   route is a service worker registration's `showNotification`. So this is
- *   effectively desktop-first; on Android the constructor throws and the app
- *   falls back to the on-screen banner, exactly as before.
+ * Its limits are unchanged: it works only while a tab is open, and
+ * `new Notification()` throws on Android Chrome, where the only route is a
+ * service worker's `showNotification` — which is exactly what push now
+ * provides there.
  */
 
 /** Matches the poll in `useIncomingRequests` — see the background-tick comment below. */
@@ -78,6 +83,10 @@ export function useRequestNotifications(): void {
     for (const request of requests) known.add(request.id);
 
     if (arrivals.length === 0) return;
+    // Push covers this, from the service worker, whether or not a tab is open.
+    // `null` is "not determined yet" and also stands down: two banners for one
+    // request is worse than the few hundred milliseconds this costs.
+    if (pushSubscriptionActive() !== false) return;
     // Only when the user is looking elsewhere. With the app in front,
     // `RequestBanner` is already on screen and a notification is pure noise.
     // Marking arrivals seen above (before this check) means returning to the tab
@@ -95,6 +104,19 @@ export function useRequestNotifications(): void {
 
     for (const request of arrivals) notify(request, () => router.push('/buddies'));
   }, [data, router]);
+
+  useEffect(() => {
+    /*
+     * Re-registers the browser's existing push subscription on every load.
+     *
+     * This is where `pushsubscriptionchange` is handled: the service worker
+     * cannot post to the API — the session token is in `localStorage`, which it
+     * cannot read — so the page does it instead. The endpoint upserts, so a
+     * subscription that has not changed costs one request and writes nothing,
+     * and one the browser rotated silently is picked up here.
+     */
+    void syncSubscription();
+  }, []);
 
   useEffect(() => {
     /*
@@ -117,11 +139,14 @@ export function useRequestNotifications(): void {
      *
      * The gates are re-read inside the tick, not around it, so enabling
      * notifications in Profile takes effect without a remount, and a tab that is
-     * not armed adds no background traffic at all.
+     * not armed — or is covered by push — adds no background traffic at all.
      */
     const id = setInterval(() => {
       if (document.visibilityState !== 'hidden') return;
       if (!notificationsArmed()) return;
+      // Nothing to feed: with push live the hidden tab notifies from the
+      // service worker, and this tick would be traffic for no one.
+      if (pushSubscriptionActive() !== false) return;
       void queryClient.refetchQueries({ queryKey: buddyKeys.incoming });
     }, POLL_MS);
 

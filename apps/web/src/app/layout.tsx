@@ -8,6 +8,14 @@ export const metadata: Metadata = {
   title: 'Buddy',
   description: "Accountability buddies. Plan what you'll finish today, have a buddy approve it.",
   applicationName: 'Buddy',
+  /**
+   * Not for the install banner — for notifications. Safari grants Web Push only
+   * to a site that has been added to the Home Screen and declares
+   * `display: standalone`, so on iOS this manifest is the difference between
+   * push working and `subscribe()` rejecting. Every other browser subscribes
+   * without any of this.
+   */
+  manifest: '/manifest.webmanifest',
 };
 
 export const viewport: Viewport = {

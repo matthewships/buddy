@@ -31,6 +31,19 @@ const VAPID_TTL_SECONDS = 12 * 60 * 60;
 
 const encoder = new TextEncoder();
 
+/**
+ * The parameter type of `deriveBits`, taken from whichever `SubtleCrypto` is in
+ * scope.
+ *
+ * Two different declarations of it reach this file: the Worker's own generated
+ * runtime types, and the DOM/Node ones the declaration build (tsconfig.build.json,
+ * which is what the Expo and Next clients compile against) sees. They disagree
+ * on the name of the ECDH peer-key field — workerd's generator emits `$public`
+ * — while the runtime takes `public` in both. Deriving the type here rather
+ * than naming either interface is what lets one file satisfy both.
+ */
+type DeriveBitsParams = Parameters<SubtleCrypto['deriveBits']>[0];
+
 export interface WebPushSubscriptionKeys {
   endpoint: string;
   /** The subscription's P-256 public key, base64url (`ua_public`). */
@@ -96,7 +109,12 @@ async function hkdf(
     'deriveBits',
   ]);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'HKDF', hash: 'SHA-256', salt: salt as BufferSource, info: info as BufferSource },
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: salt as BufferSource,
+      info: info as BufferSource,
+    } as unknown as DeriveBitsParams,
     key,
     bytes * 8,
   );
@@ -138,14 +156,19 @@ export async function encryptPayload(
     ])) as CryptoKeyPair);
 
   const serverPublicBytes = new Uint8Array(
-    await crypto.subtle.exportKey('raw', serverKeyPair.publicKey),
+    // `raw` always yields bytes; only the JWK format returns an object.
+    (await crypto.subtle.exportKey('raw', serverKeyPair.publicKey)) as ArrayBuffer,
   );
 
   const salt = overrides.salt ?? crypto.getRandomValues(new Uint8Array(16));
 
   // ecdh_secret = ECDH(as_private, ua_public)
   const ecdhSecret = new Uint8Array(
-    await crypto.subtle.deriveBits({ name: 'ECDH', public: uaPublicKey }, serverKeyPair.privateKey, 256),
+    await crypto.subtle.deriveBits(
+      { name: 'ECDH', public: uaPublicKey } as unknown as DeriveBitsParams,
+      serverKeyPair.privateKey,
+      256,
+    ),
   );
 
   // IKM = HKDF(auth_secret, ecdh_secret, "WebPush: info" || 0x00 || ua_public || as_public, 32)

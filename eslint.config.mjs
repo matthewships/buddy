@@ -88,6 +88,29 @@ export default tseslint.config(
   },
 
   {
+    /**
+     * One-off Node scripts run with `node scripts/x.mjs` — no bundler, no
+     * tsconfig, so their globals have to be declared here.
+     */
+    files: ['**/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { Buffer: 'readonly', console: 'readonly', crypto: 'readonly', process: 'readonly' },
+    },
+  },
+
+  {
+    /**
+     * The push service worker. Not part of any bundle — it is served verbatim
+     * from `public/` — and it runs in the ServiceWorkerGlobalScope, where `self`
+     * is the registration rather than a window.
+     */
+    files: ['apps/web/public/**/*.js'],
+    languageOptions: {
+      globals: { self: 'readonly', console: 'readonly', URL: 'readonly' },
+    },
+  },
+
+  {
     // Test files legitimately use non-null assertions on fixtures they just
     // created, and empty catch blocks to assert a throw.
     files: ['**/test/**/*.ts', '**/__tests__/**/*.{ts,tsx}'],

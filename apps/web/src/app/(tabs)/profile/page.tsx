@@ -214,7 +214,7 @@ export default function Profile() {
 }
 
 /**
- * Browser notifications for incoming buddy requests.
+ * Browser notifications.
  *
  * A control rather than something the app arranges by itself: browsers only
  * allow `Notification.requestPermission()` from a user gesture, and prompting on
@@ -225,6 +225,11 @@ export default function Profile() {
  * The three real permission states are reported as they are. The wish and the
  * permission are separate (see hooks/useNotificationPreference.ts), so a granted
  * permission with the feature switched off honestly reads as off.
+ *
+ * The copy also distinguishes the two mechanisms behind the one switch, because
+ * they behave very differently: with a push subscription every notification
+ * arrives with the site closed, and without one only buddy requests arrive, only
+ * while a tab is open.
  */
 function NotificationCard() {
   const notifications = useNotificationPreference();
@@ -238,20 +243,23 @@ function NotificationCard() {
     <Card>
       <div className="flex flex-row items-center justify-between gap-4">
         <div className="flex flex-1 flex-col">
-          <p className="text-base font-semibold text-ink">Buddy request alerts</p>
+          <p className="text-base font-semibold text-ink">Notifications</p>
 
           {notifications.state === 'granted' ? (
             <p className="text-sm text-ink-muted">
               {notifications.enabled
-                ? 'Your browser will notify you when a request arrives while you are on another tab.'
+                ? notifications.pushActive
+                  ? 'On: buddy requests, invites, reviews and chat reach you even with Buddy closed.'
+                  : 'On for buddy requests, while a Buddy tab is open.'
                 : 'Notifications are allowed, but turned off here.'}
             </p>
           ) : null}
 
           {notifications.state === 'default' ? (
             <p className="text-sm text-ink-muted">
-              Get notified when a buddy request arrives while you are on another tab. A request
-              expires in 5 minutes, so a missed one is a lost one.
+              Get notified about buddy requests, group invites, task reviews and chat — the same
+              alerts the app sends. A buddy request expires in 5 minutes, so a missed one is a
+              lost one.
             </p>
           ) : null}
 
@@ -266,12 +274,20 @@ function NotificationCard() {
             <p className="text-sm text-ink-subtle">This browser cannot show notifications.</p>
           ) : null}
 
-          {/* Said plainly rather than discovered later: this is a tab-bound,
-              desktop-first fallback, not push. */}
-          {notifications.state === 'granted' || notifications.state === 'default' ? (
+          {/* Which of the two mechanisms is actually running, said plainly
+              rather than discovered later. */}
+          {notifications.state === 'granted' && notifications.enabled && !notifications.pushActive ? (
             <p className="mt-2 text-xs text-ink-subtle">
-              Only works while a Buddy tab is open, and not at all in Chrome on Android. The
-              in-app banner and the 15-second check are unaffected either way.
+              This browser could not subscribe to push, so alerts arrive only while a Buddy tab is
+              open. On an iPhone, add Buddy to your Home Screen and open it from there — Safari
+              only allows push for an installed app.
+            </p>
+          ) : null}
+
+          {notifications.state === 'default' ? (
+            <p className="mt-2 text-xs text-ink-subtle">
+              On an iPhone, add Buddy to your Home Screen first — Safari only sends notifications
+              to an installed app. The in-app banner works everywhere regardless.
             </p>
           ) : null}
         </div>

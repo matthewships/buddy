@@ -2,8 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import {
+  pushSubscriptionActive,
+  pushSupported,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from '@/push/subscription';
+
 /**
- * The opt-in state behind browser notifications for incoming buddy requests.
+ * The opt-in state behind browser notifications.
  *
  * Two facts are tracked, and they are deliberately not the same thing:
  *
@@ -13,6 +20,12 @@ import { useCallback, useEffect, useState } from 'react';
  *   ago and has since turned the feature off in Profile must stay off, and a
  *   permission revoked in browser settings must not silently erase the wish —
  *   so the two are stored and reported separately.
+ *
+ * Turning the switch on also subscribes this browser to Web Push, which is what
+ * makes notifications arrive with no tab open. Where push is unavailable — no
+ * service worker, or Safari on iOS before the site is installed to the Home
+ * Screen — the switch still does something useful: the poll-based fallback in
+ * useRequestNotifications keeps working for buddy requests while a tab is open.
  */
 const PREF_KEY = 'buddy.notifications.requests';
 
@@ -69,6 +82,11 @@ export function notificationsArmed(): boolean {
   return currentNotificationState() === 'granted' && readPreference();
 }
 
+/** True where the browser could subscribe to push at all — see push/subscription.ts. */
+export function webPushSupported(): boolean {
+  return pushSupported();
+}
+
 export interface NotificationPreference {
   /** `unknown` until the first effect has run; render nothing meaningful until then. */
   state: NotificationState;
@@ -76,6 +94,12 @@ export interface NotificationPreference {
   enabled: boolean;
   /** True while a permission prompt is open. */
   busy: boolean;
+  /**
+   * Whether this browser is subscribed to Web Push — the difference between
+   * notifications that arrive with the site closed and ones that need a tab
+   * open. Reported so the Profile card can say which of the two the user has.
+   */
+  pushActive: boolean;
   /** Must be called from a real click — see below. */
   enable: () => Promise<void>;
   setEnabled: (value: boolean) => void;
@@ -85,11 +109,13 @@ export function useNotificationPreference(): NotificationPreference {
   const [state, setState] = useState<NotificationState>('unknown');
   const [enabled, setEnabledState] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pushActive, setPushActive] = useState(false);
 
   useEffect(() => {
     const read = () => {
       setState(currentNotificationState());
       setEnabledState(readPreference());
+      setPushActive(pushSubscriptionActive() === true);
     };
     read();
 
@@ -114,27 +140,45 @@ export function useNotificationPreference(): NotificationPreference {
       // Browsers require a user gesture for this call, and prompting on load is
       // actively penalised, which is why this only ever runs from a button.
       await window.Notification.requestPermission();
-    } catch {
-      // Older Safari only implements the callback form and rejects the promise.
-      // The permission may still have been set, so fall through and re-read it.
-    } finally {
-      setBusy(false);
-    }
 
-    // Trust the live value, not the resolved one: the callback-style
-    // implementations resolve `undefined`.
-    const next = currentNotificationState();
-    setState(next);
-    if (next === 'granted') {
+      // Trust the live value, not the resolved one: the callback-style
+      // implementations resolve `undefined`.
+      const next = currentNotificationState();
+      setState(next);
+      if (next !== 'granted') return;
+
       writePreference(true);
       setEnabledState(true);
+
+      // Subscribing inside the same busy window keeps the button disabled until
+      // the browser has actually registered, which is the difference between
+      // the switch meaning "notifications are on" and "the prompt was
+      // answered". A failure here is not surfaced: the fallback still covers
+      // buddy requests, and there is nothing the user could do about it.
+      setPushActive(await subscribeToPush());
+    } catch {
+      // Older Safari only implements the callback form and rejects the promise.
+      // The permission may still have been set, so re-read it rather than
+      // assuming the worst.
+      setState(currentNotificationState());
+    } finally {
+      setBusy(false);
     }
   }, []);
 
   const setEnabled = useCallback((value: boolean) => {
     writePreference(value);
     setEnabledState(value);
+
+    // Fire-and-forget: the switch is the user's answer, and it should not sit
+    // half-flipped waiting on a push service.
+    if (value) {
+      void subscribeToPush().then(setPushActive);
+    } else {
+      setPushActive(false);
+      void unsubscribeFromPush();
+    }
   }, []);
 
-  return { state, enabled, busy, enable, setEnabled };
+  return { state, enabled, busy, pushActive, enable, setEnabled };
 }
