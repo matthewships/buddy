@@ -1,4 +1,5 @@
 export { Avatar, avatarUrl } from './Avatar';
+export { BackLink } from './BackLink';
 export { BuddyCard } from './BuddyCard';
 export { Button } from './Button';
 export { Card } from './Card';
