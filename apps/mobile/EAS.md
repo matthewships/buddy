@@ -9,6 +9,12 @@
 | `preview` | the deployed Worker | internal testers |
 | `production` | the deployed Worker | TestFlight / Play |
 
+**No `channel` on any profile, deliberately.** Channels route EAS Update, which
+requires `expo-updates`; that isn't installed and over-the-air updates are not
+part of this build. Adding a channel without it produces a build that either
+warns or fails for no benefit. If OTA updates are wanted later: install
+`expo-updates`, run `eas update:configure`, then add the channels back.
+
 **Why `development` does not use `localhost:8787`:** the dev build runs on a
 physical phone while Metro runs on this machine. `localhost` on the phone is the
 phone, so a build pointed there cannot reach the API at all — the app loads and
@@ -37,16 +43,27 @@ Two ways round it:
 
 ```bash
 # Interactive: username + password prompt, no browser involved.
-npm run eas --workspace @buddy/mobile -- login --no-browser
+eas login --no-browser
 ```
 
 ```bash
 # Non-interactive, and what CI uses. Create a token at
 # https://expo.dev/settings/access-tokens
 export EXPO_TOKEN="..."          # eas-cli reads this before any stored session
-npm run eas --workspace @buddy/mobile -- whoami
+eas whoami
 ```
 
-`eas-cli` is a pinned devDependency, so `npm run eas` uses the local copy
-instead of re-downloading it (and re-printing a wall of deprecation warnings)
-on every invocation.
+## Where eas-cli lives
+
+Installed **globally**, not as a project dependency — `expo-doctor` fails the
+project if `eas-cli` is in `package.json`, and `eas init` warns about it too. The
+version is pinned instead through `cli.version` in `eas.json`, which is Expo's
+sanctioned mechanism and applies to whichever CLI runs the build.
+
+On this machine the global prefix is `~/.npm-global` (the default `/usr` is not
+writable), so `~/.npm-global/bin` needs to be on `PATH`:
+
+```bash
+echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+eas --version
+```

@@ -12,7 +12,6 @@
     "test": "jest",
     "doctor": "npx expo-doctor",
     "export": "expo export --platform ios --output-dir dist",
-    "eas": "eas",
     "build:dev:android": "eas build --profile development --platform android",
     "build:dev:ios": "eas build --profile development --platform ios",
     "build:prod": "eas build --profile production --platform all"
@@ -52,7 +51,6 @@
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.4",
-    "eas-cli": "^22.6.0",
     "jest": "~29.7.0",
     "jest-expo": "~57.0.5",
     "typescript": "6.0.3"
