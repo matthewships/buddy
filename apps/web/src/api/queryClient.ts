@@ -1,5 +1,8 @@
 import { QueryClient } from '@tanstack/react-query';
-import { persistQueryClient, type Persister } from '@tanstack/react-query-persist-client';
+import {
+  type PersistQueryClientOptions,
+  type Persister,
+} from '@tanstack/react-query-persist-client';
 
 /**
  * Server state — the web counterpart of apps/mobile/src/api/queryClient.ts.
@@ -59,11 +62,19 @@ const localStoragePersister: Persister = {
   },
 };
 
-/** Must only be called from an effect — there is no `window` during prerender. */
-export function startCachePersistence(queryClient: QueryClient): void {
-  void persistQueryClient({
-    queryClient,
-    persister: localStoragePersister,
-    maxAge: 24 * 60 * 60 * 1000,
-  });
-}
+/**
+ * Handed to `PersistQueryClientProvider` rather than kicked off from an effect.
+ * The restore is asynchronous, so whoever starts it has to stop queries firing
+ * until it lands — otherwise a returning user's first fetch beats the cache
+ * they already have on disk. Only the provider can do that: it flips
+ * `IsRestoringProvider` off when the restore settles, and `useQuery` refuses to
+ * subscribe (and so to fetch) while that flag is on.
+ *
+ * The provider reads storage from an effect, which is also why `window` is
+ * never touched during prerender — but the persister guards anyway, because
+ * Safari private mode throws on access instead of returning null.
+ */
+export const cachePersistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
+  persister: localStoragePersister,
+  maxAge: 24 * 60 * 60 * 1000,
+};

@@ -60,8 +60,23 @@ export function RequireSession({
 /**
  * The inverse, for the auth screens: someone already signed in who navigates to
  * /login should land in the app rather than be asked to sign in again.
+ *
+ * Unlike `RequireSession` this renders nothing and gates nothing. The gate it
+ * replaces returned a spinner while `status === 'loading'`, and since that is
+ * also the state the server prerenders in — `restore()` cannot read
+ * `localStorage` without a `window` — the shipped HTML for /welcome, /login and
+ * /register *was* a spinner: no real content until ~630 KiB of JS had parsed
+ * and hydrated. Blocking bought nothing, either. A signed-out visitor is the
+ * overwhelming case and sees the screen they asked for; the rare signed-in one
+ * gets a form for the few milliseconds before the effect below fires, and a
+ * form is harmless — worst case they sign in again.
+ *
+ * Still `/today` and not the onboarding-aware destination `LandingRedirect`
+ * picks: an unonboarded user bounces off `/today` into /onboarding/profile via
+ * `RequireSession`, which is what this route did before and one fewer /me
+ * request on a screen that does not need it.
  */
-export function RequireAnon({ children }: { children: React.ReactNode }) {
+export function RedirectIfSignedIn() {
   const router = useRouter();
   const status = useSession((s) => s.status);
 
@@ -69,7 +84,43 @@ export function RequireAnon({ children }: { children: React.ReactNode }) {
     if (status === 'signedIn') router.replace('/today');
   }, [router, status]);
 
-  if (status === 'loading' || status === 'signedIn') return <LoadingScreen />;
+  return null;
+}
+
+/**
+ * The entry route's half of the same split: `/` shows the landing screen to
+ * everyone and this sends a session on to where it belongs — /today, or
+ * onboarding if it was never finished. The rules are app/index.tsx's, in its
+ * order.
+ *
+ * Onboarding state comes from /me rather than from local state alone, so a user
+ * who onboarded on another device is not asked again. While that first request
+ * is in flight the store's cached value is used, which avoids a flash of the
+ * wrong stack on a warm start.
+ *
+ * This one *does* take the screen over once it knows there is a session, which
+ * `RedirectIfSignedIn` deliberately does not: `/` is where login lands
+ * (`router.replace('/')`), so a signed-in user passes through here on the hot
+ * path, and for an unonboarded one the /me round trip above would otherwise
+ * leave "Create an account" on screen for its whole duration. The condition is
+ * `'signedIn'` and never `'loading'` — swapping in the spinner during 'loading'
+ * would rebuild exactly the prerender problem this change removes.
+ */
+export function LandingRedirect({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const status = useSession((s) => s.status);
+  const cachedOnboarded = useSession((s) => s.onboarded);
+  const me = useMe();
+
+  const waiting = status === 'loading' || (status === 'signedIn' && me.isPending && !cachedOnboarded);
+
+  useEffect(() => {
+    if (waiting || status !== 'signedIn') return;
+    const onboarded = me.data?.onboarded ?? cachedOnboarded;
+    router.replace(onboarded ? '/today' : '/onboarding/profile');
+  }, [cachedOnboarded, me.data?.onboarded, router, status, waiting]);
+
+  if (status === 'signedIn') return <LoadingScreen />;
 
   return <>{children}</>;
 }

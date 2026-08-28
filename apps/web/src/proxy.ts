@@ -19,10 +19,21 @@ import { NextResponse, type NextRequest } from 'next/server';
  * onto its own script tags. `'strict-dynamic'` then lets those trusted scripts
  * load the chunk graph without every chunk needing to be listed.
  *
- * The usual objection to nonces — they force dynamic rendering, losing static
- * prerendering — costs this app almost nothing. Every route is a client
- * component behind a session guard, so the prerendered HTML is a loading
- * spinner either way; there is no static content being given up.
+ * The usual objection to nonces is that they force dynamic rendering, losing
+ * static prerendering. That was free when this was written, because every route
+ * was a client component behind a session guard and the HTML was a spinner
+ * either way. It is no longer free: `/`, `/welcome`, `/login` and `/register`
+ * now render real markup on the server, and a per-request nonce means that
+ * markup cannot be served from an edge cache.
+ *
+ * The tradeoff still favours the nonce. What those routes bought was first
+ * contentful paint — content in the HTML instead of behind ~630 KiB of JS — and
+ * that is unaffected by where the HTML is rendered. Rendering it per request
+ * costs a Worker invocation whose measured TTFB is ~44 ms, against giving up the
+ * only real defence for tokens sitting in `localStorage`. If that HTML ever
+ * needs to be cacheable, the escape route is hashing the four inline scripts
+ * rather than nonce-ing them — harder to maintain, since their content varies
+ * per route and per build.
  */
 
 /** The API origin, from the same build-time value the client is compiled with. */

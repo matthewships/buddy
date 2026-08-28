@@ -16,9 +16,26 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/**
+ * The API is on a different origin, so the first request to it pays DNS, TCP and
+ * TLS before it can even start — and that request is on the critical path, since
+ * nothing renders until `/me` resolves. Preconnecting overlaps that handshake
+ * with the JS download instead of queueing behind it, which is worth roughly
+ * 100-200ms on a mobile connection.
+ *
+ * `crossOrigin` is required rather than decorative: the app's calls to this
+ * origin are CORS requests (they carry an `Authorization` header), and a socket
+ * opened without it cannot be reused for one.
+ */
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="preconnect" href={API_URL} crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href={API_URL} />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>

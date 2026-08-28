@@ -373,9 +373,12 @@ readable.
 **Routing.** Onboarding sits under a real `/onboarding/*` segment. Next strips
 route groups from the URL just as Expo Router does, so `(onboarding)/profile`
 and `(tabs)/profile` would both have resolved to `/profile` and failed the
-build. Guards are a web addition (`RequireSession`, `RequireAnon`): the Expo
-app has one entry route that picks a stack, whereas every web screen has a URL
-that can be typed, bookmarked or shared.
+build. Guards are a web addition (`RequireSession`, `RedirectIfSignedIn`,
+`LandingRedirect`): the Expo app has one entry route that picks a stack, whereas
+every web screen has a URL that can be typed, bookmarked or shared. Only
+`RequireSession` withholds anything — the other two render their screen and
+redirect a session away from it, because the auth screens are public and gating
+them put the whole first paint behind hydration (see §5.5).
 
 **Security headers (`src/proxy.ts`).** Added because the app shipped without
 any, which matters here specifically: tokens in `localStorage` made "an XSS on
@@ -390,9 +393,16 @@ script tags (all 15 of them) after reading it from the request's CSP header;
 The header and body nonces must match within a response or every script is
 blocked, which is worth asserting rather than assuming.
 
-Nonces normally cost static prerendering. Here that is free: every route is a
-client component behind a session guard, so the prerendered HTML is a spinner
-regardless.
+Nonces normally cost static prerendering. That was free when the CSP was added,
+because every route was a client component behind a session guard and the HTML
+was a spinner regardless. It is no longer free — `/`, `/welcome`, `/login` and
+`/register` now render real markup (§5.5), and a per-request nonce means that
+markup cannot sit in an edge cache. The tradeoff still favours the nonce: what
+those routes bought was first contentful paint, which does not depend on where
+the HTML is rendered, and rendering per request costs a Worker invocation
+measured at ~44 ms TTFB. If that HTML ever needs to be cacheable, the escape
+route is hashing the four inline scripts instead of nonce-ing them — harder to
+maintain, because their content varies per route and per build.
 
 `connect-src` and `img-src` are **derived from `NEXT_PUBLIC_API_URL`**, and the
 WebSocket origin from it the same way `chat/useChatSocket.ts` derives it — so a
@@ -412,12 +422,105 @@ headers ride on that path. It is verified working end to end, but an OpenNext
 upgrade is the moment to re-check that the headers are still served — a smoke
 assertion in CI would be the cheap way to stop that regressing silently.
 
-**Consequence worth knowing.** Because the session lives in `localStorage` and
-every screen is a client component, the server-rendered HTML for every route is
-a loading spinner — the Worker cannot know who is asking. That matches the
-mobile app's own cold start (`ActivityIndicator`, then a redirect), and it
-means the web client has no SEO surface. Making `/welcome` server-rendered
-would be the change to make if that ever matters.
+**Consequence worth knowing.** The Worker cannot know who is asking — the
+session is in `localStorage` — so every *authenticated* screen still ships as a
+loading spinner and hydrates into content. That matches the mobile app's own
+cold start (`ActivityIndicator`, then a redirect). The public screens no longer
+work that way; see §5.5.
+
+---
+
+## 5.5 Web client performance
+
+The first version of this client took **2.1 s to show content on a throttled
+phone** (slow 4G, 4x CPU) and 6.5 s on 3G, while first contentful paint was
+~200 ms. The gap was all client-side: nothing rendered until ~800 KiB of
+JavaScript had downloaded, parsed and hydrated. The API was never the problem —
+measured TTFB 44 ms, `/api/me` 11-105 ms, three parallel task queries 137 ms.
+
+Four fixes, each measured rather than assumed:
+
+**1. `@buddy/shared` is marked `sideEffects: false`.** The barrel re-exports
+`./schemas`, which imports zod. Seventeen files in the web client import that
+barrel and sixteen want only plain constants. Without the annotation a bundler
+must assume evaluating `./schemas` matters, so **zod shipped on every route's
+critical path** — 306 KiB to support one `handleSchema.safeParse` call on the
+group screen. Proved by experiment: deleting that one call did not shrink the
+bundle at all; only the missing annotation was holding zod there. The package is
+pure declarations, so the annotation is truthful rather than convenient.
+Critical path 804 -> 631 KiB; slow 4G 2118 -> 1542 ms.
+
+**2. The public screens render on the server.** `RequireAnon` returned a spinner
+while `status === 'loading'`, and since that is also the state the server
+prerenders in, the HTML for `/welcome`, `/login` and `/register` *was* a spinner.
+It was also pointless: those screens are public, so there was nothing to
+withhold. It is now `RedirectIfSignedIn`, which renders nothing, sits beside the
+children and only redirects a session away. `WelcomeScreen` went further and
+became a real server component using `next/link`, so its buttons work before any
+JavaScript runs.
+
+**3. `/` renders the landing screen instead of redirecting to it.** It used to
+load the whole bundle, read the session, and only then navigate — a wasted load
+cycle worth ~500 ms. `LandingRedirect` keeps the signed-in decision (`/today`,
+or `/onboarding/profile`) and takes the screen over only once it knows there is
+a session, so a signed-in user never sees a flash of "Create an account".
+
+**4. The persisted query cache actually serves the first paint.** It did not
+before: `startCachePersistence` ran in an effect and `persistQueryClient`
+restores asynchronously, so queries mounted and fetched before the restore
+landed and a returning user waited on `/me` for data already in `localStorage`.
+Now `PersistQueryClientProvider` supplies the options. Worth knowing *how* that
+works, because it is not a render gate: it renders children immediately and sets
+`IsRestoringProvider`, and `useBaseQuery` computes
+`shouldSubscribe = !isRestoring && subscribed` while `queryObserver` forces
+`fetchStatus: 'idle'`. No observer subscribes, so no `queryFn` runs, until the
+read settles — the fetch is gated, not the paint, which avoids a blank frame.
+
+Plus a `preconnect` to the API origin, with `crossOrigin` because the app's calls
+there carry an `Authorization` header and are therefore CORS requests — a socket
+opened without it cannot be reused for one.
+
+What is left is close to the floor for this stack: React and react-dom are
+223 KiB of the remaining 631 KiB and the Next runtime another 265 KiB. Going
+materially lower means a different framework, not tuning.
+
+---
+
+## 5.6 Notifications on the web
+
+A browser cannot receive the Expo push messages the API sends, and full Web Push
+is **not implemented**: it would need a service worker, a VAPID keypair,
+server-side ECDH + HKDF + AES128GCM payload encryption, a fan-out per
+subscription endpoint in the queue consumer, and a D1 migration — `devices` has a
+`notNull expoPushToken` and a CHECK constraint on `platform` against `PLATFORMS`,
+and SQLite cannot alter a CHECK, so that is a table rebuild plus a change to a
+shared enum the API validators depend on.
+
+What exists instead reuses the fallback the mobile app already has for denied
+permissions: the 15-second `useIncomingRequests` poll. `useRequestNotifications`
+turns genuinely new rows into a Notifications API banner. No service worker, no
+server change, no migration.
+
+Three things about it that are easy to get wrong, and are handled:
+
+- **The first payload is adopted as a baseline and notifies nothing**, so a
+  request already pending when the app opens does not fire a stale banner.
+- **It only fires when the tab is hidden.** With the tab in front,
+  `RequestBanner` is already on screen.
+- **The poll it depends on stops in exactly the state it is needed.**
+  `queryObserver` skips interval refetches unless `refetchIntervalInBackground`
+  is set or `focusManager.isFocused()`, and that check is
+  `visibilityState !== 'hidden'`. So the hook drives its own 15-second refetch
+  while hidden and armed, rather than changing the shared query's options for
+  every caller. The two ticks never overlap: visible, only the query's interval
+  runs; hidden, only the hook's.
+
+Honest limits: it works only while a tab is open, `new Notification()` throws on
+Android Chrome (which requires a service worker's `showNotification`), so this is
+effectively desktop-first, and Chrome coalesces timers in long-hidden tabs to
+roughly once a minute, so delivery can lag by up to a minute against the
+5-minute request TTL. The Profile card states the permission state honestly,
+including that a `denied` permission cannot be re-prompted from the page.
 
 ---
 

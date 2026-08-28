@@ -10,6 +10,7 @@ import { useMe, useUpdateMe } from '@/api/auth';
 import { useDeleteAccount } from '@/api/board';
 import { useProfile } from '@/api/users';
 import { useSession } from '@/auth/store';
+import { useNotificationPreference } from '@/hooks/useNotificationPreference';
 import {
   Avatar,
   Button,
@@ -138,6 +139,8 @@ export default function Profile() {
         </div>
       </Card>
 
+      <NotificationCard />
+
       <Card>
         <p className="mb-2 text-sm font-semibold text-ink-muted">Stats</p>
         {stats.isPending ? (
@@ -207,6 +210,91 @@ export default function Profile() {
         }
       />
     </Screen>
+  );
+}
+
+/**
+ * Browser notifications for incoming buddy requests.
+ *
+ * A control rather than something the app arranges by itself: browsers only
+ * allow `Notification.requestPermission()` from a user gesture, and prompting on
+ * page load is penalised — some browsers auto-deny it outright, which would burn
+ * the one chance there is, since a denied permission can never be re-asked from
+ * the page.
+ *
+ * The three real permission states are reported as they are. The wish and the
+ * permission are separate (see hooks/useNotificationPreference.ts), so a granted
+ * permission with the feature switched off honestly reads as off.
+ */
+function NotificationCard() {
+  const notifications = useNotificationPreference();
+
+  // Everything here is read from `window` in an effect, because these routes are
+  // prerendered without one. Until that effect has run there is nothing true to
+  // say, and guessing would be a hydration mismatch.
+  if (notifications.state === 'unknown') return null;
+
+  return (
+    <Card>
+      <div className="flex flex-row items-center justify-between gap-4">
+        <div className="flex flex-1 flex-col">
+          <p className="text-base font-semibold text-ink">Buddy request alerts</p>
+
+          {notifications.state === 'granted' ? (
+            <p className="text-sm text-ink-muted">
+              {notifications.enabled
+                ? 'Your browser will notify you when a request arrives while you are on another tab.'
+                : 'Notifications are allowed, but turned off here.'}
+            </p>
+          ) : null}
+
+          {notifications.state === 'default' ? (
+            <p className="text-sm text-ink-muted">
+              Get notified when a buddy request arrives while you are on another tab. A request
+              expires in 5 minutes, so a missed one is a lost one.
+            </p>
+          ) : null}
+
+          {notifications.state === 'denied' ? (
+            <p className="text-sm text-warning">
+              Your browser is blocking notifications for Buddy. This page cannot ask again — turn
+              them back on in your browser&apos;s site settings for this address.
+            </p>
+          ) : null}
+
+          {notifications.state === 'unsupported' ? (
+            <p className="text-sm text-ink-subtle">This browser cannot show notifications.</p>
+          ) : null}
+
+          {/* Said plainly rather than discovered later: this is a tab-bound,
+              desktop-first fallback, not push. */}
+          {notifications.state === 'granted' || notifications.state === 'default' ? (
+            <p className="mt-2 text-xs text-ink-subtle">
+              Only works while a Buddy tab is open, and not at all in Chrome on Android. The
+              in-app banner and the 15-second check are unaffected either way.
+            </p>
+          ) : null}
+        </div>
+
+        {notifications.state === 'granted' ? (
+          <Toggle
+            checked={notifications.enabled}
+            onChange={notifications.setEnabled}
+            label="Buddy request alerts"
+          />
+        ) : null}
+      </div>
+
+      {notifications.state === 'default' ? (
+        <Button
+          label="Enable notifications"
+          variant="secondary"
+          loading={notifications.busy}
+          onClick={() => void notifications.enable()}
+          className="mt-3 w-auto self-start"
+        />
+      ) : null}
+    </Card>
   );
 }
 

@@ -1,28 +1,13 @@
-'use client';
+import { WelcomeScreen } from '@/components';
 
-import { useRouter } from 'next/navigation';
-
-import { Button, Screen } from '@/components';
-
+/**
+ * Kept as a route even though `/` now serves the same screen: `RequireSession`
+ * sends a signed-out user to /welcome, and that redirect target should not
+ * depend on the entry route's own guard.
+ *
+ * The content lives in `WelcomeScreen` so the two routes cannot drift, and this
+ * page is a server component — the frame comes from the (auth) layout.
+ */
 export default function Welcome() {
-  const router = useRouter();
-
-  return (
-    <Screen>
-      <div className="flex flex-1 flex-col justify-center gap-3">
-        <h1 className="text-4xl font-bold text-ink">Buddy</h1>
-        <p className="text-base text-ink-muted">
-          Plan your day, get it approved by a buddy, build the streak.
-        </p>
-        <div className="mt-8 flex flex-col gap-3">
-          <Button label="Create an account" onClick={() => router.push('/register')} />
-          <Button
-            label="I already have an account"
-            variant="ghost"
-            onClick={() => router.push('/login')}
-          />
-        </div>
-      </div>
-    </Screen>
-  );
+  return <WelcomeScreen />;
 }

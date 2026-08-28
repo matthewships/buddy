@@ -1,38 +1,27 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-
-import { useMe } from '@/api/auth';
-import { useSession } from '@/auth/store';
-import { LoadingScreen } from '@/components/Spinner';
+import { AppFrame, LandingRedirect, WelcomeScreen } from '@/components';
 
 /**
- * The entry route picks the stack: auth, onboarding, or the tabs — the same
- * decision apps/mobile/app/index.tsx makes, and for the same reasons.
+ * The entry route.
  *
- * Onboarding state comes from /me rather than from local state alone, so a user
- * who onboarded on another device is not asked again. While that first request
- * is in flight the store's cached value is used, which avoids a flash of the
- * wrong stack on a warm start.
+ * apps/mobile/app/index.tsx is a pure switchboard — it picks a stack and
+ * renders nothing itself, because a phone app has no visitors, only users. `/`
+ * on the web is also the address someone types first, so it renders the landing
+ * screen directly instead of spending a load cycle showing a spinner and then
+ * redirecting to /welcome for the identical content.
+ *
+ * The stack decision for a *signed-in* visitor is unchanged and now lives in
+ * `LandingRedirect`, which takes the screen over as soon as it knows there is a
+ * session. Signed out, nothing redirects any more: this is the page they wanted.
+ *
+ * `AppFrame` is applied here because the root layout has none — the route
+ * groups each bring their own.
  */
 export default function Index() {
-  const router = useRouter();
-  const status = useSession((s) => s.status);
-  const cachedOnboarded = useSession((s) => s.onboarded);
-  const me = useMe();
-
-  const waiting = status === 'loading' || (status === 'signedIn' && me.isPending && !cachedOnboarded);
-
-  useEffect(() => {
-    if (waiting) return;
-    if (status === 'signedOut') {
-      router.replace('/welcome');
-      return;
-    }
-    const onboarded = me.data?.onboarded ?? cachedOnboarded;
-    router.replace(onboarded ? '/today' : '/onboarding/profile');
-  }, [cachedOnboarded, me.data?.onboarded, router, status, waiting]);
-
-  return <LoadingScreen />;
+  return (
+    <AppFrame>
+      <LandingRedirect>
+        <WelcomeScreen />
+      </LandingRedirect>
+    </AppFrame>
+  );
 }

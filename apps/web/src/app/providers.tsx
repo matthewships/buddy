@@ -1,9 +1,9 @@
 'use client';
 
-import { QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useEffect, useState } from 'react';
 
-import { makeQueryClient, startCachePersistence } from '@/api/queryClient';
+import { cachePersistOptions, makeQueryClient } from '@/api/queryClient';
 import { useSession } from '@/auth/store';
 
 /**
@@ -20,16 +20,26 @@ import { useSession } from '@/auth/store';
  *
  * The query client is created per mount rather than imported as a module
  * singleton — see api/queryClient.ts for why that matters inside a Worker.
+ *
+ * Persistence is wired through `PersistQueryClientProvider` rather than started
+ * from the effect below, because an effect cannot hold queries back: they mount
+ * and fetch in the same commit, so the restore always lost the race and a
+ * returning user paid for a `/me` round trip to see data that was already in
+ * `localStorage`. The provider marks the tree as restoring until the read
+ * settles, and `useQuery` stays idle for as long as that flag is set.
  */
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(makeQueryClient);
   const restore = useSession((s) => s.restore);
 
   useEffect(() => {
-    // Both touch `localStorage`, so neither can run during prerender.
-    startCachePersistence(queryClient);
+    // Reads tokens from `localStorage`, so it cannot run during prerender.
     void restore();
-  }, [queryClient, restore]);
+  }, [restore]);
 
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <PersistQueryClientProvider client={queryClient} persistOptions={cachePersistOptions}>
+      {children}
+    </PersistQueryClientProvider>
+  );
 }
