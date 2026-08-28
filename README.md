@@ -89,7 +89,7 @@ Program; see `apps/mobile/EAS.md`.
 ```bash
 npm run lint        # eslint, flat config at the root
 npm run typecheck   # tsc across all four workspaces
-npm test            # 215 tests
+npm test            # 216 tests
 ```
 
 The API suite runs inside `workerd` against real D1, KV and a real Durable

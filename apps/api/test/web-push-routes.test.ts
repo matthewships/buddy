@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '../src/db/client.js';
-import { deliverPush } from '../src/services/push.js';
+import { deliverPush, vapidKeysFrom } from '../src/services/push.js';
 
 import { del, get, post, resetRateLimits, signUp } from './helpers.js';
 
@@ -14,12 +14,15 @@ const KEYS = {
   auth: 'BTBZMqHH6r4Tts7J_aSIgg',
 };
 
-/** A VAPID pair the API is not otherwise configured with — see wrangler.jsonc. */
+/** The pair vitest.config.ts binds for the test Worker. */
 const VAPID = {
   VAPID_PUBLIC_KEY:
     'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8',
   VAPID_PRIVATE_KEY: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw',
 };
+
+/** An env with the keys explicitly removed, rather than one that happens to lack them. */
+const WITHOUT_VAPID = { ...env, VAPID_PUBLIC_KEY: undefined, VAPID_PRIVATE_KEY: undefined };
 
 function subscription(endpoint: string) {
   return { endpoint, keys: KEYS };
@@ -32,14 +35,20 @@ async function rowsFor(userId: string) {
 }
 
 describe('web push subscriptions', () => {
-  it('reports the VAPID key as unavailable when the server has none', async () => {
+  it('hands the browser the key it must subscribe against', async () => {
     const user = await signUp('vapid-key@example.com');
     const res = await get('/api/me/web-push/key', user.accessToken);
 
     expect(res.status).toBe(200);
-    // Not a 500: a client that learns the feature is off can say so, which is
-    // what makes deploying the API before the secrets exist safe.
-    expect(await res.json()).toEqual({ publicKey: null });
+    // Served rather than compiled into the web bundle: a subscription is bound
+    // to the key that created it, so the two must not be able to drift.
+    expect(await res.json()).toEqual({ publicKey: VAPID.VAPID_PUBLIC_KEY });
+  });
+
+  it('reports the key as unavailable when the server has none', () => {
+    // Not an error: a client that learns the feature is off can say so, which
+    // is what makes deploying the API before the secrets exist safe.
+    expect(vapidKeysFrom(WITHOUT_VAPID)).toBeNull();
   });
 
   it('stores a subscription and is idempotent when the client re-posts it', async () => {
@@ -123,7 +132,7 @@ describe('web push delivery', () => {
     );
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const result = await deliverPush(env, db(env.DB), [
+    const result = await deliverPush(WITHOUT_VAPID, db(env.DB), [
       { userIds: [user.userId], title: 'Ignored', body: 'No keys configured' },
     ]);
     fetchSpy.mockRestore();

@@ -27,6 +27,14 @@ export default defineConfig({
             // the tests can read them back.
             ENVIRONMENT: 'development',
             ADMIN_TOKEN: 'test-admin-token',
+            // Pinned rather than inherited: .dev.vars is gitignored, so a test
+            // that asserted on whatever VAPID keys happened to be in it would
+            // pass or fail depending on whose machine it ran on. These are the
+            // RFC 8291 example keys — public, and never used against a real
+            // push service.
+            VAPID_PUBLIC_KEY:
+              'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8',
+            VAPID_PRIVATE_KEY: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw',
           },
         },
       };
