@@ -14,9 +14,7 @@
     "binding": "ASSETS"
   },
 
-  "vars": {
-    // Baked into the client bundle at build time by Next, not read at runtime;
-    // kept here so `wrangler deploy` and the build agree on one value.
-    "NEXT_PUBLIC_API_URL": "https://buddy-api.ships.workers.dev"
-  }
+  // No vars and no bindings: the API URL is inlined into the client bundle at
+  // build time by next.config.ts, so nothing here is read at runtime. The web
+  // Worker holds no secrets and touches no D1, KV or R2 — it serves assets.
 }
