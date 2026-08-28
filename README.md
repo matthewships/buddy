@@ -13,13 +13,21 @@ original plan and why.
 apps/api       Cloudflare Worker — Hono, D1 + Drizzle, Durable Object chat,
                Queues for push, cron triggers
 apps/mobile    Expo SDK 57 app — Expo Router, NativeWind, TanStack Query
+apps/web       Next 16 app — App Router, Tailwind, TanStack Query; deployed as
+               a Worker by @opennextjs/cloudflare
 packages/shared  Zod schemas, goal/occupation lists, credit + badge rules
 ```
 
-`packages/shared` is the single source of truth for anything both sides must
-agree on. The app compiles against the Worker's own route types through Hono's
-`hc<AppType>()`, so a changed response shape is a type error rather than a
-runtime surprise.
+`packages/shared` is the single source of truth for anything all three must
+agree on. Both clients compile against the Worker's own route types through
+Hono's `hc<AppType>()`, so a changed response shape is a type error rather than
+a runtime surprise.
+
+`apps/web` is the same 21 screens as the app, against the same API — not a
+second backend. Its data layer is a deliberate copy of the app's rather than a
+shared package; `ARCHITECTURE.md` §5.4 records why, and every place the browser
+forced a genuine difference (tokens in `localStorage`, no push, `crossOrigin`
+on avatars).
 
 ## Running it
 
@@ -34,6 +42,9 @@ npm run dev:api
 
 # Metro; scan the QR code with a dev-client build
 npm run dev:mobile
+
+# web client on http://localhost:3000, pointed at the local API
+npm run dev:web
 ```
 
 Outside production the API logs email verification codes to the console, so you
@@ -77,14 +88,16 @@ Program; see `apps/mobile/EAS.md`.
 
 ```bash
 npm run lint        # eslint, flat config at the root
-npm run typecheck   # tsc across all three workspaces
+npm run typecheck   # tsc across all four workspaces
 npm test            # 165 tests
 ```
 
 The API suite runs inside `workerd` against real D1, KV and a real Durable
 Object rather than mocks, so a migration or constraint that would fail in
-production fails here. CI runs all of the above plus a Metro bundle, because
-Metro resolves imports differently from `tsc`.
+production fails here. CI runs all of the above plus a Metro bundle and the web
+Worker bundle, because a bundler resolves imports differently from `tsc` — and
+the web step builds the artifact that actually ships, not just a type-checked
+source tree.
 
 One limit worth knowing: **Miniflare does not enforce every runtime restriction
 the real platform does.** A PBKDF2 iteration count above 100,000 passes locally
@@ -102,6 +115,17 @@ npx wrangler deploy
 ```
 
 Live: `https://buddy-api.ships.workers.dev`
+
+The web client is a separate Worker and needs no secrets, no bindings and no
+migrations — it only serves the bundle:
+
+```bash
+npm run deploy:web        # next build + OpenNext bundle + wrangler deploy
+```
+
+`NEXT_PUBLIC_API_URL` is inlined at build time; `next.config.ts` defaults it to
+the deployed Worker for a production build and to `http://localhost:8787` for
+`next dev`, so neither needs a flag in the normal case.
 
 ## Outstanding
 

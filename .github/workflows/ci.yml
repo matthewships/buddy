@@ -44,3 +44,9 @@ jobs:
       # since Metro resolves differently from tsc.
       - name: Metro bundle
         run: npm run export --workspace @buddy/mobile
+
+      # Same reasoning for the web client, one step further: this runs `next
+      # build` *and* the OpenNext bundling, so what CI builds is the artifact
+      # that actually gets deployed rather than just a type-checked source tree.
+      - name: Web worker bundle
+        run: npm run build:worker --workspace @buddy/web

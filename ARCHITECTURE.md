@@ -330,14 +330,71 @@ apps/mobile/
 
 ---
 
+## 5.4 Web client (Next.js on Cloudflare) — added after Phase 6
+
+A browser front end at parity with the Expo app: the same 21 screens, the
+same flows, the same palette. It is a second client onto the *same* Worker,
+not a second backend — `apps/api` was not changed to accommodate it.
+
+**Stack.** Next 16 App Router, every screen a client component, Tailwind 3.4
+(not NativeWind, and not Tailwind 4 — the workspace pin holds), TanStack Query
+and Zustand exactly as on mobile, deployed as a Worker by
+`@opennextjs/cloudflare`. Static export was considered and rejected: it cannot
+serve `/buddies/[handle]` or `/groups/[id]/chat` without either
+`generateStaticParams` over unknown ids or collapsing them into query
+parameters, and both break screen parity.
+
+**Code sharing: copied, not extracted.** `src/api/*`, `useCountdown`,
+`activity`, the onboarding draft and the chat socket are *byte-identical*
+copies of their `apps/mobile` counterparts — 11 files. Extracting them into a
+`packages/client` would have meant refactoring a shipped app with a passing
+test suite that nobody asked to touch. The copies cannot silently drift
+against the API, because both compile through `hc<AppType>()`: a changed route
+shape is a type error in both front ends. They *can* drift from each other,
+which is the accepted cost, and the reason the ported files keep mobile's prop
+names (`onChangeText`) and comments — so a diff between the two trees stays
+readable.
+
+**Where the platform forced a real difference:**
+
+| Concern | Mobile | Web | Why |
+| --- | --- | --- | --- |
+| Tokens | `expo-secure-store` (Keychain) | `localStorage` | A cookie is impossible: the API sends `Access-Control-Allow-Origin: *`, which the fetch spec forbids combining with credentialed requests. **An XSS on this origin can read the tokens** — accepted, and mitigated only by the 15-minute access TTL. |
+| Query client | Module singleton | Factory, one per mount | One process per user makes a singleton safe on a phone. A Worker isolate serves many users' requests, where it would be a cross-request cache. |
+| Avatars | `expo-image` | `<img crossOrigin>` | **Load-bearing.** `secureHeaders()` puts `Cross-Origin-Resource-Policy: same-origin` on `/api/media/*`; a plain cross-origin `<img>` is a `no-cors` request and CORP refuses it, so every avatar would fail on web while working in the app, which never applies CORP. `crossOrigin` makes it a CORS request, which CORP does not police and the route's existing `ACAO: *` satisfies. The alternative was weakening CORP in the API. |
+| Avatar upload | `expo-image-picker` (crops, re-encodes) | `<input type="file">` + canvas | The picker was doing the 1:1 crop and quality reduction. The server caps uploads at 5 MB and a phone camera clears that, so the resize had to be reimplemented, not dropped. |
+| Push | `expo-notifications` | none | A browser cannot receive Expo push. The app sits permanently on the fallback mobile already has for denied permissions: the 15-second poll in `useIncomingRequests`. |
+| Refresh | `RefreshControl` | explicit button + `refetchOnWindowFocus` | Pull-to-refresh is the browser's own gesture on touch and absent on desktop. |
+| Infinite lists | `onEndReached` | `IntersectionObserver` sentinel | Fires off the main thread, no scroll throttling; `rootMargin` plays the part of `onEndReachedThreshold`. |
+| Inverted chat | `<FlatList inverted>` | `flex-col-reverse` | Same effect on a DOM column, so the newest-first API order is used as-is. Needs `min-h-0` inside `h-dvh` or the flex child never scrolls. |
+| Destructive confirm | `Alert.alert` | `ConfirmSheet` | `window.confirm` cannot mark which choice is destructive and is browser-suppressible — wrong for account deletion. |
+| Back | native stack / hardware button | `BackLink` | These URLs can be opened cold with no history, so it falls back to the parent route rather than `router.back()` into nothing. |
+
+**Routing.** Onboarding sits under a real `/onboarding/*` segment. Next strips
+route groups from the URL just as Expo Router does, so `(onboarding)/profile`
+and `(tabs)/profile` would both have resolved to `/profile` and failed the
+build. Guards are a web addition (`RequireSession`, `RequireAnon`): the Expo
+app has one entry route that picks a stack, whereas every web screen has a URL
+that can be typed, bookmarked or shared.
+
+**Consequence worth knowing.** Because the session lives in `localStorage` and
+every screen is a client component, the server-rendered HTML for every route is
+a loading spinner — the Worker cannot know who is asking. That matches the
+mobile app's own cold start (`ActivityIndicator`, then a redirect), and it
+means the web client has no SEO surface. Making `/welcome` server-rendered
+would be the change to make if that ever matters.
+
+---
+
 ## 6. Monorepo layout
 ```
 FindBuddy/
   ARCHITECTURE.md
-  package.json               npm workspaces; scripts: dev:api, dev:mobile, typecheck, lint, test
+  package.json               npm workspaces; scripts: dev:api, dev:mobile, dev:web, typecheck, lint, test
   apps/
     api/                     Cloudflare Worker
     mobile/                  Expo app
+    web/                     Next.js app (Cloudflare Worker via OpenNext)
   packages/
     shared/                  zod schemas, API types, constants:
                                goals.ts, occupations.ts, credits.ts, badges.ts, limits.ts
