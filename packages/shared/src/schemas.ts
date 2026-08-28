@@ -17,6 +17,8 @@ import {
   MAX_OCCUPATION_TEXT,
   MAX_PAGE_SIZE,
   MAX_PROOF_TEXT,
+  MAX_PUSH_ENDPOINT,
+  MAX_PUSH_KEY,
   MAX_REPORT_NOTE,
   MAX_REQUEST_MESSAGE,
   MAX_REVIEW_COMMENT,
@@ -209,6 +211,28 @@ export const updateMeSchema = z
 export const registerDeviceSchema = z.object({
   expoPushToken: z.string().min(1).max(200),
   platform: z.enum(PLATFORMS),
+});
+
+/**
+ * A browser's Web Push subscription (§4.6), shaped exactly like the JSON that
+ * `PushSubscription.toJSON()` produces, so the client can post it unmodified.
+ *
+ * `expirationTime` is part of that JSON and is deliberately not accepted: it is
+ * null in every browser that ships today, and the server learns a subscription
+ * is dead the only way that is reliable — a 404 or 410 from the push service.
+ */
+export const webPushSubscriptionSchema = z.object({
+  endpoint: z.url().max(MAX_PUSH_ENDPOINT),
+  keys: z.object({
+    /** The subscription's P-256 public key, base64url, uncompressed point. */
+    p256dh: z.string().min(1).max(MAX_PUSH_KEY),
+    /** The 16-byte shared auth secret, base64url. */
+    auth: z.string().min(1).max(MAX_PUSH_KEY),
+  }),
+});
+
+export const unsubscribeWebPushSchema = z.object({
+  endpoint: z.url().max(MAX_PUSH_ENDPOINT),
 });
 
 /* ------------------------------------------------------------------ *

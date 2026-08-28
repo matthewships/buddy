@@ -150,6 +150,40 @@ export const devices = sqliteTable(
   ],
 );
 
+/**
+ * Browser push subscriptions (§4.6).
+ *
+ * Kept apart from `devices` rather than folded into it. A Web Push subscription
+ * is not a token: it is a push-service URL plus two keys the browser generates,
+ * and it has no `expo_push_token` and no `platform` from `PLATFORMS`. Widening
+ * `devices` would have meant making a NOT NULL column nullable and rebuilding a
+ * CHECK constraint — SQLite cannot alter either in place — for a row shape that
+ * shares no column with the ones already there.
+ */
+export const webPushSubscriptions = sqliteTable(
+  'web_push_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The push service URL to POST the encrypted payload to. */
+    endpoint: text('endpoint').notNull(),
+    /** The subscription's P-256 public key, base64url (RFC 8291 `ua_public`). */
+    p256dh: text('p256dh').notNull(),
+    /** The 16-byte shared auth secret, base64url. */
+    auth: text('auth').notNull(),
+    updatedAt: text('updated_at').notNull().default(now),
+  },
+  (t) => [
+    // An endpoint identifies one browser profile, exactly as a push token
+    // identifies one app install: if it reappears for another user — a shared
+    // computer, a second account — the row is reassigned, not duplicated.
+    uniqueIndex('web_push_endpoint_unique').on(t.endpoint),
+    index('web_push_user_idx').on(t.userId),
+  ],
+);
+
 export const refreshTokens = sqliteTable(
   'refresh_tokens',
   {
@@ -471,6 +505,7 @@ export type NewUser = typeof users.$inferInsert;
 export type BuddyProfile = typeof buddyProfiles.$inferSelect;
 export type EmailCode = typeof emailCodes.$inferSelect;
 export type Device = typeof devices.$inferSelect;
+export type WebPushSubscription = typeof webPushSubscriptions.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type Group = typeof groups.$inferSelect;
 export type GroupMember = typeof groupMembers.$inferSelect;

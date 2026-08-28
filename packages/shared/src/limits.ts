@@ -89,3 +89,14 @@ export const MAX_REPORT_NOTE = 600;
 /** Pagination. */
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 50;
+
+/**
+ * Web Push subscription fields (§4.6). The endpoint is a URL chosen by the
+ * browser's push service — FCM's are ~200 characters, Mozilla's ~100 — and the
+ * two keys are fixed-size values the browser generates: a P-256 public point
+ * (65 bytes) and a 16-byte auth secret, both base64url. The caps are generous
+ * rather than exact so a push service lengthening its URLs cannot lock users
+ * out of notifications.
+ */
+export const MAX_PUSH_ENDPOINT = 1000;
+export const MAX_PUSH_KEY = 200;
