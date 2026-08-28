@@ -130,9 +130,14 @@ the deployed Worker for a production build and to `http://localhost:8787` for
 ## Outstanding
 
 - **Push credentials.** An APNs key and FCM v1 credentials need uploading to EAS
-  before push works on a real device. The web client is unaffected: a browser
-  cannot receive Expo push, so it runs permanently on the 15-second poll that
-  exists as the denied-permission fallback.
+  before push works on a real device. This does not block the web client: a
+  browser cannot receive Expo push at all, so it raises its own notifications
+  off the 15-second incoming-request poll (`useRequestNotifications`). That
+  works only while a tab is open and only where `new Notification()` is
+  supported — desktop, not Android Chrome. **Real Web Push is not
+  implemented**; ARCHITECTURE.md §5.6 lists what it would take (service worker,
+  VAPID, payload encryption, and a D1 migration that rebuilds a CHECK
+  constraint).
 - **EAS builds** need `eas login`; profiles are configured in
   `apps/mobile/eas.json`.
 - **`apps/web` has no test suite.** Every other workspace has one, and
