@@ -55,6 +55,7 @@ export default function BuddyProfile() {
 
   const person = profile.data;
   const goal = person.goalText?.trim() || label(GOALS, person.goalKey);
+  const goal2 = label(GOALS, person.goalKey2);
   const occupation = person.occupationText?.trim() || label(OCCUPATIONS, person.occupationKey);
   const hasPending = Boolean(current.data?.request);
   const alreadySent = sendRequest.isSuccess;
@@ -73,6 +74,7 @@ export default function BuddyProfile() {
 
       <Card>
         {goal ? <p className="text-lg text-ink">{goal}</p> : null}
+        {goal2 ? <p className="text-base text-ink-muted">+ {goal2}</p> : null}
         {occupation ? <p className="text-base text-ink-muted">{occupation}</p> : null}
         {person.buddyProfile?.headline ? (
           <p className="mt-2 text-base italic text-ink-muted">{person.buddyProfile.headline}</p>

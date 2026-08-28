@@ -32,7 +32,7 @@ export const buddyRoutes = new Hono<AppEnv>()
 
     const viewer = await client.query.users.findFirst({
       where: eq(users.id, viewerId),
-      columns: { goalKey: true, occupationKey: true },
+      columns: { goalKey: true, goalKey2: true, occupationKey: true },
     });
 
     // Group-mates are excluded, so find the caller's groups first.
@@ -59,8 +59,20 @@ export const buddyRoutes = new Hono<AppEnv>()
     const since = activeSince();
 
     // The match score, mirroring §2.2's ordering rules.
+    //
+    // "Same goal" is now an overlap test between two pairs rather than an
+    // equality test between two values (§2.1, MAX_GOALS = 2). It stays worth
+    // sameGoal once, not twice: sharing both goals is not twice as good a match
+    // as sharing one, and doubling it would outrank an active buddy purely on a
+    // second-goal coincidence.
+    const viewerGoals = [viewer?.goalKey ?? null, viewer?.goalKey2 ?? null];
+    const goalOverlap = sql`(
+      (${users.goalKey} IS NOT NULL AND ${users.goalKey} IN (${viewerGoals[0]}, ${viewerGoals[1]}))
+      OR (${users.goalKey2} IS NOT NULL AND ${users.goalKey2} IN (${viewerGoals[0]}, ${viewerGoals[1]}))
+    )`;
+
     const score = sql<number>`(
-      CASE WHEN ${users.goalKey} IS NOT NULL AND ${users.goalKey} = ${viewer?.goalKey ?? null}
+      CASE WHEN ${goalOverlap}
            THEN ${MATCH_SCORE.sameGoal} ELSE 0 END
       + CASE WHEN ${users.occupationKey} IS NOT NULL AND ${users.occupationKey} = ${viewer?.occupationKey ?? null}
              THEN ${MATCH_SCORE.sameOccupation} ELSE 0 END
@@ -74,7 +86,9 @@ export const buddyRoutes = new Hono<AppEnv>()
       // Only fully onboarded users: a card with no goal is useless.
       sql`${users.onboardedAt} IS NOT NULL`,
       notInArray(users.id, excluded),
-      ...(goal ? [eq(users.goalKey, goal)] : []),
+      // A filter on one goal matches a card that carries it in either slot;
+      // otherwise a user's second goal would be invisible to the directory.
+      ...(goal ? [or(eq(users.goalKey, goal), eq(users.goalKey2, goal))!] : []),
       ...(occupation ? [eq(users.occupationKey, occupation)] : []),
       ...(activeOnly ? [sql`${users.lastSeenAt} >= ${since}`] : []),
     ];
@@ -106,6 +120,7 @@ export const buddyRoutes = new Hono<AppEnv>()
         displayName: users.displayName,
         avatarKey: users.avatarKey,
         goalKey: users.goalKey,
+        goalKey2: users.goalKey2,
         goalText: users.goalText,
         occupationKey: users.occupationKey,
         occupationText: users.occupationText,
@@ -135,6 +150,7 @@ export const buddyRoutes = new Hono<AppEnv>()
         displayName: row.displayName,
         avatarKey: row.avatarKey,
         goalKey: row.goalKey,
+        goalKey2: row.goalKey2,
         goalText: row.goalText,
         occupationKey: row.occupationKey,
         occupationText: row.occupationText,

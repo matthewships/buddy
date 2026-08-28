@@ -72,6 +72,11 @@ export const users = sqliteTable(
     avatarKey: text('avatar_key'),
     timezone: text('timezone').notNull().default('UTC'),
     goalKey: text('goal_key'),
+    // The optional second goal (§2.1, MAX_GOALS). A separate nullable column
+    // rather than a widened goal_key: the existing column is indexed, checked
+    // and read by every client, and only the directory query needs to know
+    // there are now two.
+    goalKey2: text('goal_key_2'),
     goalText: text('goal_text'),
     occupationKey: text('occupation_key'),
     occupationText: text('occupation_text'),
@@ -93,8 +98,10 @@ export const users = sqliteTable(
     // The buddy directory filters on is_open_buddy and orders by last_seen_at.
     index('users_directory_idx').on(t.isOpenBuddy, t.lastSeenAt),
     index('users_goal_idx').on(t.goalKey),
+    index('users_goal_2_idx').on(t.goalKey2),
     index('users_occupation_idx').on(t.occupationKey),
     enumCheck('users_goal_key_check', 'goal_key', GOAL_KEYS, { nullable: true }),
+    enumCheck('users_goal_key_2_check', 'goal_key_2', GOAL_KEYS, { nullable: true }),
     enumCheck('users_occupation_key_check', 'occupation_key', OCCUPATION_KEYS, { nullable: true }),
   ],
 );

@@ -31,6 +31,9 @@ export function BuddyCard({
   right?: ReactNode;
 }) {
   const goal = buddy.goalText?.trim() || label(GOALS, buddy.goalKey);
+  // The second goal is always the chip label: goalText elaborates the primary
+  // goal only, so reusing it here would caption the wrong one.
+  const goal2 = label(GOALS, buddy.goalKey2);
   const occupation = buddy.occupationText?.trim() || label(OCCUPATIONS, buddy.occupationKey);
   const isActive = buddy.activity === 'Active now';
 
@@ -42,6 +45,7 @@ export function BuddyCard({
         <p className="text-sm text-ink-subtle">@{buddy.handle}</p>
 
         {goal ? <p className="mt-2 text-base text-ink">{goal}</p> : null}
+        {goal2 ? <p className="text-sm text-ink-muted">+ {goal2}</p> : null}
         {occupation ? <p className="text-sm text-ink-muted">{occupation}</p> : null}
         {buddy.headline ? (
           <p className="mt-1 text-sm italic text-ink-muted">{buddy.headline}</p>
@@ -69,7 +73,7 @@ export function BuddyCard({
         <button
           type="button"
           onClick={onPress}
-          aria-label={`${buddy.displayName}, ${goal ?? 'no goal set'}`}
+          aria-label={`${buddy.displayName}, ${[goal ?? 'no goal set', goal2].filter(Boolean).join(', ')}`}
           className="flex flex-1 cursor-pointer flex-row items-start gap-3 text-left hover:opacity-70"
         >
           {body}

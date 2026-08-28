@@ -11,7 +11,13 @@ import {
   timezoneSchema,
   updateMeSchema,
 } from '../src/schemas';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, creditsForRating, earnedBadges } from '../src/index';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_GOAL_TEXT,
+  MAX_PAGE_SIZE,
+  creditsForRating,
+  earnedBadges,
+} from '../src/index';
 
 describe('emailSchema', () => {
   it('normalises case and surrounding whitespace', () => {
@@ -73,6 +79,37 @@ describe('goalSchema', () => {
   it('rejects an unknown key', () => {
     expect(goalSchema.safeParse({ goalKey: 'become_a_wizard' }).success).toBe(false);
   });
+
+  it('accepts a second goal', () => {
+    const parsed = goalSchema.parse({ goalKey: 'thesis', goalKey2: 'fitness' });
+    expect(parsed.goalKey).toBe('thesis');
+    expect(parsed.goalKey2).toBe('fitness');
+  });
+
+  it('allows the second goal to be omitted or null', () => {
+    expect(goalSchema.parse({ goalKey: 'thesis' }).goalKey2).toBeUndefined();
+    expect(goalSchema.parse({ goalKey: 'thesis', goalKey2: null }).goalKey2).toBeNull();
+  });
+
+  it('rejects the same goal twice', () => {
+    const result = goalSchema.safeParse({ goalKey: 'thesis', goalKey2: 'thesis' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an unknown second key', () => {
+    expect(
+      goalSchema.safeParse({ goalKey: 'thesis', goalKey2: 'become_a_wizard' }).success,
+    ).toBe(false);
+  });
+
+  it('accepts goal text up to MAX_GOAL_TEXT and rejects one character more', () => {
+    expect(
+      goalSchema.safeParse({ goalKey: 'thesis', goalText: 'x'.repeat(MAX_GOAL_TEXT) }).success,
+    ).toBe(true);
+    expect(
+      goalSchema.safeParse({ goalKey: 'thesis', goalText: 'x'.repeat(MAX_GOAL_TEXT + 1) }).success,
+    ).toBe(false);
+  });
 });
 
 describe('updateMeSchema', () => {
@@ -82,6 +119,25 @@ describe('updateMeSchema', () => {
 
   it('still enforces the custom-goal rule on a patch', () => {
     expect(updateMeSchema.safeParse({ goalKey: 'custom' }).success).toBe(false);
+  });
+
+  it('accepts both goals in one patch', () => {
+    const parsed = updateMeSchema.parse({ goalKey: 'thesis', goalKey2: 'coding' });
+    expect(parsed).toEqual({ goalKey: 'thesis', goalKey2: 'coding' });
+  });
+
+  it('rejects a patch setting both goals to the same key', () => {
+    expect(updateMeSchema.safeParse({ goalKey: 'thesis', goalKey2: 'thesis' }).success).toBe(
+      false,
+    );
+  });
+
+  it('accepts a lone goalKey2, which the route checks against the stored goal', () => {
+    expect(updateMeSchema.safeParse({ goalKey2: 'fitness' }).success).toBe(true);
+  });
+
+  it('accepts null to clear the second goal', () => {
+    expect(updateMeSchema.parse({ goalKey2: null }).goalKey2).toBeNull();
   });
 });
 

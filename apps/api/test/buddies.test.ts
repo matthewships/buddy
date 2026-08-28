@@ -96,6 +96,89 @@ describe('buddy directory', () => {
     expect(buddies.every((b) => b.goalKey === 'sat')).toBe(true);
   });
 
+  it('scores an overlap on either side\'s second goal as a shared goal', async () => {
+    // The viewer's second goal matches the candidate's first, and vice versa —
+    // neither pair would match on goal_key alone.
+    const me = await openBuddy('sec-me@example.com', 'secme', {
+      goalKey: 'thesis',
+      goalKey2: 'fitness',
+      occupationKey: 'employee',
+    });
+
+    const theirFirst = await openBuddy('sec-a@example.com', 'seca', {
+      goalKey: 'fitness',
+      occupationKey: 'employee',
+    });
+    const theirSecond = await openBuddy('sec-b@example.com', 'secb', {
+      goalKey: 'coding',
+      goalKey2: 'thesis',
+      occupationKey: 'employee',
+    });
+    const noOverlap = await openBuddy('sec-c@example.com', 'secc', {
+      goalKey: 'coding',
+      goalKey2: 'sat',
+      occupationKey: 'employee',
+    });
+
+    // Recency would otherwise float the non-matching user to the top.
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    await setLastSeen(theirFirst.userId, old);
+    await setLastSeen(theirSecond.userId, old);
+    await setLastSeen(noOverlap.userId, new Date().toISOString());
+
+    const { buddies } = (await (await get('/api/buddies', me.accessToken)).json()) as {
+      buddies: { handle: string }[];
+    };
+    const order = buddies.map((b) => b.handle);
+
+    expect(order.indexOf('seca')).toBeLessThan(order.indexOf('secc'));
+    expect(order.indexOf('secb')).toBeLessThan(order.indexOf('secc'));
+  });
+
+  it('does not double-count an overlap on both goals', async () => {
+    // Sharing both goals is still worth sameGoal once, so an occupation match
+    // still breaks the tie rather than being buried.
+    const me = await openBuddy('dbl-me@example.com', 'dblme', {
+      goalKey: 'thesis',
+      goalKey2: 'fitness',
+      occupationKey: 'student_grad',
+    });
+    const bothGoals = await openBuddy('dbl-a@example.com', 'dbla', {
+      goalKey: 'thesis',
+      goalKey2: 'fitness',
+      occupationKey: 'employee',
+    });
+    const oneGoalPlusOcc = await openBuddy('dbl-b@example.com', 'dblb', {
+      goalKey: 'thesis',
+      occupationKey: 'student_grad',
+    });
+
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    await setLastSeen(bothGoals.userId, old);
+    await setLastSeen(oneGoalPlusOcc.userId, old);
+
+    const { buddies } = (await (await get('/api/buddies', me.accessToken)).json()) as {
+      buddies: { handle: string }[];
+    };
+    const order = buddies.map((b) => b.handle);
+    expect(order.indexOf('dblb')).toBeLessThan(order.indexOf('dbla'));
+  });
+
+  it('finds a buddy by their second goal, and returns it on the card', async () => {
+    const me = await openBuddy('gf-me@example.com', 'gfme');
+    await openBuddy('gf-a@example.com', 'gfa', { goalKey: 'coding', goalKey2: 'ielts_toefl' });
+    await openBuddy('gf-b@example.com', 'gfb', { goalKey: 'fitness' });
+
+    const res = await get('/api/buddies?goal=ielts_toefl', me.accessToken);
+    const { buddies } = (await res.json()) as {
+      buddies: { handle: string; goalKey: string; goalKey2: string | null }[];
+    };
+    expect(buddies.map((b) => b.handle)).toContain('gfa');
+    expect(buddies.map((b) => b.handle)).not.toContain('gfb');
+    // The card carries it, so the client can render both.
+    expect(buddies.find((b) => b.handle === 'gfa')?.goalKey2).toBe('ielts_toefl');
+  });
+
   it('filters to recently active only', async () => {
     const me = await openBuddy('active-me@example.com', 'activeme');
     const fresh = await openBuddy('active-fresh@example.com', 'activefresh');

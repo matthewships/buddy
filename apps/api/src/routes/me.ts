@@ -84,6 +84,14 @@ export const meRoutes = new Hono<AppEnv>()
     }
 
     const nextGoalKey = patch.goalKey ?? current.goalKey;
+    // The schema can only compare the two halves when both are in the patch. A
+    // patch carrying just goalKey2 has to be checked against what is stored,
+    // otherwise the same goal could land in both columns.
+    const nextGoalKey2 = patch.goalKey2 !== undefined ? patch.goalKey2 : current.goalKey2;
+    if (nextGoalKey2 && nextGoalKey2 === nextGoalKey) {
+      throw conflict('Pick two different goals', { field: 'goalKey2' });
+    }
+
     const completesOnboarding =
       current.onboardedAt === null && nextGoalKey !== null && patch.handle !== undefined;
 
@@ -96,6 +104,7 @@ export const meRoutes = new Hono<AppEnv>()
         ...(patch.avatarKey !== undefined && { avatarKey: patch.avatarKey ?? null }),
         ...(patch.isOpenBuddy !== undefined && { isOpenBuddy: patch.isOpenBuddy }),
         ...(patch.goalKey !== undefined && { goalKey: patch.goalKey }),
+        ...(patch.goalKey2 !== undefined && { goalKey2: patch.goalKey2 ?? null }),
         ...(patch.goalText !== undefined && { goalText: patch.goalText ?? null }),
         ...(patch.occupationKey !== undefined && { occupationKey: patch.occupationKey }),
         ...(patch.occupationText !== undefined && {

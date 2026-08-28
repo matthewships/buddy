@@ -68,6 +68,46 @@ describe('schema', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects a goal_key_2 the shared list does not define', async () => {
+    // Guards the CHECK that migration 0003 adds inline on ADD COLUMN. Drizzle
+    // would have rebuilt the whole users table to express it; this asserts the
+    // additive form actually enforces the same rule.
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO users (id, email, password_hash, password_salt, handle, display_name, goal_key, goal_key_2) VALUES (?, ?, 'x', 'y', ?, 'Bad', 'thesis', 'become_a_wizard')",
+      )
+        .bind(newId(), 'bad2@example.com', 'badgoal2')
+        .run(),
+    ).rejects.toThrow();
+  });
+
+  it('accepts a listed goal_key_2, and leaves it null by default', async () => {
+    const id = newId();
+    await env.DB.prepare(
+      "INSERT INTO users (id, email, password_hash, password_salt, handle, display_name, goal_key, goal_key_2) VALUES (?, ?, 'x', 'y', ?, 'Two Goals', 'thesis', 'fitness')",
+    )
+      .bind(id, 'twogoals@example.com', 'twogoals')
+      .run();
+
+    const plain = newId();
+    await env.DB.prepare(
+      "INSERT INTO users (id, email, password_hash, password_salt, handle, display_name, goal_key) VALUES (?, ?, 'x', 'y', ?, 'One Goal', 'thesis')",
+    )
+      .bind(plain, 'onegoal@example.com', 'onegoal')
+      .run();
+
+    const rows = await env.DB.prepare(
+      'SELECT id, goal_key_2 FROM users WHERE id IN (?, ?)',
+    )
+      .bind(id, plain)
+      .all<{ id: string; goal_key_2: string | null }>();
+
+    const byId = new Map(rows.results.map((r) => [r.id, r.goal_key_2]));
+    expect(byId.get(id)).toBe('fitness');
+    // Existing rows predate the column, so the migration must leave them null.
+    expect(byId.get(plain)).toBeNull();
+  });
+
   it('allows only one pending buddy request per requester', async () => {
     const client = db(env.DB);
     const [a, b, c] = [newId(), newId(), newId()];

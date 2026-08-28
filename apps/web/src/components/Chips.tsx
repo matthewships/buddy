@@ -5,36 +5,87 @@ export interface ChipOption {
   label: string;
 }
 
-/**
- * Single-select suggestion chips, used for goal and occupation (§2.1). The
- * options come from packages/shared, so this component never hardcodes a list.
- */
-export function Chips({
-  options,
-  selected,
-  onSelect,
-  label,
-}: {
+interface SingleChipsProps {
   options: readonly ChipOption[];
+  label: string;
+  /** Single-select: one key or none. */
   selected: string | null;
   onSelect: (key: string) => void;
+  max?: never;
+  onChange?: never;
+}
+
+interface MultiChipsProps {
+  options: readonly ChipOption[];
   label: string;
-}) {
+  /** Multi-select: the chosen keys, in the order they were picked. */
+  selected: readonly string[];
+  /** How many may be picked at once. Chips beyond the cap go disabled. */
+  max: number;
+  onChange: (keys: string[]) => void;
+  onSelect?: never;
+}
+
+/**
+ * Suggestion chips, used for goal and occupation (§2.1). The options come from
+ * packages/shared, so this component never hardcodes a list.
+ *
+ * Single- and multi-select are one component because they are the same control
+ * with a different arity, and the goal screen is the only caller that needs the
+ * second form. The two prop shapes are a discriminated union rather than a
+ * `multiple` boolean so a caller cannot pass a `string[]` with an `onSelect`
+ * that takes a `string`, which the boolean version could not prevent.
+ */
+export function Chips(props: SingleChipsProps | MultiChipsProps) {
+  const { options, label } = props;
+  const multi = props.max !== undefined;
+  const chosen = multi ? (props.selected as readonly string[]) : [];
+  const atCap = multi && chosen.length >= props.max!;
+
+  const isActive = (key: string) =>
+    multi ? chosen.includes(key) : key === (props.selected as string | null);
+
+  const toggle = (key: string) => {
+    if (!multi) {
+      props.onSelect!(key);
+      return;
+    }
+    // Deselecting is how you swap once the cap is reached, so removal always
+    // works even when every remaining chip is disabled.
+    const next = chosen.includes(key)
+      ? chosen.filter((k) => k !== key)
+      : [...chosen, key].slice(0, props.max!);
+    props.onChange!(next);
+  };
+
   return (
-    <div role="radiogroup" aria-label={label} className="flex flex-row flex-wrap gap-2">
+    <div
+      role={multi ? 'group' : 'radiogroup'}
+      aria-label={label}
+      className="flex flex-row flex-wrap gap-2"
+    >
       {options.map((option) => {
-        const active = option.key === selected;
+        const active = isActive(option.key);
+        // At the cap, the unpicked chips are inert rather than hidden: the user
+        // can still see what they passed over, and the disabled state explains
+        // the limit better than a chip that silently ignores a click.
+        const blocked = atCap && !active;
         return (
           <button
             key={option.key}
             type="button"
-            role="radio"
+            role={multi ? 'checkbox' : 'radio'}
             aria-checked={active}
-            onClick={() => onSelect(option.key)}
-            className={`cursor-pointer rounded-full border px-4 py-2 text-sm transition-colors ${
+            disabled={blocked}
+            onClick={() => toggle(option.key)}
+            className={`rounded-full border px-4 py-2 text-sm transition-colors ${
               active
                 ? 'border-brand bg-brand font-semibold text-brand-fg'
-                : 'border-surface-border bg-surface text-ink hover:border-brand'
+                : 'border-surface-border bg-surface text-ink'
+            } ${
+              blocked
+                ? 'cursor-not-allowed opacity-40'
+                : `cursor-pointer ${active ? '' : 'hover:border-brand'}`
             }`}
           >
             {option.label}

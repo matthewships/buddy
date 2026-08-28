@@ -157,11 +157,22 @@ export const changePasswordSchema = z.object({
 export const goalSchema = z
   .object({
     goalKey: z.enum(GOAL_KEYS),
+    /**
+     * The optional second goal (`MAX_GOALS` is 2). Kept as its own field rather
+     * than turning `goalKey` into an array: `goal_key` is indexed, carries a
+     * CHECK constraint and is what every existing client reads, so widening it
+     * would break them for no gain. The primary goal stays primary.
+     */
+    goalKey2: z.enum(GOAL_KEYS).nullish(),
     goalText: z.string().trim().max(MAX_GOAL_TEXT).optional(),
   })
   .refine((v) => v.goalKey !== 'custom' || (v.goalText?.length ?? 0) > 0, {
     message: 'Describe your goal',
     path: ['goalText'],
+  })
+  .refine((v) => !v.goalKey2 || v.goalKey2 !== v.goalKey, {
+    message: 'Pick two different goals',
+    path: ['goalKey2'],
   });
 
 export const occupationSchema = z
@@ -194,6 +205,7 @@ export const updateMeSchema = z
     avatarKey: z.string().max(200).nullish(),
     isOpenBuddy: z.boolean().optional(),
     goalKey: z.enum(GOAL_KEYS).optional(),
+    goalKey2: z.enum(GOAL_KEYS).nullish(),
     goalText: z.string().trim().max(MAX_GOAL_TEXT).nullish(),
     occupationKey: z.enum(OCCUPATION_KEYS).optional(),
     occupationText: z.string().trim().max(MAX_OCCUPATION_TEXT).nullish(),
@@ -202,6 +214,12 @@ export const updateMeSchema = z
   .refine((v) => v.goalKey !== 'custom' || (v.goalText?.length ?? 0) > 0, {
     message: 'Describe your goal',
     path: ['goalText'],
+  })
+  // Only meaningful when both halves are present; a patch that sends just
+  // goalKey2 cannot see the stored goalKey, so the route re-checks it (§2.1).
+  .refine((v) => !v.goalKey2 || !v.goalKey || v.goalKey2 !== v.goalKey, {
+    message: 'Pick two different goals',
+    path: ['goalKey2'],
   })
   .refine((v) => v.occupationKey !== 'custom' || (v.occupationText?.length ?? 0) > 0, {
     message: 'Describe what you do',

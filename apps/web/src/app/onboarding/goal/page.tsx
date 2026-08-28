@@ -2,34 +2,39 @@
 
 import { useRouter } from 'next/navigation';
 
-import { GOALS, MAX_GOAL_TEXT } from '@buddy/shared';
+import { GOALS, MAX_GOALS, MAX_GOAL_TEXT } from '@buddy/shared';
 
 import { Button, Chips, Field, Screen } from '@/components';
 import { useDraft } from '@/onboarding/draft';
 
 export default function OnboardingGoal() {
   const router = useRouter();
-  const goalKey = useDraft((d) => d.goalKey);
+  const goalKeys = useDraft((d) => d.goalKeys);
   const goalText = useDraft((d) => d.goalText);
   const setDraft = useDraft((d) => d.set);
 
   // A `custom` goal must carry text — the same rule the API enforces (§2.1).
-  const needsText = goalKey === 'custom';
-  const canContinue = goalKey !== null && (!needsText || goalText.trim().length > 0);
+  // It applies wherever "Other" sits in the pair, not just in the first slot.
+  const needsText = goalKeys.includes('custom');
+  const canContinue = goalKeys.length > 0 && (!needsText || goalText.trim().length > 0);
 
   return (
     <Screen>
       <div className="flex flex-col gap-4 pb-8">
-        <h1 className="mt-4 text-3xl font-bold text-ink">What are you working toward?</h1>
+        <h1 className="mt-4 text-3xl font-bold text-ink">
+          What are you working toward? (Max {MAX_GOALS})
+        </h1>
         <p className="text-base text-ink-muted">
           This is the first thing a buddy sees, and it drives who we match you with.
+          Pick up to {MAX_GOALS}.
         </p>
 
         <Chips
-          label="Goal"
+          label={`Goal (max ${MAX_GOALS})`}
           options={GOALS}
-          selected={goalKey}
-          onSelect={(value) => setDraft({ goalKey: value })}
+          selected={goalKeys}
+          max={MAX_GOALS}
+          onChange={(keys) => setDraft({ goalKeys: keys })}
         />
 
         <Field
@@ -37,6 +42,7 @@ export default function OnboardingGoal() {
           value={goalText}
           onChangeText={(value) => setDraft({ goalText: value })}
           maxLength={MAX_GOAL_TEXT}
+          hint={`${goalText.length}/${MAX_GOAL_TEXT}`}
           placeholder={needsText ? 'Finish my dissertation' : 'e.g. Organic chemistry finals'}
         />
 

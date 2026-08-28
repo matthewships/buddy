@@ -41,6 +41,7 @@ export const userRoutes = new Hono<AppEnv>()
       displayName: user.displayName,
       avatarKey: user.avatarKey,
       goalKey: user.goalKey,
+      goalKey2: user.goalKey2,
       goalText: user.goalText,
       occupationKey: user.occupationKey,
       occupationText: user.occupationText,

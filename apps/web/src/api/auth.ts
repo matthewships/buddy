@@ -99,6 +99,7 @@ export interface Me {
   avatarKey: string | null;
   timezone: string;
   goalKey: string | null;
+  goalKey2: string | null;
   goalText: string | null;
   occupationKey: string | null;
   occupationText: string | null;

@@ -273,6 +273,7 @@ export function publicSelf(user: {
   avatarKey: string | null;
   timezone: string;
   goalKey: string | null;
+  goalKey2: string | null;
   goalText: string | null;
   occupationKey: string | null;
   occupationText: string | null;
@@ -289,6 +290,7 @@ export function publicSelf(user: {
     avatarKey: user.avatarKey,
     timezone: user.timezone,
     goalKey: user.goalKey,
+    goalKey2: user.goalKey2,
     goalText: user.goalText,
     occupationKey: user.occupationKey,
     occupationText: user.occupationText,

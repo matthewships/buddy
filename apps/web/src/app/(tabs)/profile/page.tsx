@@ -68,6 +68,7 @@ export default function Profile() {
 
   const profile = me.data;
   const goal = profile.goalText?.trim() || labelFor(GOALS, profile.goalKey);
+  const goal2 = labelFor(GOALS, profile.goalKey2);
   const occupation = profile.occupationText?.trim() || labelFor(OCCUPATIONS, profile.occupationKey);
 
   return (
@@ -113,6 +114,7 @@ export default function Profile() {
             <p className="text-xl font-bold text-ink">{profile.displayName}</p>
             <p className="text-base text-ink-muted">@{profile.handle}</p>
             {goal ? <p className="mt-2 text-base text-ink">{goal}</p> : null}
+            {goal2 ? <p className="text-sm text-ink-muted">+ {goal2}</p> : null}
             {occupation ? <p className="text-sm text-ink-muted">{occupation}</p> : null}
           </div>
         </div>

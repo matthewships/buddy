@@ -28,3 +28,11 @@ export const GOAL_KEYS = GOALS.map((g) => g.key) as [GoalKey, ...GoalKey[]];
 export function goalLabel(key: GoalKey): string {
   return GOALS.find((g) => g.key === key)!.label;
 }
+
+/**
+ * How many goals a user may pick. Two, because most people are juggling one
+ * big thing and one habit, and a buddy card stops being scannable past that.
+ * The second goal is optional; `goal_key` is still the primary one and the
+ * only one older clients read.
+ */
+export const MAX_GOALS = 2;
