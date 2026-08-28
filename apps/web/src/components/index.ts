@@ -14,4 +14,5 @@ export { Sheet } from './Sheet';
 export { LoadingScreen, Spinner } from './Spinner';
 export { TabBar } from './TabBar';
 export { StatusPill, TaskRow, STATUS_LABEL } from './TaskRow';
+export { Toggle } from './Toggle';
 export { WaitingCard } from './WaitingCard';
