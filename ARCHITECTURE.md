@@ -348,7 +348,7 @@ FindBuddy/
 | 1 ✅ | Auth (register / verify email / login / refresh / reset), profile + onboarding (goal, occupation, buddy profile), avatar upload. **Done 2026-08-27.** |
 | 2 ✅ | Buddy directory with matching + filters, buddy requests with 5-min expiry + countdown + push, groups & invites. **Done 2026-08-27.** |
 | 3 ✅ | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop. **Done 2026-08-27.** |
-| 4 | Chat (Durable Object + WebSocket), full push notification coverage |
+| 4 ✅ | Chat (Durable Object + WebSocket), full push notification coverage. **Done 2026-08-28.** |
 | 5 | Leaderboard, reports, admin endpoints, account deletion |
 | 6 | Polish, tests, EAS builds → TestFlight + Play internal testing |
 

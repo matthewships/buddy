@@ -99,10 +99,12 @@ export default function GroupDetail() {
         </Card>
 
         <Card>
-          <Text className="mb-1 text-sm font-semibold text-ink-muted">Tasks &amp; chat</Text>
-          <Text className="text-sm text-ink-subtle">
-            The daily task board arrives in phase 3, group chat in phase 4.
-          </Text>
+          <Text className="mb-2 text-sm font-semibold text-ink-muted">Chat</Text>
+          <Button
+            label="Open chat"
+            variant="secondary"
+            onPress={() => router.push(`/groups/${id}/chat`)}
+          />
         </Card>
 
         <View className="mt-2">
