@@ -90,12 +90,18 @@
   "vars": {
     "ENVIRONMENT": "production",
     "EMAIL_FROM": "no-reply@localrack.xyz",
-    "EMAIL_FROM_NAME": "Buddy"
+    "EMAIL_FROM_NAME": "Buddy",
+    // RFC 8292 requires a contact a push service operator can use to reach us
+    // about a misbehaving application server. Not a secret, so it lives here
+    // rather than alongside the VAPID keys.
+    "VAPID_SUBJECT": "mailto:no-reply@localrack.xyz"
   }
 
   // Bindings added in later phases, kept here as a checklist so the shape of
   // the finished Worker stays visible:
   //   RATE_LIMITER Rate limiting binding           -> phase 1 (§4.3)
   //   AI          Workers AI                       -> phase 2, optional (§1)
-  // Secrets (wrangler secret put): JWT_SECRET, EXPO_ACCESS_TOKEN, ADMIN_TOKEN
+  // Secrets (wrangler secret put): JWT_SECRET, EXPO_ACCESS_TOKEN, ADMIN_TOKEN,
+  //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY (browser push; generate with
+  //   `node scripts/vapid-keys.mjs`)
 }

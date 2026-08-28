@@ -125,10 +125,14 @@ export async function resetRateLimits() {
   await Promise.all(keys.map((k) => env.CACHE.delete(k.name)));
 }
 
-export async function del(path: string, token?: string) {
+export async function del(path: string, token?: string, body?: unknown) {
   return SELF.fetch(`${BASE}${path}`, {
     method: 'DELETE',
-    headers: token ? { authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 }
 

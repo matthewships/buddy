@@ -130,8 +130,10 @@ export default {
   async queue(batch, env) {
     const messages = batch.messages.map((m) => m.body as PushMessage);
     try {
-      const { sent, removed } = await deliverPush(env, db(env.DB), messages);
-      console.log(`[push] delivered=${sent} pruned=${removed} batch=${batch.messages.length}`);
+      const { sent, removed, webSent, webRemoved } = await deliverPush(env, db(env.DB), messages);
+      console.log(
+        `[push] delivered=${sent} pruned=${removed} web=${webSent} webPruned=${webRemoved} batch=${batch.messages.length}`,
+      );
       batch.ackAll();
     } catch (error) {
       console.error('[push:batch-failed]', error);

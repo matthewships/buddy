@@ -17,13 +17,23 @@
  * inherited unchanged so it cannot drift.
  */
 export interface Env
-  extends Omit<Cloudflare.Env, 'JWT_SECRET' | 'ADMIN_TOKEN' | 'EXPO_ACCESS_TOKEN'> {
+  extends Omit<
+    Cloudflare.Env,
+    'JWT_SECRET' | 'ADMIN_TOKEN' | 'EXPO_ACCESS_TOKEN' | 'VAPID_PUBLIC_KEY' | 'VAPID_PRIVATE_KEY'
+  > {
   /** HS256 signing key for the 15-minute access token (§4.3). */
   JWT_SECRET?: string;
   /** Expo push access token used by the queue consumer (§4.6). */
   EXPO_ACCESS_TOKEN?: string;
   /** Bearer token guarding the /admin/* report endpoints (§4.4). */
   ADMIN_TOKEN?: string;
+  /**
+   * The VAPID keypair browsers subscribe against (§4.6), base64url. Optional
+   * for the same reason as the rest: without them the API simply sends no
+   * browser notifications, rather than failing to start.
+   */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
 }
 
 /**

@@ -1,19 +1,25 @@
 import { eq, inArray } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
-import { devices } from '../db/schema.js';
+import { devices, webPushSubscriptions } from '../db/schema.js';
 import type { Env } from '../env.js';
+import { sendWebPush, type VapidKeys } from './web-push.js';
 
 /**
  * Push notifications (§4.6).
  *
- * Routes never talk to Expo directly — they enqueue, and the queue consumer
- * delivers. That keeps a slow or failing push service off the request path (a
- * buddy request must not take 2 seconds because Expo is having a bad day) and
- * gives retries for free.
+ * Routes never talk to a push service directly — they enqueue, and the queue
+ * consumer delivers. That keeps a slow or failing push service off the request
+ * path (a buddy request must not take 2 seconds because Expo is having a bad
+ * day) and gives retries for free.
  *
  * The payload carries user ids rather than device tokens: tokens can change
- * between enqueue and delivery, so they are resolved at send time.
+ * between enqueue and delivery, so they are resolved at send time. That is also
+ * what lets one enqueued message reach a person on **both** transports — Expo
+ * for the app, Web Push for the browser — without the caller knowing or caring
+ * which devices they have. Every notification the mobile app receives therefore
+ * reaches the web client too, by construction rather than by being listed
+ * twice.
  */
 export interface PushMessage {
   userIds: string[];
@@ -24,6 +30,17 @@ export interface PushMessage {
 }
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+
+/**
+ * How long a push service may hold an undelivered message.
+ *
+ * Five minutes because that is a buddy request's whole life; a notification
+ * that arrives after it has expired is noise. The other nine notification types
+ * would tolerate longer, and share this only because both transports have
+ * always used one value — worth revisiting, not worth diverging the two clients
+ * over.
+ */
+const PUSH_TTL_SECONDS = 300;
 
 /** Fire-and-forget enqueue. A failed push must never fail the request that caused it. */
 export async function enqueuePush(env: Env, message: PushMessage): Promise<void> {
@@ -53,10 +70,25 @@ export async function deliverPush(
   env: Env,
   db: Db,
   messages: PushMessage[],
-): Promise<{ sent: number; removed: number }> {
+): Promise<{ sent: number; removed: number; webSent: number; webRemoved: number }> {
   const userIds = [...new Set(messages.flatMap((m) => m.userIds))];
-  if (userIds.length === 0) return { sent: 0, removed: 0 };
+  if (userIds.length === 0) return { sent: 0, removed: 0, webSent: 0, webRemoved: 0 };
 
+  const expo = await deliverExpo(env, db, messages, userIds);
+  // Deliberately after Expo, which is the half that throws to retry the batch:
+  // a browser notification sent before that throw would be sent again on the
+  // retry, and Web Push has no de-duplication of its own.
+  const web = await deliverWeb(env, db, messages, userIds);
+
+  return { ...expo, webSent: web.sent, webRemoved: web.removed };
+}
+
+async function deliverExpo(
+  env: Env,
+  db: Db,
+  messages: PushMessage[],
+  userIds: string[],
+): Promise<{ sent: number; removed: number }> {
   const rows = await db.query.devices.findMany({
     where: inArray(devices.userId, userIds),
   });
@@ -74,8 +106,7 @@ export async function deliverPush(
         body: message.body,
         data: message.data ?? {},
         sound: 'default' as const,
-        // Buddy requests expire in 5 minutes; a late notification is noise.
-        ttl: 300,
+        ttl: PUSH_TTL_SECONDS,
         priority: 'high' as const,
       })),
     ),
@@ -127,6 +158,98 @@ export async function deliverPush(
   }
 
   return { sent, removed: deadTokens.length };
+}
+
+/**
+ * The VAPID identity, or null when it has not been configured.
+ *
+ * Returning null rather than throwing is what lets the API be deployed before
+ * the keys exist: browsers simply receive nothing, exactly as they did before
+ * Web Push was implemented, while every other transport carries on.
+ */
+export function vapidKeysFrom(env: Env): VapidKeys | null {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return null;
+  return {
+    publicKey: env.VAPID_PUBLIC_KEY,
+    privateKey: env.VAPID_PRIVATE_KEY,
+    subject: env.VAPID_SUBJECT ?? `mailto:${env.EMAIL_FROM}`,
+  };
+}
+
+/**
+ * Web Push delivery, one request per subscription.
+ *
+ * Unlike Expo — one call for a hundred notifications — Web Push has no batch
+ * endpoint: each subscription is a different push service with its own
+ * encryption keys, so there is nothing to batch. Failures are contained per
+ * subscription and never thrown, because throwing here would retry the whole
+ * queue batch and re-send everyone else's notifications on both transports.
+ */
+async function deliverWeb(
+  env: Env,
+  db: Db,
+  messages: PushMessage[],
+  userIds: string[],
+): Promise<{ sent: number; removed: number }> {
+  const keys = vapidKeysFrom(env);
+  if (!keys) return { sent: 0, removed: 0 };
+
+  const rows = await db.query.webPushSubscriptions.findMany({
+    where: inArray(webPushSubscriptions.userId, userIds),
+  });
+  if (rows.length === 0) return { sent: 0, removed: 0 };
+
+  const byUser = new Map<string, typeof rows>();
+  for (const row of rows) {
+    byUser.set(row.userId, [...(byUser.get(row.userId) ?? []), row]);
+  }
+
+  const deliveries = messages.flatMap((message) =>
+    message.userIds.flatMap((userId) =>
+      (byUser.get(userId) ?? []).map((subscription) => ({ subscription, message })),
+    ),
+  );
+
+  const dead: string[] = [];
+  let sent = 0;
+
+  // Sequential rather than Promise.all: a queue batch can hold 100 messages
+  // fanned out across a group, and a hundred simultaneous subtle.encrypt +
+  // fetch pairs is a good way to meet the runtime's concurrent-connection cap.
+  for (const { subscription, message } of deliveries) {
+    try {
+      const result = await sendWebPush(
+        subscription,
+        // The service worker reads exactly this shape; `data` carries the same
+        // routing payload the Expo notification carries, so both clients route
+        // a tap from the same source of truth.
+        JSON.stringify({
+          title: message.title,
+          body: message.body,
+          data: message.data ?? {},
+        }),
+        keys,
+        { ttlSeconds: PUSH_TTL_SECONDS, urgency: 'high' },
+      );
+
+      if (result.gone) dead.push(subscription.endpoint);
+      else if (result.status >= 200 && result.status < 300) sent += 1;
+    } catch (error) {
+      // A transport failure for one browser. Logged, not thrown: the rest of
+      // the batch has nothing to do with it.
+      console.error('[web-push:failed]', error);
+    }
+  }
+
+  if (dead.length > 0) {
+    // The browser's equivalent of `DeviceNotRegistered`: the subscription was
+    // revoked or the push service dropped it, and it will never work again.
+    await db
+      .delete(webPushSubscriptions)
+      .where(inArray(webPushSubscriptions.endpoint, dead));
+  }
+
+  return { sent, removed: dead.length };
 }
 
 /** Removes a single device row, used when a token is rejected outright. */

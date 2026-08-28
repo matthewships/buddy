@@ -3,15 +3,28 @@ import { and, eq, isNull, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { handleSchema, registerDeviceSchema, updateMeSchema } from '@buddy/shared';
+import {
+  handleSchema,
+  registerDeviceSchema,
+  unsubscribeWebPushSchema,
+  updateMeSchema,
+  webPushSubscriptionSchema,
+} from '@buddy/shared';
 
 import { db } from '../db/client.js';
-import { buddyProfiles, devices, refreshTokens, users } from '../db/schema.js';
+import {
+  buddyProfiles,
+  devices,
+  refreshTokens,
+  users,
+  webPushSubscriptions,
+} from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
+import { vapidKeysFrom } from '../services/push.js';
 import { publicSelf } from './auth.js';
 
 /** Avatar keys are namespaced by user so one user cannot overwrite another's. */
@@ -234,6 +247,11 @@ export const meRoutes = new Hono<AppEnv>()
       // has left, and nothing else references it.
       client.delete(buddyProfiles).where(eq(buddyProfiles.userId, userId)),
       client.delete(devices).where(eq(devices.userId, userId)),
+      // Explicit, not covered by the FK cascade: deletion here is a soft
+      // delete, so the `users` row never goes away and `ON DELETE cascade`
+      // never fires. Without this line a deleted account keeps receiving
+      // browser notifications.
+      client.delete(webPushSubscriptions).where(eq(webPushSubscriptions.userId, userId)),
       client
         .update(refreshTokens)
         .set({ revokedAt: stamp })
@@ -260,6 +278,65 @@ export const meRoutes = new Hono<AppEnv>()
         target: devices.expoPushToken,
         set: { userId, platform, updatedAt: nowIso() },
       });
+
+    return c.json({ ok: true as const });
+  })
+
+  /**
+   * The public half of the VAPID keypair, which the browser needs before it can
+   * subscribe (§4.6).
+   *
+   * Served rather than compiled into the web bundle so the two cannot drift: a
+   * subscription is bound to the key it was created with, and a client holding
+   * a stale key would produce subscriptions this server can never push to.
+   * `null` means the keys are not configured, and the client shows the feature
+   * as unavailable instead of failing at `subscribe()`.
+   */
+  .get('/web-push/key', (c) => {
+    const keys = vapidKeysFrom(c.env);
+    return c.json({ publicKey: keys?.publicKey ?? null });
+  })
+
+  /**
+   * Registers a browser subscription. Also the self-heal path: the client posts
+   * whatever `getSubscription()` returns on every load, so a subscription the
+   * browser silently rotated is re-registered without the user doing anything.
+   */
+  .post('/web-push', zValidator('json', webPushSubscriptionSchema), async (c) => {
+    const { endpoint, keys } = c.req.valid('json');
+    const userId = currentUserId(c);
+
+    // Keyed on the endpoint for the same reason `/devices` is keyed on the
+    // token: it identifies a browser, not a person, and a shared computer must
+    // move the row rather than end up pushing one person's tasks to another.
+    await db(c.env.DB)
+      .insert(webPushSubscriptions)
+      .values({ id: newId(), userId, endpoint, p256dh: keys.p256dh, auth: keys.auth })
+      .onConflictDoUpdate({
+        target: webPushSubscriptions.endpoint,
+        set: { userId, p256dh: keys.p256dh, auth: keys.auth, updatedAt: nowIso() },
+      });
+
+    return c.json({ ok: true as const });
+  })
+
+  /**
+   * Turning notifications off. Scoped to this user's own rows: an endpoint is
+   * not a secret, and unsubscribing someone else's browser should not be
+   * possible by guessing one.
+   */
+  .delete('/web-push', zValidator('json', unsubscribeWebPushSchema), async (c) => {
+    const { endpoint } = c.req.valid('json');
+    const userId = currentUserId(c);
+
+    await db(c.env.DB)
+      .delete(webPushSubscriptions)
+      .where(
+        and(
+          eq(webPushSubscriptions.endpoint, endpoint),
+          eq(webPushSubscriptions.userId, userId),
+        ),
+      );
 
     return c.json({ ok: true as const });
   });
