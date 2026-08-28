@@ -27,6 +27,7 @@ ios/
 *.orig.*
 
 # env & secrets
+SECRETS.local.md
 .env
 .env.*
 !.env.example

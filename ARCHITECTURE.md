@@ -402,16 +402,19 @@ Two structural decisions worth carrying forward:
 
 ---
 
-## 9. Open decisions — checklist
-- [ ] Buddy request expiry **5 min** (config constant) — and re-request cooldown **1 h** after decline/timeout
-- [ ] Push via **Expo Push Service** (proposed) vs direct APNs + FCM from the Worker
+## 9. Decisions — all resolved
+
+Every item below is settled; where a decision was made during implementation
+rather than up front, the date and the reason are recorded.
+- [x] Buddy request expiry **5 min**, re-request cooldown **1 h** — as proposed; both are constants in `packages/shared/src/limits.ts`
+- [x] Push via **Expo Push Service** — as proposed. The queue consumer is the only code that knows, so switching to direct APNs/FCM later stays contained to `services/push.ts`.
 - [x] Reviewer rule in 3+ member groups: **any member, first review wins** — decided 2026-08-27
 - [x] Credit formula: **`rating × 10` + `20` daily-completion bonus** — decided 2026-08-27; the bonus is awarded at approval time, not at rollover, because a task may legitimately be approved after its day has ended
 - [x] Reports: **manual admin review only** — decided 2026-08-28. Auto-hide after N reports is trivially weaponised by a small group against one person, and at this scale a queue does everything a threshold would. `status` stays in the schema so it can be layered on later without a migration.
 - [x] Per-group leaderboard: **not in v1** — decided 2026-08-28. A 2-person matched group makes it a coin flip, which is demotivating rather than motivating; global weekly + all-time ship first.
 - [x] Chat history in **D1** — decided 2026-08-28; the DO does live fan-out only, so reports can query messages across groups
-- [ ] UI styling: NativeWind (proposed) vs StyleSheet vs Tamagui
-- [ ] Photo proofs in v1? (proposal: text only; image field already in the schema)
-- [ ] Goal / occupation suggestion lists in §2.1 — add or remove entries
+- [x] UI styling: **NativeWind v4**, with `tailwindcss` pinned to ^3.4 — see the Phase 0 deviations table for why the pin is load-bearing
+- [x] Photo proofs: **text only in v1** — as proposed. `proof_image_key` exists in the schema and the API accepts it, but no UI sets it; group-private images would also need an authenticated media path, unlike avatars.
+- [x] Goal / occupation lists: **shipped as proposed**. They live in `packages/shared/src/{goals,occupations}.ts` and adding an entry needs no other change.
 - [x] App name **"Buddy"**, slug `buddy`, bundle/package id **`com.buddyapp.buddy`** (iOS `bundleIdentifier` + Android `package`) — decided 2026-08-27
 - [x] Sender domain for verification/reset emails: **`no-reply@localrack.xyz`** — decided 2026-08-27
