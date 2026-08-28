@@ -59,7 +59,21 @@ export class ApiError extends Error {
   }
 }
 
-export async function unwrap<T>(response: Response): Promise<T> {
+/**
+ * The minimum `unwrap` actually needs.
+ *
+ * Not `Response`: React Native's global `FormData` differs from lib.dom's, so
+ * Hono's `ClientResponse` is not assignable to the DOM `Response` type even
+ * though it behaves identically for this purpose. Depending on the three members
+ * that are used keeps the typed client usable without pulling in that conflict.
+ */
+export interface JsonResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+}
+
+export async function unwrap<T>(response: JsonResponse): Promise<T> {
   if (response.ok) return (await response.json()) as T;
 
   let message = 'Something went wrong';

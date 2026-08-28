@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 
 import { MAX_PROOF_TEXT, MAX_REVIEW_COMMENT, MAX_TASK_TITLE } from '@buddy/shared';
 
@@ -45,8 +52,15 @@ export default function Today() {
     <Screen>
       <ScrollView
         contentContainerClassName="gap-3 pb-8"
-        refreshing={mine.isRefetching}
-        onScrollBeginDrag={() => undefined}
+        refreshControl={
+          <RefreshControl
+            refreshing={mine.isRefetching || queue.isRefetching}
+            onRefresh={() => {
+              void mine.refetch();
+              void queue.refetch();
+            }}
+          />
+        }
       >
         <Text className="mb-1 mt-2 text-2xl font-bold text-ink">Today</Text>
 

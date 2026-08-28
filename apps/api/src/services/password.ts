@@ -38,8 +38,13 @@ function fromBase64(value: string): Uint8Array {
   return bytes;
 }
 
-async function deriveRound(input: BufferSource, salt: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', input, 'PBKDF2', false, ['deriveBits']);
+async function deriveRound(
+  input: Uint8Array<ArrayBufferLike>,
+  salt: Uint8Array,
+): Promise<Uint8Array<ArrayBufferLike>> {
+  const key = await crypto.subtle.importKey('raw', input as BufferSource, 'PBKDF2', false, [
+    'deriveBits',
+  ]);
   const bits = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
@@ -58,11 +63,13 @@ async function deriveRound(input: BufferSource, salt: Uint8Array): Promise<Uint8
  * rounds are strictly sequential and an attacker cannot parallelise them.
  */
 async function derive(password: string, salt: Uint8Array): Promise<Uint8Array> {
-  let material: BufferSource = encoder.encode(password);
+  // Annotated with ArrayBufferLike so the encoder's output and each round's
+  // output share one type; the defaults differ between them.
+  let material: Uint8Array<ArrayBufferLike> = encoder.encode(password);
   for (let round = 0; round < PBKDF2_ROUNDS; round += 1) {
     material = await deriveRound(material, salt);
   }
-  return material as Uint8Array;
+  return material;
 }
 
 export interface PasswordRecord {

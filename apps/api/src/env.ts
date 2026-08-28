@@ -7,27 +7,23 @@
  * wrangler cannot know about: the secrets, which live in
  * `wrangler secret put` / `.dev.vars` rather than in the config file.
  */
-export interface Env extends Cloudflare.Env {
+/**
+ * `wrangler types` emits every secret it can see as a required `string`, because
+ * it reads whatever is in `.dev.vars`. That is the wrong contract for the code:
+ * a secret genuinely can be unset on a fresh deploy, which is exactly what
+ * `requireSecret` and the admin middleware exist to handle. So the three
+ * secrets are overridden as optional, and everything else — the real bindings,
+ * which are declared in wrangler.jsonc and therefore always present — is
+ * inherited unchanged so it cannot drift.
+ */
+export interface Env
+  extends Omit<Cloudflare.Env, 'JWT_SECRET' | 'ADMIN_TOKEN' | 'EXPO_ACCESS_TOKEN'> {
   /** HS256 signing key for the 15-minute access token (§4.3). */
   JWT_SECRET?: string;
   /** Expo push access token used by the queue consumer (§4.6). */
   EXPO_ACCESS_TOKEN?: string;
   /** Bearer token guarding the /admin/* report endpoints (§4.4). */
   ADMIN_TOKEN?: string;
-
-  /**
-   * Cloudflare Email Sending binding. Optional because it only exists once the
-   * sender domain is onboarded to Email Service, and the test suite runs
-   * without it — see services/email.ts for the fallback.
-   */
-  EMAIL?: SendEmail;
-
-  /**
-   * Push delivery queue (§4.6). Optional for the same reason as EMAIL: routes
-   * enqueue through a helper that no-ops when the binding is absent, so tests
-   * and a queue-less local run still work.
-   */
-  PUSH_QUEUE?: Queue<unknown>;
 }
 
 /**

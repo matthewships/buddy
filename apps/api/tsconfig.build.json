@@ -2,16 +2,19 @@
   // Emits declarations only, so the Expo app can compile against the API's
   // route types without pulling the Worker's source (and therefore the
   // Cloudflare runtime globals) into the React Native TypeScript program.
+  //
+  // Deliberately not `composite`: an incremental build cache lives in the
+  // gitignored dist/ and can make a local run skip work that CI then does in
+  // full. Nothing here uses project references, so the cache buys nothing and
+  // costs a blind spot.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
     "declarationMap": true,
-    "composite": true,
     "outDir": "dist",
-    "rootDir": ".",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "rootDir": "."
   },
   "include": ["src/**/*.ts", "worker-configuration.d.ts"]
 }
