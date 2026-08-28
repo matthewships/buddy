@@ -454,7 +454,7 @@ Two structural decisions worth carrying forward:
 2. **Apple Developer Program** (TestFlight, APNs key) and **Google Play Console** ($25 one-time) — needed by Phase 6, not for local development.
 3. **Firebase project** (free) just to obtain FCM credentials for Android push (Phase 4).
 4. **Expo account** (free) for EAS Build / push.
-5. **Cloudflare**: Workers Paid plan ✅ confirmed; API token with write access ✅ verified; D1/KV/R2 ✅ created. Sender domain for Email Sending: **`no-reply@localrack.xyz`** (decided 2026-08-27) — the binding is wired in Phase 1.
+5. **Cloudflare**: Workers Paid plan ✅ confirmed; API token with write access ✅ verified; D1/KV/R2 ✅ created. Sender domain for Email Sending: **`no-reply@localrack.xyz`** (decided 2026-08-27; domain onboarded to Email Service with SPF + DKIM and verified sending **2026-08-28**) — the binding is wired in Phase 1.
 6. Tools: `wrangler` 4.127 ✅ already installed. `eas-cli` and Watchman are installed later, when Phase 6 (EAS builds) needs them.
 
 ---

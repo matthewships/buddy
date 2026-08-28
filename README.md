@@ -129,10 +129,23 @@ the deployed Worker for a production build and to `http://localhost:8787` for
 
 ## Outstanding
 
-- **Email delivery.** `localrack.xyz` still needs onboarding to Cloudflare Email
-  Service (SPF + DKIM) before verification codes actually send. Until then the
-  send fails and is logged, so production registration cannot complete.
 - **Push credentials.** An APNs key and FCM v1 credentials need uploading to EAS
-  before push works on a real device.
+  before push works on a real device. The web client is unaffected: a browser
+  cannot receive Expo push, so it runs permanently on the 15-second poll that
+  exists as the denied-permission fallback.
 - **EAS builds** need `eas login`; profiles are configured in
   `apps/mobile/eas.json`.
+- **`apps/web` has no test suite.** Every other workspace has one, and
+  `npm test` skips web silently because it has no `test` script. The web-only
+  logic worth covering is the canvas avatar resize, the infinite-scroll
+  sentinel, and a regression test for the `Button` width override — a bug that
+  neither `tsc` nor a successful build can catch, since every route serves a
+  spinner until the client hydrates.
+- **No automated deploy.** Both Workers ship by hand (`npm run deploy:web`,
+  `wrangler deploy` in `apps/api`). CI builds the web Worker bundle but does not
+  publish it.
+- **Both Workers are on `*.ships.workers.dev`.** Fine for now; a custom domain
+  is a DNS record and a `routes` entry in each `wrangler.jsonc`.
+
+Resolved 2026-08-28: `localrack.xyz` is onboarded to Cloudflare Email Service
+(SPF + DKIM), so verification and reset codes send in production.
