@@ -21,7 +21,17 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   label: string;
   variant?: Variant;
   loading?: boolean;
-  /** Buttons are full-width in the app; a row of them uses `flex-1` instead. */
+  /**
+   * Sizing, and anything else the caller needs to override.
+   *
+   * The width lives here rather than in the base classes below because Tailwind
+   * resolves competing utilities by their order in the stylesheet, not by the
+   * order they appear in the attribute — `w-auto` is emitted before `w-full`,
+   * so a hardcoded `w-full` in the base would silently beat a `w-auto` passed
+   * in by a caller. Defaulting the prop keeps full-width buttons full-width
+   * while letting a row use `flex-1` or an inline button use `w-auto` and
+   * actually get it.
+   */
   className?: string;
 }
 
@@ -30,7 +40,7 @@ export function Button({
   variant = 'primary',
   loading = false,
   disabled,
-  className = '',
+  className = 'w-full',
   ...rest
 }: ButtonProps) {
   const isDisabled = disabled === true || loading;
@@ -40,7 +50,7 @@ export function Button({
       type="button"
       aria-busy={loading}
       disabled={isDisabled}
-      className={`flex h-12 w-full items-center justify-center rounded-xl px-5 text-base font-semibold transition-colors ${
+      className={`flex h-12 items-center justify-center rounded-xl px-5 text-base font-semibold transition-colors ${
         CONTAINER[variant]
       } ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${className}`}
       {...rest}
