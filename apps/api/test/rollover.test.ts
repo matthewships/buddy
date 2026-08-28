@@ -100,7 +100,7 @@ describe('day rollover', () => {
   });
 
   it('survives a user row with an unusable timezone', async () => {
-    const { owner, groupId } = await pair('rollbadtz');
+    const { owner } = await pair('rollbadtz');
     const other = await pair('rollgoodtz');
 
     const stranded = await createTask(other.owner, other.groupId);

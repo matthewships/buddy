@@ -11,8 +11,18 @@ import * as SecureStore from 'expo-secure-store';
 const ACCESS_KEY = 'buddy.accessToken';
 const REFRESH_KEY = 'buddy.refreshToken';
 
+/**
+ * Where the API lives.
+ *
+ * `EXPO_PUBLIC_API_URL` is inlined by Metro at build time and is what eas.json
+ * sets per build profile, so a preview or production binary points at the
+ * deployed Worker without an app.json edit. `extra.apiUrl` is the checked-in
+ * default for local development, and localhost is the last resort.
+ */
 export const API_URL: string =
-  (Constants.expoConfig?.extra?.['apiUrl'] as string | undefined) ?? 'http://localhost:8787';
+  process.env.EXPO_PUBLIC_API_URL ??
+  (Constants.expoConfig?.extra?.['apiUrl'] as string | undefined) ??
+  'http://localhost:8787';
 
 export interface Tokens {
   accessToken: string;

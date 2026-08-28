@@ -42,6 +42,10 @@ app.use('*', secureHeaders());
 // The mobile app is not a browser origin, but Expo web and the dev tools are.
 app.use('/api/*', cors({ origin: '*', maxAge: 86_400 }));
 
+// The chaining below registers the routes on `app`; this binding exists purely
+// to capture their combined type for AppType, which is why lint sees it as
+// type-only.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const routes = app
   .get('/health', (c) =>
     c.json({

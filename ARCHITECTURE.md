@@ -20,7 +20,7 @@
 | Cache / rate limit | **KV** (leaderboard snapshots) + **Rate Limiting binding** | Leaderboard is read-heavy and cheap to precompute; rate limiting protects login, requests, invites, reports. |
 | Content moderation | **Workers AI** (Llama Guard) — *optional, phase 2* | Auto-flag abusive chat/proof text alongside user reports. |
 | Auth | **Email + password** → short-lived access JWT (15 min) + rotating refresh token (D1). Email verified by 6-digit code. | Passwords hashed with PBKDF2-SHA256 (WebCrypto, OWASP parameters); no third-party auth provider. |
-| Builds / deploy | Expo **EAS Build** for app binaries; Wrangler + GitHub → Workers Builds for the API; Vitest (`@cloudflare/vitest-pool-workers`) + Jest/RNTL | |
+| Builds / deploy | Expo **EAS Build** for app binaries; Wrangler for the API; GitHub Actions runs lint + typecheck + tests + a Metro bundle; Vitest (`@cloudflare/vitest-plugin`) + Jest/RNTL | |
 
 Backend cost: Workers **Paid plan ($5/mo)** covers everything at early scale. Expo EAS has a free tier for builds.
 
@@ -183,7 +183,7 @@ POST /auth/reset         {email, code, newPassword}           → revokes all se
 POST /auth/change-password (authenticated)
 DELETE /me               account deletion (required by both stores)
 ```
-- Password policy: ≥ 8 chars, checked against a small common-password list; hashed with **PBKDF2-SHA256, 600,000 iterations, 16-byte salt** (WebCrypto).
+- Password policy: ≥ 8 chars, checked against a small common-password list; hashed with **PBKDF2-SHA256, 16-byte salt** (WebCrypto), at an effective **600,000 iterations reached as 6 chained rounds of 100,000**. The runtime rejects any single `deriveBits` call above 100,000 (`NotSupportedError: iteration counts above 100000 are not supported`) and **Miniflare does not enforce that cap**, so the original single-call form passed all 123 tests and 500'd on the first real deploy. Each round feeds its output into the next, so the work stays sequential and the factor is unchanged.
 - Codes: 6 digits, 10-minute expiry, max 5 attempts, hashed at rest.
 - Rate limits: login 10/15 min per email+IP, register 5/hour per IP, code resend 3/10 min.
 - Access JWT: 15 min, HS256. Refresh: 30 days, rotating, stored hashed.
@@ -350,7 +350,7 @@ FindBuddy/
 | 3 ✅ | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop. **Done 2026-08-27.** |
 | 4 ✅ | Chat (Durable Object + WebSocket), full push notification coverage. **Done 2026-08-28.** |
 | 5 ✅ | Leaderboard, reports, admin endpoints, account deletion. **Done 2026-08-28.** |
-| 6 | Polish, tests, EAS builds → TestFlight + Play internal testing |
+| 6 ✅ | Polish, tests, EAS builds → TestFlight + Play internal testing. **Done 2026-08-28** — lint, CI, icons/splash, EAS profiles, README, and the API deployed to `https://buddy-api.ships.workers.dev`. TestFlight/Play submission itself needs `eas login` plus Apple/Google accounts. |
 
 Each phase ends deployable and testable end-to-end.
 

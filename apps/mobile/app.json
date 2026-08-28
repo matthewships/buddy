@@ -4,22 +4,38 @@
     "slug": "buddy",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "scheme": "buddy",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.buddyapp.buddy",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "icon": "./assets/icon.png"
     },
     "android": {
-      "package": "com.buddyapp.buddy"
+      "package": "com.buddyapp.buddy",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4f46e5"
+      }
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#4f46e5"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

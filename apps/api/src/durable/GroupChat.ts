@@ -4,7 +4,7 @@ import { and, eq, ne } from 'drizzle-orm';
 import { MAX_MESSAGE_BODY, sendMessageSchema } from '@buddy/shared';
 
 import { db } from '../db/client.js';
-import { groupMembers, messages, users } from '../db/schema.js';
+import { groupMembers, messages } from '../db/schema.js';
 import type { Env } from '../env.js';
 import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';

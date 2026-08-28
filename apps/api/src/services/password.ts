@@ -1,17 +1,23 @@
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
-  PBKDF2_ITERATIONS,
+  PBKDF2_ITERATIONS_PER_ROUND,
   PBKDF2_KEY_BYTES,
+  PBKDF2_ROUNDS,
   PBKDF2_SALT_BYTES,
 } from '@buddy/shared';
 
 import { badRequest } from '../lib/errors.js';
 
 /**
- * Password hashing (§4.3): PBKDF2-SHA256 at OWASP's 600,000 iterations, via
- * WebCrypto. bcrypt and argon2 would need WASM and are CPU-heavy on Workers;
- * PBKDF2 is native here.
+ * Password hashing (§4.3): PBKDF2-SHA256 via WebCrypto. bcrypt and argon2 would
+ * need WASM and are CPU-heavy on Workers; PBKDF2 is native here.
+ *
+ * The 600,000 iterations OWASP recommends cannot be requested in one call — the
+ * Workers runtime rejects anything above 100,000, and Miniflare does not enforce
+ * that limit, so it only appears on a real deploy. The work factor is reached by
+ * chaining rounds instead; see PBKDF2_ROUNDS in packages/shared/src/limits.ts
+ * for why that is equivalent.
  *
  * Salt and hash are stored base64 in separate columns so the parameters can be
  * changed later without a format migration.
@@ -32,16 +38,31 @@ function fromBase64(value: string): Uint8Array {
   return bytes;
 }
 
-async function derive(password: string, salt: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, [
-    'deriveBits',
-  ]);
+async function deriveRound(input: BufferSource, salt: Uint8Array): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey('raw', input, 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS },
+    {
+      name: 'PBKDF2',
+      hash: 'SHA-256',
+      salt: salt as BufferSource,
+      iterations: PBKDF2_ITERATIONS_PER_ROUND,
+    },
     key,
     PBKDF2_KEY_BYTES * 8,
   );
   return new Uint8Array(bits);
+}
+
+/**
+ * Runs the full chain. Each round's output is the next round's input, so the
+ * rounds are strictly sequential and an attacker cannot parallelise them.
+ */
+async function derive(password: string, salt: Uint8Array): Promise<Uint8Array> {
+  let material: BufferSource = encoder.encode(password);
+  for (let round = 0; round < PBKDF2_ROUNDS; round += 1) {
+    material = await deriveRound(material, salt);
+  }
+  return material as Uint8Array;
 }
 
 export interface PasswordRecord {

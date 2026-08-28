@@ -1,4 +1,7 @@
 # Copy to .dev.vars for local `wrangler dev`. .dev.vars is gitignored.
+# Overrides the deployed ENVIRONMENT so verification codes are logged locally
+# instead of requiring a working email sender.
+ENVIRONMENT="development"
 # Generate a strong secret: openssl rand -hex 32
 JWT_SECRET="replace-me-with-32-random-bytes-hex"
 # Only needed once push is wired (phase 4)

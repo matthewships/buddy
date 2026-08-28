@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci` rather than `npm install`, so a lockfile that has drifted from
+      # package.json fails here instead of silently resolving differently.
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The API suite runs in workerd with real D1, KV and a real Durable
+      # Object, so this needs no service containers.
+      - name: Test
+        run: npm test
+
+      - name: Worker builds
+        run: npm run check --workspace @buddy/api
+
+      # Catches a broken import or a missing asset that typecheck cannot see,
+      # since Metro resolves differently from tsc.
+      - name: Metro bundle
+        run: npm run export --workspace @buddy/mobile

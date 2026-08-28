@@ -83,8 +83,12 @@
     }
   ],
 
+  // What gets deployed. Local dev and the test suite override ENVIRONMENT to
+  // "development" (.dev.vars and vitest.config.ts respectively), which is what
+  // enables logging verification codes — services/email.ts never logs a code
+  // when this is "production".
   "vars": {
-    "ENVIRONMENT": "development",
+    "ENVIRONMENT": "production",
     "EMAIL_FROM": "no-reply@localrack.xyz",
     "EMAIL_FROM_NAME": "Buddy"
   }

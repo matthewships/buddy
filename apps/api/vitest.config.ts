@@ -23,6 +23,9 @@ export default defineConfig({
             // services/email.ts then logs codes instead of sending, which is
             // what the tests assert against.
             JWT_SECRET: 'test-secret-not-used-anywhere-real',
+            // Overrides the deployed value so email codes reach the log and
+            // the tests can read them back.
+            ENVIRONMENT: 'development',
             ADMIN_TOKEN: 'test-admin-token',
           },
         },

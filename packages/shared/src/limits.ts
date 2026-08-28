@@ -26,8 +26,29 @@ export const EMAIL_CODE_LENGTH = 6;
 export const EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
 export const EMAIL_CODE_MAX_ATTEMPTS = 5;
 
-/** Password hashing — OWASP parameters for PBKDF2-SHA256 (§4.3). */
-export const PBKDF2_ITERATIONS = 600_000;
+/**
+ * Password hashing (§4.3).
+ *
+ * OWASP recommends 600,000 PBKDF2-SHA256 iterations, but the Workers runtime
+ * refuses any single deriveBits call above 100,000:
+ *
+ *   NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not
+ *   supported (requested 600000)
+ *
+ * Miniflare does not enforce that cap, so this only surfaces on a real deploy.
+ *
+ * The work factor is preserved by chaining: each round runs the platform
+ * maximum and feeds its 32-byte output in as the next round's input, so an
+ * attacker still has to perform ROUNDS x ITERATIONS_PER_ROUND sequential work.
+ * The rounds cannot be parallelised because each depends on the previous one's
+ * output, and the 256-bit intermediate makes collapse negligible.
+ */
+export const PBKDF2_ITERATIONS_PER_ROUND = 100_000;
+export const PBKDF2_ROUNDS = 6;
+/** The effective work factor, matching the OWASP figure. */
+export const PBKDF2_TOTAL_ITERATIONS = PBKDF2_ITERATIONS_PER_ROUND * PBKDF2_ROUNDS;
+/** The runtime's hard ceiling on a single deriveBits call. */
+export const PBKDF2_MAX_ITERATIONS_PER_CALL = 100_000;
 export const PBKDF2_SALT_BYTES = 16;
 export const PBKDF2_KEY_BYTES = 32;
 
