@@ -8,3 +8,8 @@ JWT_SECRET="replace-me-with-32-random-bytes-hex"
 # EXPO_ACCESS_TOKEN=""
 # Guards the /admin/* endpoints. Without it, those endpoints are closed, not open.
 # ADMIN_TOKEN="replace-me-with-32-random-bytes-hex"
+# Browser push (§4.6). Generate a dev-only pair with:
+#   node scripts/vapid-keys.mjs
+# Without them the API sends no browser notifications; everything else works.
+# VAPID_PUBLIC_KEY=""
+# VAPID_PRIVATE_KEY=""

@@ -114,8 +114,14 @@ export function useRequestNotifications(): void {
      * cannot read — so the page does it instead. The endpoint upserts, so a
      * subscription that has not changed costs one request and writes nothing,
      * and one the browser rotated silently is picked up here.
+     *
+     * Behind the same gate everything else is behind. Someone who turned the
+     * switch off in Profile has a permission that is still granted, and
+     * re-posting on their behalf would resurrect notifications they explicitly
+     * declined — which is exactly what would happen if the unsubscribe half had
+     * failed after the server row was already deleted.
      */
-    void syncSubscription();
+    if (notificationsArmed()) void syncSubscription();
   }, []);
 
   useEffect(() => {

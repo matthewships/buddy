@@ -78,8 +78,8 @@ App Transport Security would otherwise block plain HTTP.
 
 Two limits of the Simulator: it cannot receive remote push (the buddy-request
 notification will not fire — the 15-second poll is the fallback, which is why it
-exists), and the review loop needs two accounts, since nobody can approve their
-own task.
+exists, and the web client is the easier place to test a real notification), and
+the review loop needs two accounts, since nobody can approve their own task.
 
 Building for a **physical iPhone** or TestFlight needs the paid Apple Developer
 Program; see `apps/mobile/EAS.md`.
@@ -89,7 +89,7 @@ Program; see `apps/mobile/EAS.md`.
 ```bash
 npm run lint        # eslint, flat config at the root
 npm run typecheck   # tsc across all four workspaces
-npm test            # 165 tests
+npm test            # 215 tests
 ```
 
 The API suite runs inside `workerd` against real D1, KV and a real Durable
@@ -127,17 +127,41 @@ npm run deploy:web        # next build + OpenNext bundle + wrangler deploy
 the deployed Worker for a production build and to `http://localhost:8787` for
 `next dev`, so neither needs a flag in the normal case.
 
+### Browser notifications
+
+The web client receives the same ten notifications the app does, through Web
+Push (ARCHITECTURE.md §4.6, §5.6). It needs a VAPID keypair, which the API signs
+with and browsers subscribe against:
+
+```bash
+cd apps/api
+node scripts/vapid-keys.mjs        # prints VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY
+npx wrangler secret put VAPID_PUBLIC_KEY
+npx wrangler secret put VAPID_PRIVATE_KEY
+```
+
+Order matters when rolling this out to an already-deployed API: **apply the
+migrations first**, then deploy, then set the secrets. Without the secrets the
+web branch does nothing; with the secrets but without
+`0002_add_web_push_subscriptions`, the queue consumer fails every batch — mobile
+notifications included.
+
+Rotating the keys invalidates every existing browser subscription, since each is
+bound to the key that created it, and everyone has to re-enable notifications in
+Profile.
+
+For local development put both values in `apps/api/.dev.vars`. A service worker
+runs on `localhost` (it counts as a secure context) and the subscription
+endpoint is the browser's real push service, so the whole path can be tested
+end to end without deploying. On an iPhone, Safari only offers push to a site
+added to the Home Screen; everywhere else no install is needed.
+
 ## Outstanding
 
-- **Push credentials.** An APNs key and FCM v1 credentials need uploading to EAS
-  before push works on a real device. This does not block the web client: a
-  browser cannot receive Expo push at all, so it raises its own notifications
-  off the 15-second incoming-request poll (`useRequestNotifications`). That
-  works only while a tab is open and only where `new Notification()` is
-  supported — desktop, not Android Chrome. **Real Web Push is not
-  implemented**; ARCHITECTURE.md §5.6 lists what it would take (service worker,
-  VAPID, payload encryption, and a D1 migration that rebuilds a CHECK
-  constraint).
+- **Push credentials (mobile only).** An APNs key and FCM v1 credentials need
+  uploading to EAS before push works on a real device. The web client is not
+  waiting on any of that: it uses Web Push directly from the Worker, which needs
+  only the VAPID keypair below.
 - **EAS builds** need `eas login`; profiles are configured in
   `apps/mobile/eas.json`.
 - **`apps/web` has no test suite.** Every other workspace has one, and

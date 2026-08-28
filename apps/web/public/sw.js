@@ -80,11 +80,17 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         if (new URL(client.url).origin !== target.origin) continue;
-        // `navigate` can reject on a client the worker does not control, in
-        // which case focusing it alone is still better than a new window.
+        // `navigate` can reject on a client this worker does not control. The
+        // tab is focused by then, so the tap has already done most of its job —
+        // opening a second copy of the app on top of it would be worse than
+        // landing on the wrong screen.
         return client
           .focus()
-          .then((focused) => (focused?.navigate ? focused.navigate(target.href) : focused))
+          .then((focused) =>
+            focused?.navigate
+              ? focused.navigate(target.href).catch(() => focused)
+              : focused,
+          )
           .catch(() => self.clients.openWindow(target.href));
       }
       return self.clients.openWindow(target.href);

@@ -232,9 +232,53 @@ Routes are defined with Zod validators from `packages/shared`; the app imports t
 - On acceptance the recipient's accept call creates the group in one D1 batch and enqueues a push to the requester.
 
 ### 4.6 Push notifications
-- The app registers an **Expo push token** (works for both APNs and FCM). The Worker's queue consumer batches `{token, title, body, data}` and POSTs to `https://exp.host/--/api/v2/push/send`; receipts are checked and dead tokens deleted.
-- Requires: an APNs key uploaded to EAS (iOS) and a Firebase project's FCM V1 credentials uploaded to EAS (Android — Google mandates FCM for Android push regardless of provider).
-- `[DECISION]` Alternative with no Expo server in the path: the Worker talks to APNs (HTTP/2, ES256 token) and FCM HTTP v1 (Google service account) directly. ~2× the integration code, two token types, no third party. My recommendation: Expo Push for v1; the queue-consumer interface is the same so switching later is contained.
+
+Two transports, one queue. A route enqueues `{userIds, title, body, data}` and
+the consumer resolves that to whatever devices those users actually have, so
+none of the ten call sites knows there is more than one way to reach a person.
+
+**Mobile — Expo.** The app registers an **Expo push token** (works for both APNs
+and FCM). The consumer batches to `https://exp.host/--/api/v2/push/send` in
+chunks of 100; receipts are checked and `DeviceNotRegistered` tokens deleted.
+Requires an APNs key uploaded to EAS (iOS) and FCM V1 credentials (Android —
+Google mandates FCM for Android push regardless of provider).
+
+**Web — Web Push, direct from the Worker.** No third party: the Worker signs a
+VAPID JWT (RFC 8292, ES256) and encrypts the payload itself (RFC 8291: ECDH
+P-256 → HKDF → AES128GCM, one record, `aes128gcm` content coding), then POSTs to
+the subscription's endpoint. All of it is WebCrypto, which the Workers runtime
+implements natively, and `test/web-push.test.ts` pins the encryptor against the
+RFC's own published intermediate values so a misreading of the spec fails the
+suite rather than producing something no browser can decrypt. 404 and 410 delete
+the subscription — the browser's `DeviceNotRegistered`.
+
+Ordering and failure handling are deliberate. Expo runs first, because it is the
+half that throws to retry the whole queue batch; a browser notification sent
+before that throw would be delivered twice, and Web Push has no de-duplication.
+Web failures are caught per subscription and never thrown, because throwing
+would re-send everyone else's notifications on both transports.
+
+Without `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` the web branch no-ops, so the
+API is safe to deploy before the secrets exist. **The migration is not
+optional in the same way**: once the secrets are set, the consumer queries
+`web_push_subscriptions` on every batch, and a missing table would fail the
+batch for mobile too. Order is: apply migrations remotely, deploy the API, set
+the secrets, deploy the web client.
+
+- `[DECISION]` Web Push subscriptions live in their own table rather than in
+  `devices`. They share no column with it — no Expo token, no `platform` from
+  `PLATFORMS` — and folding them in would have meant dropping a NOT NULL and
+  rebuilding a CHECK constraint, neither of which SQLite can alter in place.
+- `[DECISION]` No `web-push` library. It is four WebCrypto calls and a header
+  layout, fully specified and pinned to published test vectors, against a
+  dependency in the same blast radius as the auth path — the same call already
+  made for PBKDF2 hashing and the rate limiter.
+- `[DECISION]` Alternative with no Expo server in the path for mobile either:
+  the Worker talks to APNs (HTTP/2, ES256 token) and FCM HTTP v1 (Google service
+  account) directly. ~2× the integration code, two token types, no third party.
+  Recommendation stands: Expo Push for v1; the queue-consumer interface is the
+  same, and the Web Push half is now proof that the consumer can hold a
+  hand-rolled transport next to it.
 
 ### 4.7 Durable Object: `GroupChat`
 - One per group (`idFromName(groupId)`); the client connects with a 60-second **ticket** issued by REST after a membership check.
@@ -488,39 +532,53 @@ materially lower means a different framework, not tuning.
 
 ## 5.6 Notifications on the web
 
-A browser cannot receive the Expo push messages the API sends, and full Web Push
-is **not implemented**: it would need a service worker, a VAPID keypair,
-server-side ECDH + HKDF + AES128GCM payload encryption, a fan-out per
-subscription endpoint in the queue consumer, and a D1 migration — `devices` has a
-`notNull expoPushToken` and a CHECK constraint on `platform` against `PLATFORMS`,
-and SQLite cannot alter a CHECK, so that is a table rebuild plus a change to a
-shared enum the API validators depend on.
+The web client receives **all ten notification types** the app receives, through
+Web Push, with no tab open. §4.6 covers the server half; this is what runs in
+the browser.
 
-What exists instead reuses the fallback the mobile app already has for denied
-permissions: the 15-second `useIncomingRequests` poll. `useRequestNotifications`
-turns genuinely new rows into a Notifications API banner. No service worker, no
-server change, no migration.
+- **`public/sw.js`** — a service worker doing nothing but `push` and
+  `notificationclick`. No caching (a cache here would serve stale HTML after a
+  deploy) and no API calls, because session tokens live in `localStorage`, which
+  a service worker cannot read.
+- **`src/push/subscription.ts`** — registers the worker, fetches the server's
+  VAPID public key from `/api/me/web-push/key` rather than compiling it into the
+  bundle (a subscription is bound to the key that created it, so a stale copy
+  would produce subscriptions nothing can push to), subscribes, and posts the
+  result to `/api/me/web-push`.
+- **The Profile switch** owns both the permission and the wish, which stay
+  separate: a permission granted months ago with the feature since switched off
+  reads as off.
 
-Three things about it that are easy to get wrong, and are handled:
+Three things that would otherwise be silent failures:
 
-- **The first payload is adopted as a baseline and notifies nothing**, so a
-  request already pending when the app opens does not fire a stale banner.
-- **It only fires when the tab is hidden.** With the tab in front,
-  `RequestBanner` is already on screen.
-- **The poll it depends on stops in exactly the state it is needed.**
-  `queryObserver` skips interval refetches unless `refetchIntervalInBackground`
-  is set or `focusManager.isFocused()`, and that check is
-  `visibilityState !== 'hidden'`. So the hook drives its own 15-second refetch
-  while hidden and armed, rather than changing the shared query's options for
-  every caller. The two ticks never overlap: visible, only the query's interval
-  runs; hidden, only the hook's.
+- **`worker-src 'self'` in the CSP.** `worker-src` falls back to `script-src`,
+  where `'strict-dynamic'` nullifies `'self'`, and a worker script cannot carry
+  a nonce. Without the directive, registration is blocked in production only.
+- **The payload's `url` is an Expo Router path** (`/(tabs)/today`). Next has the
+  same route groups but strips them from URLs, so the worker removes the
+  parenthesised segments before navigating. One payload, both clients.
+- **`pushsubscriptionchange` is handled by the page**, not the worker, for the
+  same `localStorage` reason: every load re-posts `getSubscription()`, and the
+  endpoint upserts on the endpoint.
 
-Honest limits: it works only while a tab is open, `new Notification()` throws on
-Android Chrome (which requires a service worker's `showNotification`), so this is
-effectively desktop-first, and Chrome coalesces timers in long-hidden tabs to
-roughly once a minute, so delivery can lag by up to a minute against the
-5-minute request TTL. The Profile card states the permission state honestly,
-including that a `denied` permission cannot be re-prompted from the page.
+**iOS.** Safari offers push only to a site added to the Home Screen, which is
+why there is a `manifest.webmanifest` with `display: standalone`. In a normal
+iOS tab `window.Notification` does not exist at all, so the app reports the
+feature as unsupported and says how to fix it.
+
+**The fallback stays.** `useRequestNotifications` still turns new rows from the
+15-second `useIncomingRequests` poll into a Notifications API banner, for
+browsers where the subscription fails and for iOS before installation. A buddy
+request expires in five minutes, so it is the one notification worth a second
+delivery path. It stands down — along with its hidden-tab refetch — as soon as
+this tab knows a push subscription is live, and does nothing while that is still
+unknown, so one request never raises two banners. Its own quirks are unchanged
+and still handled: the first payload is adopted as a baseline so a request
+already pending does not fire a stale banner; it only fires when the user is not
+looking (`visibilityState` *and* `document.hasFocus()`, since a visible tab in a
+background window is the ordinary case); and it drives its own refetch while
+hidden, because TanStack Query skips interval refetches for a hidden tab and the
+two ticks therefore tile the states exactly rather than overlapping.
 
 ---
 

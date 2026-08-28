@@ -271,7 +271,19 @@ function NotificationCard() {
           ) : null}
 
           {notifications.state === 'unsupported' ? (
-            <p className="text-sm text-ink-subtle">This browser cannot show notifications.</p>
+            <>
+              <p className="text-sm text-ink-subtle">This browser cannot show notifications.</p>
+              {/*
+                Where this actually lands: Safari on iOS has no `Notification`
+                in a normal tab, so it reports `unsupported` and never reaches
+                the `default` state the other hint is attached to. Without this
+                line, the one platform with a fix is the one that never sees it.
+              */}
+              <p className="mt-2 text-xs text-ink-subtle">
+                On an iPhone or iPad, add Buddy to your Home Screen and open it from there —
+                Safari only offers notifications to an installed app.
+              </p>
+            </>
           ) : null}
 
           {/* Which of the two mechanisms is actually running, said plainly
@@ -286,8 +298,8 @@ function NotificationCard() {
 
           {notifications.state === 'default' ? (
             <p className="mt-2 text-xs text-ink-subtle">
-              On an iPhone, add Buddy to your Home Screen first — Safari only sends notifications
-              to an installed app. The in-app banner works everywhere regardless.
+              The in-app banner shows a buddy request whenever Buddy is on screen, with or
+              without this.
             </p>
           ) : null}
         </div>
