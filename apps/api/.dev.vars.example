@@ -3,5 +3,5 @@
 JWT_SECRET="replace-me-with-32-random-bytes-hex"
 # Only needed once push is wired (phase 4)
 # EXPO_ACCESS_TOKEN=""
-# Guards the /admin/* endpoints (phase 5)
-# ADMIN_TOKEN=""
+# Guards the /admin/* endpoints. Without it, those endpoints are closed, not open.
+# ADMIN_TOKEN="replace-me-with-32-random-bytes-hex"

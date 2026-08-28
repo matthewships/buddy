@@ -1,12 +1,12 @@
 import { zValidator } from '@hono/zod-validator';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, isNull, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { handleSchema, registerDeviceSchema, updateMeSchema } from '@buddy/shared';
 
 import { db } from '../db/client.js';
-import { buddyProfiles, devices, users } from '../db/schema.js';
+import { buddyProfiles, devices, refreshTokens, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
@@ -184,6 +184,67 @@ export const meRoutes = new Hono<AppEnv>()
     }
 
     return c.json({ avatarKey: key });
+  })
+
+  /**
+   * Account deletion (§4.3) — required by both app stores.
+   *
+   * Soft delete, not a row DROP. The ledger, reviews and messages this person
+   * took part in belong to other people's history too: hard-deleting would
+   * rewrite their group's chat and silently reverse credits their buddies
+   * earned by reviewing. So identifying fields are scrubbed, the account is
+   * marked deleted and every session revoked, which is what the stores actually
+   * require. Their rows stay linkable but anonymous.
+   *
+   * Devices go immediately, so no further push can reach them.
+   */
+  .delete('/', async (c) => {
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    const user = await client.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { avatarKey: true, deletedAt: true },
+    });
+    if (!user) throw notFound('Account not found');
+    if (user.deletedAt !== null) return c.json({ ok: true as const, alreadyDeleted: true as const });
+
+    const stamp = nowIso();
+    // The handle and email are freed for reuse but must stay unique, so they are
+    // replaced with a value derived from the id rather than set to NULL.
+    const tombstone = `deleted-${userId.toLowerCase()}`;
+
+    await client.batch([
+      client
+        .update(users)
+        .set({
+          deletedAt: stamp,
+          email: `${tombstone}@deleted.invalid`,
+          handle: tombstone.slice(0, 24),
+          displayName: 'Deleted account',
+          avatarKey: null,
+          goalText: null,
+          occupationText: null,
+          isOpenBuddy: false,
+          passwordHash: 'deleted',
+          passwordSalt: 'deleted',
+        })
+        .where(eq(users.id, userId)),
+      // Remove the buddy profile outright: it is free text about a person who
+      // has left, and nothing else references it.
+      client.delete(buddyProfiles).where(eq(buddyProfiles.userId, userId)),
+      client.delete(devices).where(eq(devices.userId, userId)),
+      client
+        .update(refreshTokens)
+        .set({ revokedAt: stamp })
+        .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt))),
+    ]);
+
+    if (user.avatarKey) {
+      c.executionCtx.waitUntil(c.env.STORAGE.delete(user.avatarKey));
+    }
+
+    return c.json({ ok: true as const, alreadyDeleted: false as const });
   })
 
   .post('/devices', zValidator('json', registerDeviceSchema), async (c) => {

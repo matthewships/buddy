@@ -23,6 +23,7 @@ export default defineConfig({
             // services/email.ts then logs codes instead of sending, which is
             // what the tests assert against.
             JWT_SECRET: 'test-secret-not-used-anywhere-real',
+            ADMIN_TOKEN: 'test-admin-token',
           },
         },
       };

@@ -349,7 +349,7 @@ FindBuddy/
 | 2 ✅ | Buddy directory with matching + filters, buddy requests with 5-min expiry + countdown + push, groups & invites. **Done 2026-08-27.** |
 | 3 ✅ | Tasks, done / proof / review, credits, streaks, badges, day-rollover cron — the core loop. **Done 2026-08-27.** |
 | 4 ✅ | Chat (Durable Object + WebSocket), full push notification coverage. **Done 2026-08-28.** |
-| 5 | Leaderboard, reports, admin endpoints, account deletion |
+| 5 ✅ | Leaderboard, reports, admin endpoints, account deletion. **Done 2026-08-28.** |
 | 6 | Polish, tests, EAS builds → TestFlight + Play internal testing |
 
 Each phase ends deployable and testable end-to-end.
@@ -402,8 +402,8 @@ Two structural decisions worth carrying forward:
 - [ ] Push via **Expo Push Service** (proposed) vs direct APNs + FCM from the Worker
 - [x] Reviewer rule in 3+ member groups: **any member, first review wins** — decided 2026-08-27
 - [x] Credit formula: **`rating × 10` + `20` daily-completion bonus** — decided 2026-08-27; the bonus is awarded at approval time, not at rollover, because a task may legitimately be approved after its day has ended
-- [ ] Reports: manual admin review only vs auto-hide after N reports
-- [ ] Per-group leaderboard in addition to global
+- [x] Reports: **manual admin review only** — decided 2026-08-28. Auto-hide after N reports is trivially weaponised by a small group against one person, and at this scale a queue does everything a threshold would. `status` stays in the schema so it can be layered on later without a migration.
+- [x] Per-group leaderboard: **not in v1** — decided 2026-08-28. A 2-person matched group makes it a coin flip, which is demotivating rather than motivating; global weekly + all-time ship first.
 - [x] Chat history in **D1** — decided 2026-08-28; the DO does live fan-out only, so reports can query messages across groups
 - [ ] UI styling: NativeWind (proposed) vs StyleSheet vs Tamagui
 - [ ] Photo proofs in v1? (proposal: text only; image field already in the schema)

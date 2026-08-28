@@ -10,6 +10,8 @@ import type { ApiErrorBody } from './lib/errors.js';
 import { db } from './db/client.js';
 import { authRoutes } from './routes/auth.js';
 import { chatRoutes, chatSocketRoutes } from './routes/chat.js';
+import { leaderboardRoutes } from './routes/leaderboard.js';
+import { adminRoutes, reportRoutes } from './routes/reports.js';
 import { buddyRequestRoutes } from './routes/buddy-requests.js';
 import { buddyRoutes } from './routes/buddies.js';
 import { groupRoutes, inviteRoutes } from './routes/groups.js';
@@ -17,6 +19,7 @@ import { meRoutes } from './routes/me.js';
 import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
 import { runRollover } from './jobs/rollover.js';
+import { runWeekly } from './jobs/weekly.js';
 import { deliverPush, type PushMessage } from './services/push.js';
 
 /**
@@ -29,6 +32,9 @@ import { deliverPush, type PushMessage } from './services/push.js';
  * what makes the request and response types check at compile time across the
  * repo (§4.4).
  */
+/** Must match the weekly entry in wrangler.jsonc's `triggers.crons`. */
+const WEEKLY_CRON = '5 0 * * 1';
+
 const app = new Hono<AppEnv>();
 
 app.use('*', logger());
@@ -67,7 +73,10 @@ const routes = app
   .route('/api/groups', chatRoutes)
   // The socket upgrade sits outside /api/groups: it authenticates with a
   // ticket, and that prefix's bearer middleware would reject it first.
-  .route('/api/chat', chatSocketRoutes);
+  .route('/api/chat', chatSocketRoutes)
+  .route('/api/leaderboard', leaderboardRoutes)
+  .route('/api/reports', reportRoutes)
+  .route('/api/admin', adminRoutes);
 
 /** Any thrown ApiError already carries its JSON body; everything else is a 500. */
 app.onError((err, c) => {
@@ -131,13 +140,22 @@ export default {
    * jobs/rollover.ts — so a dropped firing self-heals on the next hour instead
    * of silently skipping a day's rollover for a whole timezone.
    */
-  async scheduled(_controller, env, ctx) {
+  async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       (async () => {
         const result = await runRollover(db(env.DB));
         console.log(
           `[rollover] timezones=${result.timezones} missed=${result.missed} streaksReset=${result.streaksReset}`,
         );
+
+        // The Monday 00:05 UTC firing also closes the week (§4.9). Both crons
+        // land here, so the cron expression identifies which one ran.
+        if (controller.cron === WEEKLY_CRON) {
+          const weekly = await runWeekly(db(env.DB), env.CACHE);
+          console.log(
+            `[weekly] frozen=${weekly.frozenWeek} cleared=${weekly.rowsCleared}`,
+          );
+        }
       })(),
     );
   },
