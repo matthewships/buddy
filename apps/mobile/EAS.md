@@ -24,3 +24,29 @@ EXPO_PUBLIC_API_URL="https://your-tunnel-url" npx expo start --dev-client
 ```
 
 Metro's own `--tunnel` flag only tunnels the JavaScript bundle, not your API.
+
+## Logging in from this machine (headless)
+
+`eas login` defaults to a browser OAuth flow that redirects to
+`http://localhost:<random-port>/auth/callback`. That listener runs **on this
+machine**, so when you are SSH'd in from a laptop the browser opens locally, the
+callback never reaches the devbox, and the CLI waits forever. Pasting the code
+into the terminal does nothing — nothing is reading stdin.
+
+Two ways round it:
+
+```bash
+# Interactive: username + password prompt, no browser involved.
+npm run eas --workspace @buddy/mobile -- login --no-browser
+```
+
+```bash
+# Non-interactive, and what CI uses. Create a token at
+# https://expo.dev/settings/access-tokens
+export EXPO_TOKEN="..."          # eas-cli reads this before any stored session
+npm run eas --workspace @buddy/mobile -- whoami
+```
+
+`eas-cli` is a pinned devDependency, so `npm run eas` uses the local copy
+instead of re-downloading it (and re-printing a wall of deprecation warnings)
+on every invocation.
