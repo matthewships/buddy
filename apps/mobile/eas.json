@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://localhost:8787"
+        "EXPO_PUBLIC_API_URL": "https://buddy-api.ships.workers.dev"
       }
     },
     "preview": {
