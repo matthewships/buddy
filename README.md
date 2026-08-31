@@ -95,7 +95,7 @@ Program; see `apps/mobile/EAS.md`.
 ```bash
 npm run lint        # eslint, flat config at the root
 npm run typecheck   # tsc across all four workspaces
-npm test            # 265 tests
+npm test            # 318 tests
 ```
 
 The API suite runs inside `workerd` against real D1, KV and a real Durable
@@ -169,11 +169,12 @@ added to the Home Screen; everywhere else no install is needed.
   country, topics nor hobbies. It compiles and behaves correctly — the API
   derives `occupation_key` from the level of study — but a student who signs up
   on the web and opens the app sees a thinner version of their own profile.
-- **The tab bar still reads Today · Groups · Buddies · Board · Profile.** The
-  agreed shape is Buddies · Groups · Feed · Board · Profile, with Today deleted
-  and its task list moved into each group. That is blocked on the Groups and
-  Feed design, chiefly because Today also carries the cross-group review queue,
-  which belongs to no single group.
+- **`apps/mobile` degrades in groups that have named a Buddy.** The server is
+  the authority on who may review, so an app user who is not the Buddy will see
+  review buttons that now return 403. Groups with no Buddy keep the original
+  any-member rule, so nothing existing breaks — but the app needs porting. It
+  also cannot set a Buddy, start a task clock, use a join link, or see the Feed,
+  and its Today tab still aggregates tasks the web now shows inside each group.
 - **Push credentials (mobile only).** An APNs key and FCM v1 credentials need
   uploading to EAS before push works on a real device. The web client is not
   waiting on any of that: it uses Web Push directly from the Worker, which needs

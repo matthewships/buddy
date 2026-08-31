@@ -135,7 +135,30 @@ Goal + occupation are collected from **everyone** (not only open buddies) becaus
 - Because a 5-minute window only works if the recipient is reachable, the directory highlights recently active buddies and defaults to sorting them first.
 
 ### 2.3 Groups
-A user creates a group and invites people they already know by `@handle` (or a share link). Any number of members. Group invites don't expire in 5 minutes (they're for friends), they stay pending for 7 days. Every group gets a chat room.
+A user creates a group and invites people they already know by `@handle`. Any number of members. Group invites don't expire in 5 minutes (they're for friends), they stay pending for 7 days. Every group gets a chat room.
+
+**Added 2026-08-31 — join links.** §5.2 originally recorded that share-link
+invites were "not in v1; @handle covers the same need". It does not: a handle
+can only name somebody who already signed up, which made every group a closed
+room and every new member somebody else's problem to recruit. Links live in
+`group_invite_links` rather than as a nullable `to_user_id` on `group_invites` —
+a targeted invite names one recipient and is accepted once, a link names nobody
+and is used many times, and sharing a table would make every existing invite
+query check which kind of row it held. A link expires in 7 days, is capped at
+`INVITE_LINK_MAX_USES`, and can be revoked.
+
+The preview (`GET /invite-links/:token`) is **unauthenticated**, deliberately.
+Someone arriving from a WhatsApp message is about to be asked nine questions, an
+email address and a password, and asking all that before saying what they are
+joining is how you lose them. The link already grants entry to anyone holding
+it, so naming the group to a holder discloses nothing the link does not — but it
+returns only the group name and the inviter, never the member list. A leaked link
+should not become a roster.
+
+On the web the token rides in the signup draft (`sessionStorage`) through the
+whole questionnaire and the email round trip, and is redeemed at
+`/onboarding/done`, so an invitee lands in the group rather than on a generic
+home screen.
 
 ### 2.4 Daily tasks & the review loop
 - Each member writes the tasks they plan to finish **today** (their local day). Tasks not completed by local midnight become **missed**.
@@ -151,8 +174,48 @@ A user creates a group and invites people they already know by `@handle` (or a s
 - **Leaderboard**: weekly (resets Monday 00:00 UTC) and all-time, global. `[DECISION]` add per-group leaderboard too?
 
 ### 2.6 Reports & chat
-- Any member can report a proof, a chat message, or a user (reason + note). Reports go to a simple admin endpoint for you to review. `[DECISION]` auto-hide content after N reports, or manual only?
+- Any member can report a proof, a chat message, a user, or (from 2026-08-31) a Feed post — reason + note. Reports go to a simple admin endpoint for you to review. `[DECISION]` auto-hide content after N reports, or manual only?
 - Chat: real-time text per group, history, push when backgrounded. No typing indicators / read receipts in v1.
+- **Sender clarity (2026-08-31).** Messages always carried the sender's name; a
+  group of three or more needs to tell people apart *without reading*, so the
+  name now carries a stable colour derived from the user id and an avatar sits
+  beside the bubble. The colour comes from the id rather than a list position so
+  it does not change when someone joins or a page of history loads above.
+- **The focus lock (2026-08-31).** While one of a member's tasks is running, that
+  member cannot post to that group's chat. Enforced in `GroupChat`
+  by a D1 read on **every inbound message**, not by state held in the object and
+  set over RPC. State would be faster and wrong: one missed unlock — a rollover,
+  a future endpoint, a retry that fails after the write — would lock someone out
+  of their group chat permanently. Reading the truth each time is self-healing,
+  and costs one indexed read beside a write the handler already does. An RPC
+  (`noteFocusChange`) exists only to grey the composer promptly; correctness does
+  not depend on it arriving.
+
+### 2.7 The Feed — added 2026-08-31
+
+A photo, an optional caption, and reactions from a fixed positive set (heart,
+like, fire, clap, book, brain). No comments.
+
+**Global**: every signed-in user sees every post. The alternative — scoping to
+groups — is safer and largely self-moderating, but leaves a brand-new account
+with no group looking at an empty screen, and this is the one surface that can
+give them something. The cost is a public photo surface, which is why `post` is
+in `REPORT_TARGETS` from the first day rather than later.
+
+Reactions are a closed list on purpose. Buddy is built on other people rating
+your work; the Feed should not also hand them a way to boo. `post_reactions` is
+keyed `(post_id, user_id, reaction)`, which makes a reaction a toggle rather than
+a counter — a second tap deletes the row it would otherwise duplicate.
+
+Images upload through the avatar's two-step protocol under a `posts/` prefix and
+are served by the same unauthenticated media route, on its own reasoning: every
+signed-in user can already see every post, and a bearer token on an `<img>` would
+defeat the CDN cache for no privacy gained.
+
+**Account deletion removes posts outright.** Deleting an account is a *soft*
+delete, so `ON DELETE cascade` never fires — the same reason the handler already
+deletes web-push rows by hand. Unlike a chat message, a post is not part of
+anyone else's history, so there is nothing lost by removing it.
 
 ---
 
@@ -412,9 +475,12 @@ Signup        Level → Institution → Major → From → Goal → Topics → H
   (revised)   → "Willing to be a buddy?" → Register (name, @handle, email, password)
               → Verify code → Done (writes everything, offers an avatar)
               Web routes live under /start/*, outside any session guard
-Tab: Today    Today's tasks across my groups; add task; mark done (+proof); buddies' tasks; review actions
-Tab: Groups   List → Group (members, tasks by day, chat) → Invite by @handle → Chat
-              (share-link invites are not in v1; @handle covers the same need)
+Tab: Feed     Global photo feed; post a photo + caption; positive-only reactions
+  (new)       (§2.7). Replaced Today in the bar; the daily loop moved into Groups.
+Tab: Groups   List (with a needs-review count per row) → Group: tasks with a member
+  (revised)   toggle, add task with a time estimate, start/abandon with a clock,
+              review section, Buddy + verifier pickers, members, invite by @handle
+              *or* by link (§2.3), chat. Join links land at /join/:token.
 Tab: Buddies  Directory (cards: level · major, institution · country, goal, topic/hobby
   (revised)   chips, active status, stats) with Recommended/Points sort and filters;
               Request on the card expands in place into an optional message
