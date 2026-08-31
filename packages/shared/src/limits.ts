@@ -86,6 +86,22 @@ export const MAX_REVIEW_COMMENT = 500;
 export const MAX_REQUEST_MESSAGE = 200;
 export const MAX_REPORT_NOTE = 600;
 
+/** Student profile fields (§2.1). */
+export const MAX_INSTITUTION = 80;
+export const MAX_CITY = 60;
+export const MAX_MAJOR_TEXT = 80;
+export const MAX_BIO = 280;
+
+/**
+ * How many topics and interests a profile may carry.
+ *
+ * Small on purpose: these render as chips on a directory card, and a card that
+ * lists a dozen of them stops being scannable — the same reasoning that caps
+ * goals at two.
+ */
+export const MAX_TOPICS = 3;
+export const MAX_INTERESTS = 5;
+
 /** Pagination. */
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 50;

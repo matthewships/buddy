@@ -1,18 +1,28 @@
 import { z } from 'zod';
 
+import { COUNTRY_KEYS } from './countries';
+import { EDUCATION_LEVEL_KEYS } from './education-levels';
 import { GOAL_KEYS } from './goals';
+import { INTEREST_KEYS } from './interests';
+import { MAJOR_KEYS } from './majors';
 import { OCCUPATION_KEYS } from './occupations';
+import { TOPIC_KEYS } from './topics';
 import { MAX_RATING, MIN_RATING } from './credits';
 import {
   DEFAULT_PAGE_SIZE,
   EMAIL_CODE_LENGTH,
   MAX_ABOUT,
   MAX_AVAILABILITY,
+  MAX_BIO,
   MAX_CHECKIN_STYLE,
+  MAX_CITY,
   MAX_DISPLAY_NAME,
   MAX_GOAL_TEXT,
   MAX_HANDLE,
   MAX_HEADLINE,
+  MAX_INSTITUTION,
+  MAX_INTERESTS,
+  MAX_MAJOR_TEXT,
   MAX_MESSAGE_BODY,
   MAX_OCCUPATION_TEXT,
   MAX_PAGE_SIZE,
@@ -24,6 +34,7 @@ import {
   MAX_REVIEW_COMMENT,
   MAX_TASK_NOTES,
   MAX_TASK_TITLE,
+  MAX_TOPICS,
   MIN_HANDLE,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -105,10 +116,17 @@ export const paginationSchema = z.object({
  * Auth (§4.3)
  * ------------------------------------------------------------------ */
 
+/**
+ * The web client asks for the handle on the register screen, because it is
+ * unique-checked server-side and that only means anything once an account is
+ * being created. It stays **optional** so the mobile app, which still claims a
+ * handle later during onboarding, keeps working unchanged.
+ */
 export const registerSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   displayName: displayNameSchema,
+  handle: handleSchema.optional(),
 });
 
 export const verifyEmailSchema = z.object({
@@ -185,6 +203,21 @@ export const occupationSchema = z
     path: ['occupationText'],
   });
 
+/**
+ * Field of study, the same key-plus-text pair as goals and occupations: the
+ * text is required when the key is `custom` and an optional elaboration
+ * otherwise ("Joint honours", a specialisation).
+ */
+export const majorSchema = z
+  .object({
+    majorKey: z.enum(MAJOR_KEYS),
+    majorText: z.string().trim().max(MAX_MAJOR_TEXT).optional(),
+  })
+  .refine((v) => v.majorKey !== 'custom' || (v.majorText?.length ?? 0) > 0, {
+    message: 'Tell us what you study',
+    path: ['majorText'],
+  });
+
 export const buddyProfileSchema = z.object({
   headline: z.string().trim().max(MAX_HEADLINE).optional(),
   about: z.string().trim().max(MAX_ABOUT).optional(),
@@ -207,8 +240,35 @@ export const updateMeSchema = z
     goalKey: z.enum(GOAL_KEYS).optional(),
     goalKey2: z.enum(GOAL_KEYS).nullish(),
     goalText: z.string().trim().max(MAX_GOAL_TEXT).nullish(),
+    /**
+     * Still accepted, but signup no longer asks: the route derives it from
+     * `educationLevel` when one is sent. Kept in the schema because the mobile
+     * app still sends it.
+     */
     occupationKey: z.enum(OCCUPATION_KEYS).optional(),
     occupationText: z.string().trim().max(MAX_OCCUPATION_TEXT).nullish(),
+    /* Student profile (§2.1). All nullish: clearing a field is a real edit, and
+       an omitted field must stay untouched, so null and undefined differ. */
+    educationLevel: z.enum(EDUCATION_LEVEL_KEYS).nullish(),
+    institution: z.string().trim().max(MAX_INSTITUTION).nullish(),
+    city: z.string().trim().max(MAX_CITY).nullish(),
+    majorKey: z.enum(MAJOR_KEYS).nullish(),
+    majorText: z.string().trim().max(MAX_MAJOR_TEXT).nullish(),
+    country: z.enum(COUNTRY_KEYS).nullish(),
+    bio: z.string().trim().max(MAX_BIO).nullish(),
+    /* Replace-a-set semantics: sending the array replaces every tag of that
+       kind, omitting it leaves them alone. Deduplicated so a client that sends
+       the same chip twice cannot inflate the count past the cap. */
+    topics: z
+      .array(z.enum(TOPIC_KEYS))
+      .max(MAX_TOPICS)
+      .transform((v) => [...new Set(v)])
+      .optional(),
+    interests: z
+      .array(z.enum(INTEREST_KEYS))
+      .max(MAX_INTERESTS)
+      .transform((v) => [...new Set(v)])
+      .optional(),
     buddyProfile: buddyProfileSchema.optional(),
   })
   .refine((v) => v.goalKey !== 'custom' || (v.goalText?.length ?? 0) > 0, {
@@ -224,6 +284,10 @@ export const updateMeSchema = z
   .refine((v) => v.occupationKey !== 'custom' || (v.occupationText?.length ?? 0) > 0, {
     message: 'Describe what you do',
     path: ['occupationText'],
+  })
+  .refine((v) => v.majorKey !== 'custom' || (v.majorText?.length ?? 0) > 0, {
+    message: 'Tell us what you study',
+    path: ['majorText'],
   });
 
 export const registerDeviceSchema = z.object({
@@ -257,13 +321,29 @@ export const unsubscribeWebPushSchema = z.object({
  * Buddies & requests (§2.2)
  * ------------------------------------------------------------------ */
 
+/** Query-string booleans arrive as the strings "true"/"false". */
+const queryBoolean = z
+  .union([z.boolean(), z.enum(['true', 'false'])])
+  .transform((v) => v === true || v === 'true')
+  .optional();
+
+export const BUDDY_SORTS = ['recommended', 'points'] as const;
+export type BuddySort = (typeof BUDDY_SORTS)[number];
+
 export const buddyDirectoryQuerySchema = paginationSchema.extend({
+  sort: z.enum(BUDDY_SORTS).default('recommended'),
   goal: z.enum(GOAL_KEYS).optional(),
   occupation: z.enum(OCCUPATION_KEYS).optional(),
-  activeOnly: z
-    .union([z.boolean(), z.enum(['true', 'false'])])
-    .transform((v) => v === true || v === 'true')
-    .optional(),
+  level: z.enum(EDUCATION_LEVEL_KEYS).optional(),
+  major: z.enum(MAJOR_KEYS).optional(),
+  country: z.enum(COUNTRY_KEYS).optional(),
+  topic: z.enum(TOPIC_KEYS).optional(),
+  /**
+   * Institution is free text, so there is no list to filter by — the only
+   * question a chip could answer is "the same one as me", which is this.
+   */
+  sameInstitution: queryBoolean,
+  activeOnly: queryBoolean,
 });
 
 export const createBuddyRequestSchema = z.object({
@@ -363,6 +443,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type UpdateMeInput = z.infer<typeof updateMeSchema>;
 export type BuddyDirectoryQuery = z.infer<typeof buddyDirectoryQuerySchema>;
+export type MajorInput = z.infer<typeof majorSchema>;
 export type CreateBuddyRequestInput = z.infer<typeof createBuddyRequestSchema>;
 export type CreateGroupInput = z.infer<typeof createGroupSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;

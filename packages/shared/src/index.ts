@@ -8,9 +8,15 @@
  * extensionless TypeScript, so this is the form that works for both.
  */
 export * from './badges';
+export * from './countries';
 export * from './credits';
+export * from './education-levels';
 export * from './enums';
 export * from './goals';
+export * from './institutions';
+export * from './interests';
 export * from './limits';
+export * from './majors';
 export * from './occupations';
 export * from './schemas';
+export * from './topics';
