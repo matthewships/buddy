@@ -2,12 +2,7 @@
 
 import { useState } from 'react';
 
-import {
-  MAX_PROOF_TEXT,
-  MAX_TASK_MINUTES,
-  MAX_TASK_TITLE,
-  MIN_TASK_MINUTES,
-} from '@buddy/shared';
+import { MAX_PROOF_TEXT, MAX_TASK_TITLE } from '@buddy/shared';
 
 import type { GroupDetail, GroupMember } from '@/api/groups';
 import {
@@ -28,6 +23,7 @@ import { canReview } from '@/lib/review-rights';
 import { Avatar } from './Avatar';
 import { Button } from './Button';
 import { Card } from './Card';
+import { DurationInput, durationError } from './DurationInput';
 import { ErrorText } from './ErrorText';
 import { Field } from './Field';
 import { RatingPicker } from './RatingPicker';
@@ -35,9 +31,6 @@ import { ReportSheet } from './ReportSheet';
 import { Spinner } from './Spinner';
 import { TaskClock, formatEstimate } from './TaskClock';
 import { StatusPill, TaskRow } from './TaskRow';
-
-/** Estimates people actually pick, rather than a free number field. */
-const PRESET_MINUTES = [15, 30, 45, 60, 90, 120, 180, 240];
 
 /**
  * The group's tasks, one member at a time (§2.4).
@@ -170,7 +163,8 @@ function AddTask({ groupId }: { groupId: string }) {
   const [title, setTitle] = useState('');
   const [minutes, setMinutes] = useState<number>(30);
 
-  const canAdd = title.trim().length > 0 && !createTask.isPending;
+  const timeError = durationError(minutes);
+  const canAdd = title.trim().length > 0 && timeError === null && !createTask.isPending;
 
   const submit = () => {
     if (!canAdd) return;
@@ -196,32 +190,7 @@ function AddTask({ groupId }: { groupId: string }) {
         onSubmit={submit}
       />
 
-      {/*
-        Presets rather than a number input. The estimate is what the clock counts
-        down, so it has to be answered every time — and asking someone to type a
-        number every time is how you get a field people leave alone.
-      */}
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-ink-muted">How long will it take?</p>
-        <div className="flex flex-row flex-wrap gap-2">
-          {PRESET_MINUTES.filter((m) => m >= MIN_TASK_MINUTES && m <= MAX_TASK_MINUTES).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={m === minutes}
-              onClick={() => setMinutes(m)}
-              className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                m === minutes
-                  ? 'border-brand bg-brand font-semibold text-brand-fg'
-                  : 'border-surface-border bg-surface text-ink hover:border-brand'
-              }`}
-            >
-              {formatEstimate(m)}
-            </button>
-          ))}
-        </div>
-      </div>
+      <DurationInput minutes={minutes} onChange={setMinutes} error={timeError} />
 
       <ErrorText message={createTask.error?.message} />
       <Button label="Add task" disabled={!canAdd} loading={createTask.isPending} onClick={submit} />
