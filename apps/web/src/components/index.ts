@@ -12,6 +12,8 @@ export { RatingPicker } from './RatingPicker';
 export { RefreshButton } from './RefreshButton';
 export { ReportSheet } from './ReportSheet';
 export { RequestBanner } from './RequestBanner';
+export { Segmented } from './Segmented';
+export { ProfileView } from './ProfileView';
 export { QuestionScreen } from './QuestionScreen';
 export {
   LandingRedirect,

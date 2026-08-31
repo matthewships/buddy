@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '@/auth/store';
 
 import { ApiError, api, unwrap } from './client';
+import type { StudentFields } from './users';
 
 /**
  * Auth and profile hooks. Response unwrapping and the error envelope live in
@@ -96,7 +97,7 @@ export function useResetPassword() {
   });
 }
 
-export interface Me {
+export interface Me extends StudentFields {
   id: string;
   email: string;
   emailVerified: boolean;

@@ -2,7 +2,25 @@ import { useQuery } from '@tanstack/react-query';
 
 import { api, unwrap } from './client';
 
-export interface PublicProfile {
+/**
+ * The student half of a profile, as three endpoints all return it: `/me`, the
+ * public profile, and each card in the directory. Declared once so the profile
+ * view can render any of them without three near-identical interfaces drifting
+ * apart.
+ */
+export interface StudentFields {
+  educationLevel: string | null;
+  institution: string | null;
+  majorKey: string | null;
+  majorText: string | null;
+  country: string | null;
+  city: string | null;
+  bio: string | null;
+  topics: string[];
+  interests: string[];
+}
+
+export interface PublicProfile extends StudentFields {
   id: string;
   handle: string;
   displayName: string;

@@ -3,8 +3,6 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 
-import { GOALS, OCCUPATIONS } from '@buddy/shared';
-
 import { useUploadAvatar } from '@/api/avatar';
 import { useMe, useUpdateMe } from '@/api/auth';
 import { useDeleteAccount } from '@/api/board';
@@ -12,20 +10,21 @@ import { useProfile } from '@/api/users';
 import { useSession } from '@/auth/store';
 import { useNotificationPreference } from '@/hooks/useNotificationPreference';
 import {
-  Avatar,
   Button,
   Card,
   ConfirmSheet,
   ErrorText,
+  ProfileView,
   Screen,
   Spinner,
   Toggle,
 } from '@/components';
 
-function labelFor(list: readonly { key: string; label: string }[], key: string | null) {
-  return list.find((entry) => entry.key === key)?.label ?? null;
-}
-
+/**
+ * Your own profile — the same `ProfileView` a prospective buddy reads, so what
+ * you see here is what you are actually presenting. The differences are all
+ * below it: an edit button, and the settings that belong to nobody else.
+ */
 export default function Profile() {
   const router = useRouter();
   const me = useMe();
@@ -67,35 +66,42 @@ export default function Profile() {
   }
 
   const profile = me.data;
-  const goal = profile.goalText?.trim() || labelFor(GOALS, profile.goalKey);
-  const goal2 = labelFor(GOALS, profile.goalKey2);
-  const occupation = profile.occupationText?.trim() || labelFor(OCCUPATIONS, profile.occupationKey);
+
+  // The whole profile comes from the public endpoint, so this screen and a
+  // stranger's view of it cannot disagree. While it loads, the /me data still
+  // fills the header.
+  if (stats.isPending || !stats.data) {
+    return (
+      <Screen>
+        <h1 className="mb-1 mt-2 text-2xl font-bold text-ink">Profile</h1>
+        <div className="flex flex-1 items-center justify-center text-ink-subtle">
+          <Spinner />
+        </div>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
-      <h1 className="mb-1 mt-2 text-2xl font-bold text-ink">Profile</h1>
-
-      <Card>
-        <div className="flex flex-row items-center gap-4">
-          {/*
-            The mobile screen calls expo-image-picker, which opens the OS picker
-            directly. The web equivalent is a hidden file input driven by a real
-            button, so it stays keyboard-reachable and the browser still applies
-            its own file dialog.
-          */}
-          <div className="flex flex-col items-center">
-            <button
-              type="button"
-              aria-label="Change your photo"
-              disabled={uploadAvatar.isPending}
-              onClick={() => fileInputRef.current?.click()}
-              className="cursor-pointer disabled:cursor-not-allowed"
-            >
-              <Avatar avatarKey={profile.avatarKey} displayName={profile.displayName} size={72} />
-              <span className="mt-1 block text-center text-xs text-brand">
-                {uploadAvatar.isPending ? 'Uploading…' : 'Change'}
-              </span>
-            </button>
+      <ProfileView
+        profile={stats.data}
+        banner={
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-row gap-2">
+              <Button label="Edit profile" onClick={() => router.push('/profile/edit')} />
+              <Button
+                label={uploadAvatar.isPending ? 'Uploading…' : 'Change photo'}
+                variant="ghost"
+                disabled={uploadAvatar.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              />
+            </div>
+            {/*
+              The mobile screen calls expo-image-picker, which opens the OS
+              picker directly. The web equivalent is a hidden file input driven
+              by a real button, so it stays keyboard-reachable and the browser
+              still applies its own file dialog.
+            */}
             <input
               ref={fileInputRef}
               type="file"
@@ -108,18 +114,20 @@ export default function Profile() {
                 if (file) uploadAvatar.mutate(file);
               }}
             />
-          </div>
+            <ErrorText message={uploadAvatar.error?.message} />
 
-          <div className="flex flex-1 flex-col">
-            <p className="text-xl font-bold text-ink">{profile.displayName}</p>
-            <p className="text-base text-ink-muted">@{profile.handle}</p>
-            {goal ? <p className="mt-2 text-base text-ink">{goal}</p> : null}
-            {goal2 ? <p className="text-sm text-ink-muted">+ {goal2}</p> : null}
-            {occupation ? <p className="text-sm text-ink-muted">{occupation}</p> : null}
+            {!profile.institution || !profile.educationLevel ? (
+              <Card>
+                <p className="text-base text-ink">Your profile is missing a few things.</p>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Level of study and where you study are what the directory matches on — without
+                  them, fewer people will find you.
+                </p>
+              </Card>
+            ) : null}
           </div>
-        </div>
-        <ErrorText message={uploadAvatar.error?.message} />
-      </Card>
+        }
+      />
 
       <Card>
         <div className="flex flex-row items-center justify-between gap-4">
@@ -142,43 +150,6 @@ export default function Profile() {
       </Card>
 
       <NotificationCard />
-
-      <Card>
-        <p className="mb-2 text-sm font-semibold text-ink-muted">Stats</p>
-        {stats.isPending ? (
-          <Spinner />
-        ) : stats.data ? (
-          <>
-            <div className="flex flex-row justify-between">
-              <StatBlock label="Credits" value={stats.data.stats.totalCredits} />
-              <StatBlock label="Streak" value={`${stats.data.stats.currentStreak}d`} />
-              <StatBlock label="Best" value={`${stats.data.stats.bestStreak}d`} />
-            </div>
-            <p className="mt-3 text-sm text-ink-muted">
-              {stats.data.stats.tasksApproved} tasks approved · {stats.data.stats.reviewsGiven}{' '}
-              reviews given
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-ink-subtle">Stats aren&apos;t available right now.</p>
-        )}
-      </Card>
-
-      {(stats.data?.badges.length ?? 0) > 0 ? (
-        <Card>
-          <p className="mb-2 text-sm font-semibold text-ink-muted">Badges</p>
-          <div className="flex flex-row flex-wrap gap-2">
-            {stats.data?.badges.map((badge) => (
-              <span
-                key={badge.key}
-                className="rounded-full border border-surface-border bg-surface-muted px-3 py-1.5 text-xs text-ink"
-              >
-                {badge.emoji} {badge.name}
-              </span>
-            ))}
-          </div>
-        </Card>
-      ) : null}
 
       <div className="mt-2 flex flex-col gap-3">
         <Button label="Sign out" variant="ghost" onClick={() => void leave()} />
@@ -325,14 +296,5 @@ function NotificationCard() {
         />
       ) : null}
     </Card>
-  );
-}
-
-function StatBlock({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex flex-1 flex-col">
-      <p className="text-2xl font-bold text-ink">{value}</p>
-      <p className="text-xs text-ink-subtle">{label}</p>
-    </div>
   );
 }
