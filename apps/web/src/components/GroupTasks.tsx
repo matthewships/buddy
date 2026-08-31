@@ -211,6 +211,13 @@ function MyTask({ task }: { task: Task }) {
   const [confirmingAbandon, setConfirmingAbandon] = useState(false);
 
   const running = isRunning(task);
+  /**
+   * Starting needs an estimate — there is nothing to count down without one —
+   * so a task the mobile app created cannot offer it. Finishing is always on
+   * offer: a task done away from the app, or one the rollover already marked
+   * missed, still has to be closable without starting a clock first.
+   */
+  const canStart = !running && task.estimatedMinutes !== null;
 
   return (
     <TaskRow task={task}>
@@ -266,7 +273,7 @@ function MyTask({ task }: { task: Task }) {
           ) : null}
           <ErrorText message={markDone.error?.message ?? start.error?.message} />
           <div className="flex flex-row gap-2">
-            {!running && task.estimatedMinutes !== null ? (
+            {canStart ? (
               <Button
                 className="flex-1"
                 label="Start"
@@ -276,7 +283,10 @@ function MyTask({ task }: { task: Task }) {
             ) : null}
             <Button
               className="flex-1"
-              label={expanded ? 'Submit as done' : 'Mark done'}
+              // Start leads while the task has not begun, so Done steps back to
+              // the quieter variant rather than competing with it.
+              variant={canStart ? 'secondary' : 'primary'}
+              label={expanded ? 'Submit as done' : 'Done'}
               loading={markDone.isPending}
               onClick={() => {
                 if (!expanded) {

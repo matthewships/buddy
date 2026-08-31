@@ -150,6 +150,46 @@ describe('the task clock', () => {
     expect((await post(`/api/tasks/${second}/start`, {}, owner.accessToken)).status).toBe(409);
   });
 
+  /**
+   * The list is where a client decides whether to offer Start, so it has to
+   * carry the clock. Omitting these two columns from the projection let every
+   * planned task read as already running, which hid the Start button entirely.
+   */
+  it('returns the estimate and the clock when listing tasks', async () => {
+    const { owner, buddy, groupId } = await pair('listclock');
+    const taskId = await createTask(owner, groupId, 'Problem set', undefined, 90);
+    await post(`/api/tasks/${taskId}/start`, {}, owner.accessToken);
+
+    type Listed = { id: string; estimatedMinutes: number | null; startedAt: string | null };
+    const listed = async (session: Session, query: string) => {
+      const { tasks } = (await (await get(`/api/tasks?${query}`, session.accessToken)).json()) as {
+        tasks: Listed[];
+      };
+      return tasks.find((t) => t.id === taskId);
+    };
+
+    expect(await listed(owner, 'scope=mine')).toMatchObject({ estimatedMinutes: 90 });
+    expect((await listed(owner, 'scope=mine'))?.startedAt).toEqual(expect.any(String));
+
+    // And on the group board, which is what the buddy's screen reads.
+    expect(await listed(buddy, `scope=all&groupId=${groupId}`)).toMatchObject({
+      estimatedMinutes: 90,
+    });
+    expect((await listed(buddy, `scope=all&groupId=${groupId}`))?.startedAt).toEqual(
+      expect.any(String),
+    );
+  });
+
+  it('reports a task that has not started as not running', async () => {
+    const { owner, groupId } = await pair('notstarted');
+    const taskId = await createTask(owner, groupId, 'Later', undefined, 30);
+
+    const { tasks } = (await (await get('/api/tasks?scope=mine', owner.accessToken)).json()) as {
+      tasks: { id: string; startedAt: string | null }[];
+    };
+    expect(tasks.find((t) => t.id === taskId)?.startedAt).toBeNull();
+  });
+
   it('stops the clock when the task is finished', async () => {
     const { owner, groupId } = await pair('donestops');
     const taskId = await createTask(owner, groupId, 'Essay', undefined, 45);

@@ -68,6 +68,13 @@ async function ownerToday(client: Db, userId: string): Promise<string> {
   return localDate(user?.timezone ?? 'UTC');
 }
 
+/**
+ * What a listed task carries. `estimatedMinutes` and `startedAt` are part of it
+ * because a list is where the clock is read: without them a client cannot tell a
+ * running task from a planned one, and cannot know whether starting is even
+ * offered. Leaving them out is what once made every task in the group board look
+ * as though it were already running.
+ */
 const taskColumns = {
   id: tasks.id,
   userId: tasks.userId,
@@ -75,6 +82,8 @@ const taskColumns = {
   title: tasks.title,
   notes: tasks.notes,
   dueDate: tasks.dueDate,
+  estimatedMinutes: tasks.estimatedMinutes,
+  startedAt: tasks.startedAt,
   status: tasks.status,
   proofText: tasks.proofText,
   proofImageKey: tasks.proofImageKey,
