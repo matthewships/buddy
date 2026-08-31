@@ -534,3 +534,53 @@ describe('directory paging', () => {
     expect(crossed.buddies.map((b) => b.handle)).toEqual(fresh.buddies.map((b) => b.handle));
   });
 });
+
+describe('the mobile-registrant-finishing-on-web path', () => {
+  it('reports an unclaimed handle, so the client knows to ask for one', async () => {
+    // Registered with no handle (the mobile app's shape). A client cannot work
+    // this out for itself — the placeholder is derived from the user id and
+    // looks like any other handle.
+    const session = await signUp('loop-unclaimed@example.com');
+    const me = (await (await get('/api/me', session.accessToken)).json()) as {
+      handleClaimed: boolean;
+    };
+    expect(me.handleClaimed).toBe(false);
+  });
+
+  it('does not complete while no handle has been claimed', async () => {
+    // The failure this guards: the web flow skips /register for a signed-in
+    // user, so without an explicit prompt nothing ever asks for a handle. The
+    // answers save, onboarding does not complete, and a client that sends the
+    // user back to the questions here loops forever.
+    const session = await signUp('loop-noclaim@example.com');
+    const body = (await (
+      await patch(
+        '/api/me',
+        { goalKey: 'thesis', educationLevel: 'undergraduate', institution: 'Leeds' },
+        session.accessToken,
+      )
+    ).json()) as { onboarded: boolean };
+
+    expect(body.onboarded).toBe(false);
+  });
+
+  it('completes once that patch carries a handle', async () => {
+    const session = await signUp('loop-claims@example.com');
+    const body = (await (
+      await patch(
+        '/api/me',
+        {
+          handle: 'loopclaims',
+          goalKey: 'thesis',
+          educationLevel: 'undergraduate',
+          institution: 'Leeds',
+        },
+        session.accessToken,
+      )
+    ).json()) as { onboarded: boolean; handleClaimed: boolean; handle: string };
+
+    expect(body.handle).toBe('loopclaims');
+    expect(body.handleClaimed).toBe(true);
+    expect(body.onboarded).toBe(true);
+  });
+});

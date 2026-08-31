@@ -112,6 +112,8 @@ export interface Me extends StudentFields {
   occupationText: string | null;
   isOpenBuddy: boolean;
   onboarded: boolean;
+  /** False while the handle is still the placeholder registration assigns. */
+  handleClaimed: boolean;
   createdAt: string;
   buddyProfile: {
     headline: string | null;

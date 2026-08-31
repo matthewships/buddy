@@ -3,11 +3,11 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 
-import { EDUCATION_LEVELS, MAJORS } from '@buddy/shared';
+import { EDUCATION_LEVELS, MAJORS, MAX_HANDLE, MIN_HANDLE } from '@buddy/shared';
 
-import { useUpdateMe } from '@/api/auth';
+import { useHandleAvailable, useMe, useUpdateMe } from '@/api/auth';
 import { useUploadAvatar } from '@/api/avatar';
-import { Avatar, Button, Card, ErrorText, Screen } from '@/components';
+import { Avatar, Button, Card, ErrorText, Field, Screen } from '@/components';
 import { draftToPatch, useDraft } from '@/onboarding/draft';
 
 function labelFor(list: readonly { key: string; label: string }[], key: string | null) {
@@ -23,14 +23,42 @@ function labelFor(list: readonly { key: string; label: string }[], key: string |
  * by user id — and putting a file picker in the middle of the flow is the kind
  * of step people abandon on. Skipping is a plain choice, not a penalty; the
  * profile prompts for it later.
+ *
+ * So is the handle, in one specific case. Someone who registered on the mobile
+ * app and never finished lands here already signed in, which means the flow
+ * skipped `/register` — the only screen that asks for a handle. Onboarding
+ * cannot complete without one, so without this field they would answer every
+ * question, fail to complete, and be sent back to the first question forever.
  */
 export default function OnboardingDone() {
   const router = useRouter();
   const draft = useDraft();
+  const me = useMe();
   const updateMe = useUpdateMe();
   const uploadAvatar = useUploadAvatar();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
+
+  // Only for the signed-in-but-handle-less case above. Everyone who came
+  // through /register already claimed one, and is never asked again.
+  const needsHandle = me.data ? !me.data.handleClaimed && !draft.handle.trim() : false;
+  const handle = draft.handle.trim().toLowerCase();
+  const handleWellFormed =
+    /^[a-z0-9_]+$/.test(handle) && handle.length >= MIN_HANDLE && handle.length <= MAX_HANDLE;
+  // This user has a session, so the live check is available here — unlike on
+  // /register, where there is no token yet.
+  const availability = useHandleAvailable(needsHandle ? handle : '');
+  const handleTaken = availability.data?.available === false;
+
+  const handleError = !handle
+    ? null
+    : !handleWellFormed
+      ? `${MIN_HANDLE}-${MAX_HANDLE} characters: letters, numbers and underscores`
+      : handleTaken
+        ? 'That handle is taken'
+        : null;
+
+  const canFinish = !needsHandle || (handleWellFormed && !handleTaken);
 
   const level = labelFor(EDUCATION_LEVELS, draft.educationLevel);
   const major = draft.majorText.trim() || labelFor(MAJORS, draft.majorKey);
@@ -98,6 +126,19 @@ export default function OnboardingDone() {
           <ErrorText message={uploadAvatar.error?.message} />
         </Card>
 
+        {needsHandle && !saved ? (
+          <Field
+            label="Pick a handle"
+            value={draft.handle}
+            onChangeText={(value) => draft.set({ handle: value.replace(/\s/g, '') })}
+            error={handleError}
+            hint="How buddies find and invite you"
+            placeholder="e.g. alex_h"
+            autoCapitalize="none"
+            autoComplete="username"
+          />
+        ) : null}
+
         <ErrorText message={updateMe.error?.message} />
 
         <div className="mt-2">
@@ -112,7 +153,7 @@ export default function OnboardingDone() {
               label="Finish"
               onClick={finish}
               loading={updateMe.isPending}
-              disabled={updateMe.isPending}
+              disabled={updateMe.isPending || !canFinish}
             />
           )}
         </div>

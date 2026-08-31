@@ -324,5 +324,14 @@ export function publicSelf(user: {
     createdAt: user.createdAt,
     /** Drives the app's choice between the onboarding stack and the tabs (§5.2). */
     onboarded: user.onboardedAt !== null,
+    /**
+     * Whether the handle is a real one or still the placeholder registration
+     * assigns. A client cannot work this out for itself — the placeholder is
+     * derived from the user id and looks like any other handle — and it has to,
+     * because onboarding cannot complete without a claimed handle. Without this,
+     * a signed-in user with no handle answers every question, fails to complete,
+     * and is sent back to the first question forever.
+     */
+    handleClaimed: user.handle !== placeholderHandle(user.id),
   };
 }
