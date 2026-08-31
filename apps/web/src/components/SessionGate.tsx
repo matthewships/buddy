@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 
 import { useMe } from '@/api/auth';
 import { useSession } from '@/auth/store';
+import { FIRST_STEP } from '@/onboarding/steps';
 
 import { LoadingScreen } from './Spinner';
 
@@ -47,7 +48,7 @@ export function RequireSession({
       return;
     }
     if (requireOnboarded && !onboarded) {
-      router.replace('/onboarding/profile');
+      router.replace(FIRST_STEP);
     }
   }, [deciding, onboarded, requireOnboarded, router, status]);
 
@@ -72,7 +73,7 @@ export function RequireSession({
  * form is harmless — worst case they sign in again.
  *
  * Still `/today` and not the onboarding-aware destination `LandingRedirect`
- * picks: an unonboarded user bounces off `/today` into /onboarding/profile via
+ * picks: an unonboarded user bounces off `/today` into the questions via
  * `RequireSession`, which is what this route did before and one fewer /me
  * request on a screen that does not need it.
  */
@@ -117,10 +118,37 @@ export function LandingRedirect({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (waiting || status !== 'signedIn') return;
     const onboarded = me.data?.onboarded ?? cachedOnboarded;
-    router.replace(onboarded ? '/today' : '/onboarding/profile');
+    router.replace(onboarded ? '/today' : FIRST_STEP);
   }, [cachedOnboarded, me.data?.onboarded, router, status, waiting]);
 
   if (status === 'signedIn') return <LoadingScreen />;
 
   return <>{children}</>;
+}
+
+/**
+ * The signup questionnaire's only guard.
+ *
+ * `RequireSession` cannot be used there: these screens run *before* an account
+ * exists, so the state it exists to reject — no session — is the normal case.
+ * The one person who should not be here is someone who already finished
+ * onboarding and typed the URL, or followed a stale link.
+ *
+ * A signed-in but unonboarded user is deliberately let through, because these
+ * are the screens that would finish the job. That covers a mobile signup
+ * continuing on the web, and anyone who abandoned the flow and came back.
+ */
+export function RedirectIfOnboarded() {
+  const router = useRouter();
+  const status = useSession((s) => s.status);
+  const cachedOnboarded = useSession((s) => s.onboarded);
+  const me = useMe();
+
+  const onboarded = me.data?.onboarded ?? cachedOnboarded;
+
+  useEffect(() => {
+    if (status === 'signedIn' && onboarded) router.replace('/today');
+  }, [onboarded, router, status]);
+
+  return null;
 }

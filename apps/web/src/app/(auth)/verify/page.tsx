@@ -7,6 +7,7 @@ import { EMAIL_CODE_LENGTH } from '@buddy/shared';
 
 import { useResendCode, useVerifyEmail } from '@/api/auth';
 import { Button, ErrorText, Field, LoadingScreen, Screen } from '@/components';
+import { useDraft } from '@/onboarding/draft';
 
 function VerifyForm() {
   const router = useRouter();
@@ -16,6 +17,8 @@ function VerifyForm() {
 
   const verify = useVerifyEmail();
   const resend = useResendCode();
+  // Answers collected before the account existed, waiting to be written.
+  const hasDraft = useDraft((d) => d.educationLevel !== null || d.goalKeys.length > 0);
 
   const [code, setCode] = useState('');
   const canSubmit = code.length === EMAIL_CODE_LENGTH && !verify.isPending;
@@ -25,9 +28,13 @@ function VerifyForm() {
     verify.mutate(
       { email, code },
       {
-        // Verification signs the user in; the root route then sends them to
-        // onboarding or the tabs based on `onboarded`.
-        onSuccess: () => router.replace('/'),
+        /*
+          Verification signs the user in. Someone who came through the questions
+          has answers waiting in the draft and goes straight to the write; anyone
+          else — a mobile signup, or a returning unverified account — goes to
+          `/`, which routes on `onboarded` as it always did.
+        */
+        onSuccess: () => router.replace(hasDraft ? '/onboarding/done' : '/'),
       },
     );
   };

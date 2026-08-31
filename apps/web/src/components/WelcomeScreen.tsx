@@ -31,11 +31,16 @@ export function WelcomeScreen() {
       <div className="flex flex-1 flex-col justify-center gap-3">
         <h1 className="text-4xl font-bold text-ink">Buddy</h1>
         <p className="text-base text-ink-muted">
-          Plan your day, get it approved by a buddy, build the streak.
+          For students. Plan your day, get it approved by a buddy, build the streak.
         </p>
         <div className="mt-8 flex flex-col gap-3">
-          <Link href="/register" className={linkButtonClass('primary')}>
-            Create an account
+          {/*
+            Into the questions, not straight to registration. Nobody is asked to
+            create an account before they have seen what the product is for —
+            the account comes last, once the answers are already theirs.
+          */}
+          <Link href="/start/level" className={linkButtonClass('primary')}>
+            Get started
           </Link>
           <Link href="/login" className={linkButtonClass('ghost')}>
             I already have an account

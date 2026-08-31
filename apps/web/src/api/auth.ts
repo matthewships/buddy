@@ -13,7 +13,13 @@ export { ApiError };
 
 export function useRegister() {
   return useMutation({
-    mutationFn: async (input: { email: string; password: string; displayName: string }) =>
+    mutationFn: async (input: {
+      email: string;
+      password: string;
+      displayName: string;
+      /** Optional on the wire so the mobile app's call is unchanged (§2.1). */
+      handle?: string;
+    }) =>
       unwrap<{ ok: true; emailSent: true }>(await api.api.auth.register.$post({ json: input })),
   });
 }

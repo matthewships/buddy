@@ -12,7 +12,13 @@ export { RatingPicker } from './RatingPicker';
 export { RefreshButton } from './RefreshButton';
 export { ReportSheet } from './ReportSheet';
 export { RequestBanner } from './RequestBanner';
-export { LandingRedirect, RedirectIfSignedIn, RequireSession } from './SessionGate';
+export { QuestionScreen } from './QuestionScreen';
+export {
+  LandingRedirect,
+  RedirectIfOnboarded,
+  RedirectIfSignedIn,
+  RequireSession,
+} from './SessionGate';
 export { Sheet } from './Sheet';
 export { LoadingScreen, Spinner } from './Spinner';
 export { TabBar } from './TabBar';
