@@ -15,7 +15,8 @@ apps/api       Cloudflare Worker — Hono, D1 + Drizzle, Durable Object chat,
 apps/mobile    Expo SDK 57 app — Expo Router, NativeWind, TanStack Query
 apps/web       Next 16 app — App Router, Tailwind, TanStack Query; deployed as
                a Worker by @opennextjs/cloudflare
-packages/shared  Zod schemas, goal/occupation lists, credit + badge rules
+packages/shared  Zod schemas, the option lists signup asks from (goals, levels,
+               majors, topics, interests, countries), credit + badge rules
 ```
 
 `packages/shared` is the single source of truth for anything all three must
@@ -27,7 +28,9 @@ a runtime surprise.
 second backend. It has since moved ahead of the app: the student signup
 questionnaire, the rebuilt buddy directory and `/profile/edit` are web-only
 until `apps/mobile` is ported. The app keeps working because every shared and
-schema change was additive (ARCHITECTURE.md §2.1). Its data layer is a deliberate copy of the app's rather than a
+schema change was additive (ARCHITECTURE.md §2.1).
+
+Its data layer is a deliberate copy of the app's rather than a
 shared package; `ARCHITECTURE.md` §5.4 records why, and every place the browser
 forced a genuine difference (tokens in `localStorage`, no push, `crossOrigin`
 on avatars).
@@ -92,7 +95,7 @@ Program; see `apps/mobile/EAS.md`.
 ```bash
 npm run lint        # eslint, flat config at the root
 npm run typecheck   # tsc across all four workspaces
-npm test            # 216 tests
+npm test            # 262 tests
 ```
 
 The API suite runs inside `workerd` against real D1, KV and a real Durable
@@ -171,7 +174,6 @@ added to the Home Screen; everywhere else no install is needed.
   and its task list moved into each group. That is blocked on the Groups and
   Feed design, chiefly because Today also carries the cross-group review queue,
   which belongs to no single group.
-
 - **Push credentials (mobile only).** An APNs key and FCM v1 credentials need
   uploading to EAS before push works on a real device. The web client is not
   waiting on any of that: it uses Web Push directly from the Worker, which needs
