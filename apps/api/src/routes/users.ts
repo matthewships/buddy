@@ -8,6 +8,7 @@ import { buddyProfiles, userBadges, userStats, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { notFound } from '../lib/errors.js';
 import { requireAuth } from '../middleware/auth.js';
+import { readTags } from '../services/tags.js';
 
 /**
  * Public profiles (§4.4). Authenticated, because the directory and profiles are
@@ -27,12 +28,13 @@ export const userRoutes = new Hono<AppEnv>()
     const user = await client.query.users.findFirst({ where: eq(users.handle, handle) });
     if (!user || user.deletedAt !== null) throw notFound('No such user');
 
-    const [stats, badges, profile] = await Promise.all([
+    const [stats, badges, profile, tags] = await Promise.all([
       client.query.userStats.findFirst({ where: eq(userStats.userId, user.id) }),
       client.query.userBadges.findMany({ where: eq(userBadges.userId, user.id) }),
       user.isOpenBuddy
         ? client.query.buddyProfiles.findFirst({ where: eq(buddyProfiles.userId, user.id) })
         : Promise.resolve(undefined),
+      readTags(client, user.id),
     ]);
 
     return c.json({
@@ -45,6 +47,18 @@ export const userRoutes = new Hono<AppEnv>()
       goalText: user.goalText,
       occupationKey: user.occupationKey,
       occupationText: user.occupationText,
+      // The student profile is public to signed-in users, the same as the goal
+      // and occupation lines already were — it is what a prospective buddy
+      // reads before deciding to send a request (§2.2).
+      educationLevel: user.educationLevel,
+      institution: user.institution,
+      majorKey: user.majorKey,
+      majorText: user.majorText,
+      country: user.country,
+      city: user.city,
+      bio: user.bio,
+      topics: tags.topics,
+      interests: tags.interests,
       isOpenBuddy: user.isOpenBuddy,
       memberSince: user.createdAt,
       lastSeenAt: user.lastSeenAt,

@@ -30,5 +30,13 @@ export type ReportTarget = (typeof REPORT_TARGETS)[number];
 export const REPORT_STATUSES = ['open', 'actioned', 'dismissed'] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
+/**
+ * What a row in `user_tags` describes. Topics and interests share one table
+ * because they are the same shape and the same query — "who else picked this" —
+ * and two tables would mean two of every index and join.
+ */
+export const USER_TAG_KINDS = ['topic', 'interest'] as const;
+export type UserTagKind = (typeof USER_TAG_KINDS)[number];
+
 export const LEADERBOARD_SCOPES = ['weekly', 'alltime'] as const;
 export type LeaderboardScope = (typeof LEADERBOARD_SCOPES)[number];

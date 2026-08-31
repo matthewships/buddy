@@ -8,19 +8,41 @@ import { ACTIVE_NOW_MS } from '@buddy/shared';
  * the directory is paged: sorting a page after fetching it would produce a
  * different order per page and duplicate or drop rows across cursors.
  *
- * The score is deliberately coarse — goal match dominates occupation match,
- * which dominates recency — so ties break on activity without recency ever
- * outranking a goal match.
+ * The weights are powers of two, which makes the ranking strictly
+ * lexicographic: each signal outweighs every weaker signal *combined*, so the
+ * order below is the whole rule. A shared goal beats any pile of soft matches;
+ * among people who share a goal, the same campus decides; and so on down to
+ * recency, which only ever separates people who tie on everything else.
+ *
+ * That property is worth the odd-looking numbers. With hand-tuned weights,
+ * adding one more signal quietly changes what the existing ones mean — three
+ * small matches start outranking a goal, and nobody notices until the directory
+ * looks wrong. Here, adding a signal means inserting it at the right rank.
+ *
+ * `sameInstitution` sits second because it is the one thing here that makes
+ * meeting in person possible. It is compared on `institution_normalised`, using
+ * the same `normaliseInstitution()` the "same institution as me" filter uses —
+ * if the two ever diverged, the sort would promote someone the filter hides.
  */
 export const MATCH_SCORE = {
-  sameGoal: 4,
-  sameOccupation: 2,
+  sameGoal: 128,
+  sameInstitution: 64,
+  sameMajor: 32,
+  sameOccupation: 16,
+  sameLevel: 8,
+  sharedTopic: 4,
+  sameCountry: 2,
   activeNow: 1,
 } as const;
 
 export interface DirectoryFilters {
   goal?: string;
   occupation?: string;
+  level?: string;
+  major?: string;
+  country?: string;
+  topic?: string;
+  sameInstitution?: boolean;
   activeOnly?: boolean;
 }
 

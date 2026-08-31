@@ -78,10 +78,17 @@ export async function signUp(
   email: string,
   password = 'correct-horse-battery',
   displayName = 'Test User',
+  /** The web client claims a handle here; the mobile app claims one later. */
+  options: { handle?: string } = {},
 ): Promise<Session> {
   await resetRateLimits();
   const { codes } = await captureCodes(async () => {
-    const res = await post('/api/auth/register', { email, password, displayName });
+    const res = await post('/api/auth/register', {
+      email,
+      password,
+      displayName,
+      ...(options.handle ? { handle: options.handle } : {}),
+    });
     expect(res.status).toBe(201);
   });
 

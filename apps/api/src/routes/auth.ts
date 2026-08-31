@@ -16,7 +16,8 @@ import {
 import { db } from '../db/client.js';
 import { userStats, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
-import { badRequest, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, unauthorized } from '../lib/errors.js';
+import { placeholderHandle } from '../lib/handles.js';
 import { newId } from '../lib/ids.js';
 import { clientIp, enforceRateLimit } from '../lib/rate-limit.js';
 import { nowIso } from '../lib/time.js';
@@ -54,7 +55,7 @@ export const authRoutes = new Hono<AppEnv>()
    * owner gets a code and the caller learns nothing.
    */
   .post('/register', zValidator('json', registerSchema), async (c) => {
-    const { email, password, displayName } = c.req.valid('json');
+    const { email, password, displayName, handle } = c.req.valid('json');
     await enforceRateLimit(c.env.CACHE, 'register', clientIp(c.req.raw));
     assertPasswordAllowed(password);
 
@@ -74,17 +75,28 @@ export const authRoutes = new Hono<AppEnv>()
       return c.json({ ok: true as const, emailSent: true as const }, 201);
     }
 
+    // The web client asks for a handle here; the mobile app still claims one
+    // later in PATCH /me. Checked before the account exists so the user is told
+    // on the screen they typed it on, rather than several steps later.
+    if (handle) {
+      const taken = await client.query.users.findFirst({
+        where: eq(users.handle, handle),
+        columns: { id: true },
+      });
+      if (taken) throw conflict('That handle is taken', { field: 'handle' });
+    }
+
     const { hash, salt } = await hashPassword(password);
     const userId = newId();
 
-    // A placeholder handle keeps the NOT NULL + UNIQUE constraint satisfiable
-    // before onboarding; the user picks a real one in PATCH /me.
+    // Without one, a placeholder handle keeps the NOT NULL + UNIQUE constraint
+    // satisfiable before onboarding; the user picks a real one in PATCH /me.
     await client.insert(users).values({
       id: userId,
       email,
       passwordHash: hash,
       passwordSalt: salt,
-      handle: `u${userId.slice(-12).toLowerCase()}`,
+      handle: handle ?? placeholderHandle(userId),
       displayName,
     });
     await client.insert(userStats).values({ userId });
@@ -277,6 +289,13 @@ export function publicSelf(user: {
   goalText: string | null;
   occupationKey: string | null;
   occupationText: string | null;
+  educationLevel: string | null;
+  institution: string | null;
+  majorKey: string | null;
+  majorText: string | null;
+  country: string | null;
+  city: string | null;
+  bio: string | null;
   isOpenBuddy: boolean;
   onboardedAt: string | null;
   createdAt: string;
@@ -294,6 +313,13 @@ export function publicSelf(user: {
     goalText: user.goalText,
     occupationKey: user.occupationKey,
     occupationText: user.occupationText,
+    educationLevel: user.educationLevel,
+    institution: user.institution,
+    majorKey: user.majorKey,
+    majorText: user.majorText,
+    country: user.country,
+    city: user.city,
+    bio: user.bio,
     isOpenBuddy: user.isOpenBuddy,
     createdAt: user.createdAt,
     /** Drives the app's choice between the onboarding stack and the tabs (§5.2). */

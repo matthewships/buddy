@@ -5,6 +5,8 @@ import { z } from 'zod';
 
 import {
   handleSchema,
+  normaliseInstitution,
+  occupationForLevel,
   registerDeviceSchema,
   unsubscribeWebPushSchema,
   updateMeSchema,
@@ -21,10 +23,12 @@ import {
 } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
+import { placeholderHandle } from '../lib/handles.js';
 import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { vapidKeysFrom } from '../services/push.js';
+import { readTags, replaceTags } from '../services/tags.js';
 import { publicSelf } from './auth.js';
 
 /** Avatar keys are namespaced by user so one user cannot overwrite another's. */
@@ -42,12 +46,14 @@ export const meRoutes = new Hono<AppEnv>()
     const user = await client.query.users.findFirst({ where: eq(users.id, userId) });
     if (!user) throw notFound('Account not found');
 
-    const profile = await client.query.buddyProfiles.findFirst({
-      where: eq(buddyProfiles.userId, userId),
-    });
+    const [profile, tags] = await Promise.all([
+      client.query.buddyProfiles.findFirst({ where: eq(buddyProfiles.userId, userId) }),
+      readTags(client, userId),
+    ]);
 
     return c.json({
       ...publicSelf(user),
+      ...tags,
       buddyProfile: profile
         ? {
             headline: profile.headline,
@@ -62,8 +68,9 @@ export const meRoutes = new Hono<AppEnv>()
   /**
    * Partial profile update, and the step that completes onboarding.
    *
-   * `onboarded_at` is stamped the first time the user has both a goal and a
-   * chosen handle, so the app never has to infer completion.
+   * `onboarded_at` is stamped once the account has a claimed handle, a goal,
+   * and either a level of study or an occupation — see `completesOnboarding`
+   * below for why that last clause is a disjunction.
    */
   .patch('/', zValidator('json', updateMeSchema), async (c) => {
     const patch = c.req.valid('json');
@@ -92,27 +99,78 @@ export const meRoutes = new Hono<AppEnv>()
       throw conflict('Pick two different goals', { field: 'goalKey2' });
     }
 
-    const completesOnboarding =
-      current.onboardedAt === null && nextGoalKey !== null && patch.handle !== undefined;
+    const nextLevel =
+      patch.educationLevel !== undefined ? patch.educationLevel : current.educationLevel;
 
-    await client
-      .update(users)
-      .set({
-        ...(patch.displayName !== undefined && { displayName: patch.displayName }),
-        ...(patch.handle !== undefined && { handle: patch.handle }),
-        ...(patch.timezone !== undefined && { timezone: patch.timezone }),
-        ...(patch.avatarKey !== undefined && { avatarKey: patch.avatarKey ?? null }),
-        ...(patch.isOpenBuddy !== undefined && { isOpenBuddy: patch.isOpenBuddy }),
-        ...(patch.goalKey !== undefined && { goalKey: patch.goalKey }),
-        ...(patch.goalKey2 !== undefined && { goalKey2: patch.goalKey2 ?? null }),
-        ...(patch.goalText !== undefined && { goalText: patch.goalText ?? null }),
-        ...(patch.occupationKey !== undefined && { occupationKey: patch.occupationKey }),
-        ...(patch.occupationText !== undefined && {
-          occupationText: patch.occupationText ?? null,
-        }),
-        ...(completesOnboarding && { onboardedAt: nowIso() }),
-      })
-      .where(eq(users.id, userId));
+    /**
+     * Signup stopped asking the occupation question, but `occupation_key` is
+     * indexed, CHECK-constrained and read by the mobile app, so it is derived
+     * from the level of study instead. An explicit `occupationKey` in the patch
+     * still wins — that is what the mobile app sends, and it should not have
+     * its own answer overwritten by an inference.
+     */
+    const derivedOccupation =
+      patch.occupationKey !== undefined
+        ? patch.occupationKey
+        : patch.educationLevel
+          ? occupationForLevel(patch.educationLevel)
+          : undefined;
+    const nextOccupationKey = derivedOccupation ?? current.occupationKey;
+
+    /**
+     * Completion needs a *claimed* handle, not the arrival of one in this
+     * patch: the web client claims it on the register screen, so its completing
+     * patch carries no handle at all.
+     *
+     * Level **or** occupation, not level alone: the mobile app never sends a
+     * level, and requiring one would leave every mobile user stuck in the
+     * onboarding gate forever.
+     */
+    const nextHandle = patch.handle ?? current.handle;
+    const completesOnboarding =
+      current.onboardedAt === null &&
+      nextGoalKey !== null &&
+      nextHandle !== placeholderHandle(userId) &&
+      (nextLevel !== null || nextOccupationKey !== null);
+
+    /**
+     * Collected first, and only written if it is non-empty: a patch that
+     * changes nothing but tags — deselecting a topic chip, say — has no columns
+     * to set, and Drizzle rejects an empty SET with "No values to set" rather
+     * than treating it as a no-op.
+     */
+    const columns = {
+      ...(patch.displayName !== undefined && { displayName: patch.displayName }),
+      ...(patch.handle !== undefined && { handle: patch.handle }),
+      ...(patch.timezone !== undefined && { timezone: patch.timezone }),
+      ...(patch.avatarKey !== undefined && { avatarKey: patch.avatarKey ?? null }),
+      ...(patch.isOpenBuddy !== undefined && { isOpenBuddy: patch.isOpenBuddy }),
+      ...(patch.goalKey !== undefined && { goalKey: patch.goalKey }),
+      ...(patch.goalKey2 !== undefined && { goalKey2: patch.goalKey2 ?? null }),
+      ...(patch.goalText !== undefined && { goalText: patch.goalText ?? null }),
+      ...(derivedOccupation !== undefined && { occupationKey: derivedOccupation }),
+      ...(patch.occupationText !== undefined && {
+        occupationText: patch.occupationText ?? null,
+      }),
+      ...(patch.educationLevel !== undefined && { educationLevel: patch.educationLevel ?? null }),
+      // The raw text is what gets displayed; the normalised form is the
+      // matching key the directory compares and indexes on. Written together
+      // so they can never disagree.
+      ...(patch.institution !== undefined && {
+        institution: patch.institution ?? null,
+        institutionNormalised: patch.institution ? normaliseInstitution(patch.institution) : null,
+      }),
+      ...(patch.city !== undefined && { city: patch.city ?? null }),
+      ...(patch.majorKey !== undefined && { majorKey: patch.majorKey ?? null }),
+      ...(patch.majorText !== undefined && { majorText: patch.majorText ?? null }),
+      ...(patch.country !== undefined && { country: patch.country ?? null }),
+      ...(patch.bio !== undefined && { bio: patch.bio ?? null }),
+      ...(completesOnboarding && { onboardedAt: nowIso() }),
+    };
+
+    if (Object.keys(columns).length > 0) {
+      await client.update(users).set(columns).where(eq(users.id, userId));
+    }
 
     if (patch.buddyProfile) {
       const fields = {
@@ -129,13 +187,23 @@ export const meRoutes = new Hono<AppEnv>()
         .onConflictDoUpdate({ target: buddyProfiles.userId, set: fields });
     }
 
+    // Sequential, not batched with the update above: D1 has no interactive
+    // transaction, and a tag write that lands while the column write fails
+    // would leave the two halves of one profile disagreeing.
+    if (patch.topics !== undefined) await replaceTags(client, userId, 'topic', patch.topics);
+    if (patch.interests !== undefined) {
+      await replaceTags(client, userId, 'interest', patch.interests);
+    }
+
     const updated = await client.query.users.findFirst({ where: eq(users.id, userId) });
-    const profile = await client.query.buddyProfiles.findFirst({
-      where: eq(buddyProfiles.userId, userId),
-    });
+    const [profile, tags] = await Promise.all([
+      client.query.buddyProfiles.findFirst({ where: eq(buddyProfiles.userId, userId) }),
+      readTags(client, userId),
+    ]);
 
     return c.json({
       ...publicSelf(updated!),
+      ...tags,
       buddyProfile: profile
         ? {
             headline: profile.headline,

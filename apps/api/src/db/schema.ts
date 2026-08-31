@@ -11,10 +11,12 @@ import {
 
 import {
   CREDIT_REASONS,
+  EDUCATION_LEVEL_KEYS,
   EMAIL_CODE_PURPOSES,
   GOAL_KEYS,
   GROUP_KINDS,
   GROUP_ROLES,
+  MAJOR_KEYS,
   OCCUPATION_KEYS,
   PLATFORMS,
   REPORT_STATUSES,
@@ -22,6 +24,7 @@ import {
   REQUEST_STATUSES,
   REVIEW_ACTIONS,
   TASK_STATUSES,
+  USER_TAG_KINDS,
 } from '@buddy/shared';
 
 /**
@@ -78,8 +81,27 @@ export const users = sqliteTable(
     // there are now two.
     goalKey2: text('goal_key_2'),
     goalText: text('goal_text'),
+    // Kept, and kept correct, though signup no longer asks: it is indexed,
+    // CHECK-constrained and read by apps/mobile. PATCH /me derives it from
+    // education_level (OCCUPATION_FOR_LEVEL) whenever a level is written.
     occupationKey: text('occupation_key'),
     occupationText: text('occupation_text'),
+    /* Student profile (§2.1). All nullable: users who onboarded before these
+       existed have none of them, and there is nothing to backfill them with. */
+    educationLevel: text('education_level'),
+    institution: text('institution'),
+    /**
+     * `institution` folded by `normaliseInstitution()`. Stored rather than
+     * computed per query so "same institution as me" is an indexed equality
+     * instead of a function applied to every row in the directory.
+     */
+    institutionNormalised: text('institution_normalised'),
+    majorKey: text('major_key'),
+    majorText: text('major_text'),
+    /** ISO 3166-1 alpha-2. */
+    country: text('country'),
+    city: text('city'),
+    bio: text('bio'),
     isOpenBuddy: integer('is_open_buddy', { mode: 'boolean' }).notNull().default(false),
     // Set when the user finishes onboarding (handle, goal, occupation). The app
     // reads it to decide between the onboarding stack and the tabs; deriving it
@@ -100,9 +122,55 @@ export const users = sqliteTable(
     index('users_goal_idx').on(t.goalKey),
     index('users_goal_2_idx').on(t.goalKey2),
     index('users_occupation_idx').on(t.occupationKey),
+    // The student filters on the directory.
+    index('users_level_idx').on(t.educationLevel),
+    index('users_major_idx').on(t.majorKey),
+    index('users_country_idx').on(t.country),
+    index('users_institution_idx').on(t.institutionNormalised),
     enumCheck('users_goal_key_check', 'goal_key', GOAL_KEYS, { nullable: true }),
     enumCheck('users_goal_key_2_check', 'goal_key_2', GOAL_KEYS, { nullable: true }),
     enumCheck('users_occupation_key_check', 'occupation_key', OCCUPATION_KEYS, { nullable: true }),
+    enumCheck('users_education_level_check', 'education_level', EDUCATION_LEVEL_KEYS, {
+      nullable: true,
+    }),
+    enumCheck('users_major_key_check', 'major_key', MAJOR_KEYS, { nullable: true }),
+    /**
+     * Country is checked for *shape*, not membership. The other enums are
+     * short, app-defined lists; ISO 3166 is ~200 codes, and a CHECK that long
+     * can only ever be changed by rebuilding the table — which 0003 established
+     * is unsafe here, because six tables carry ON DELETE CASCADE foreign keys
+     * to users. Zod rejects an unknown code at the edge; this stops junk.
+     */
+    check('users_country_check', sql`"country" IS NULL OR "country" GLOB '[A-Z][A-Z]'`),
+  ],
+);
+
+/**
+ * Favourite topics and hobbies (§2.1), one row per tag.
+ *
+ * A join table rather than a JSON column on users, because these are filter
+ * targets: `WHERE kind = 'topic' AND value = ?` uses an index, while the
+ * equivalent over a JSON array is a scan with `json_each` on every row. It is
+ * also what the Feed will filter on.
+ *
+ * The composite primary key is the deduplication: the same user cannot hold the
+ * same tag twice, whatever a client sends.
+ */
+export const userTags = sqliteTable(
+  'user_tags',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    value: text('value').notNull(),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.kind, t.value] }),
+    // "Everyone who picked this topic" — the directory filter's direction.
+    index('user_tags_value_idx').on(t.kind, t.value),
+    enumCheck('user_tags_kind_check', 'kind', USER_TAG_KINDS),
   ],
 );
 
