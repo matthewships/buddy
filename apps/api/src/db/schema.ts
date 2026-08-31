@@ -22,6 +22,7 @@ import {
   REPORT_STATUSES,
   REPORT_TARGETS,
   REQUEST_STATUSES,
+  REACTION_KEYS,
   REVIEW_ACTIONS,
   TASK_STATUSES,
   USER_TAG_KINDS,
@@ -296,9 +297,58 @@ export const groups = sqliteTable(
     // 'matched' groups are the 2-person groups a buddy request creates (§2.2);
     // 'friends' groups are made by hand and invite by @handle (§2.3).
     kind: text('kind').notNull(),
+    /**
+     * The member who verifies everyone else's tasks (§2.4). Nullable, and null
+     * is not a degenerate case: a group without one keeps the original rule
+     * where any member may review. That is what every existing group and the
+     * mobile app rely on.
+     */
+    buddyUserId: text('buddy_user_id').references(() => users.id),
+    /**
+     * Who verifies the Buddy's *own* tasks — nobody may approve their own, so a
+     * lone verifier would otherwise have no one to check them. The Buddy
+     * nominates this person; when it is null, or they have left, review falls
+     * back to any member, so a task can never be stuck unreviewable.
+     */
+    buddyVerifierId: text('buddy_verifier_id').references(() => users.id),
     createdAt: text('created_at').notNull().default(now),
   },
   (t) => [enumCheck('groups_kind_check', 'kind', GROUP_KINDS), index('groups_created_by_idx').on(t.createdBy)],
+);
+
+/**
+ * A join link, for inviting someone who is not a user yet (§2.3).
+ *
+ * Separate from `group_invites` rather than a nullable `to_user_id` on it: a
+ * targeted invite names one recipient and is accepted once, while a link names
+ * nobody and may be used many times. Sharing a table would make every existing
+ * invite query check which kind of row it was holding.
+ *
+ * A link is a bearer capability, so it is bounded on both axes — it expires and
+ * it has a use count — and can be revoked outright.
+ */
+export const groupInviteLinks = sqliteTable(
+  'group_invite_links',
+  {
+    id: text('id').primaryKey(),
+    /** URL-safe random, not the id: the id is a sortable ULID and guessable. */
+    token: text('token').notNull(),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    maxUses: integer('max_uses').notNull(),
+    uses: integer('uses').notNull().default(0),
+    expiresAt: text('expires_at').notNull(),
+    revokedAt: text('revoked_at'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex('group_invite_links_token_unique').on(t.token),
+    index('group_invite_links_group_idx').on(t.groupId),
+  ],
 );
 
 export const groupMembers = sqliteTable(
@@ -405,6 +455,19 @@ export const tasks = sqliteTable(
     // The owner's *local* calendar day (YYYY-MM-DD), not a UTC instant: the
     // hourly rollover cron compares against midnight in the user's timezone.
     dueDate: text('due_date').notNull(),
+    /**
+     * How long the owner said this would take. Nullable because the mobile app
+     * does not ask, and a task without one simply cannot be started — there
+     * would be nothing to count down.
+     */
+    estimatedMinutes: integer('estimated_minutes'),
+    /**
+     * When the owner started the clock. Not a status: a running task is still
+     * `planned`, and "running" is `started_at IS NOT NULL` plus a status that
+     * has not closed yet. Making it a status would have meant a new edge into
+     * and out of every existing transition.
+     */
+    startedAt: text('started_at'),
     status: text('status').notNull().default('planned'),
     proofText: text('proof_text'),
     proofImageKey: text('proof_image_key'),
@@ -418,6 +481,9 @@ export const tasks = sqliteTable(
     index('tasks_group_date_idx').on(t.groupId, t.dueDate, t.status),
     // The rollover job scans planned tasks by day across all users.
     index('tasks_rollover_idx').on(t.status, t.dueDate),
+    // "Is this person on the clock?" — asked by the chat room on every inbound
+    // message, so it has to be an index rather than a scan.
+    index('tasks_running_idx').on(t.userId, t.startedAt),
     enumCheck('tasks_status_check', 'status', TASK_STATUSES),
   ],
 );
@@ -540,6 +606,61 @@ export const messages = sqliteTable(
   (t) => [
     // History paging is newest-first within a group (§4.4).
     index('messages_group_created_idx').on(t.groupId, t.createdAt),
+  ],
+);
+
+/**
+ * Feed posts (§2.7) — a photo and an optional caption, visible to every signed-in
+ * user.
+ *
+ * Global rather than scoped to groups, which is a deliberate trade: it is the
+ * one place in Buddy where a new account with no group yet has something to look
+ * at, and the price is that it is a public surface and needs the report path
+ * (`REPORT_TARGETS` includes 'post') from the first day.
+ *
+ * Soft-deleted like users, so a removed post leaves its reactions' foreign keys
+ * intact rather than vanishing from under them.
+ */
+export const posts = sqliteTable(
+  'posts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    imageKey: text('image_key').notNull(),
+    caption: text('caption'),
+    createdAt: text('created_at').notNull().default(now),
+    deletedAt: text('deleted_at'),
+  },
+  (t) => [
+    // The feed is newest-first over every post; the id is a ULID, so it sorts
+    // by creation without a second column.
+    index('posts_live_idx').on(t.deletedAt, t.id),
+    index('posts_user_idx').on(t.userId),
+  ],
+);
+
+/**
+ * One row per (post, user, emoji). The composite primary key is what makes a
+ * reaction a toggle rather than a counter: a second tap deletes the row it would
+ * otherwise duplicate, and no client can inflate a count by sending twice.
+ */
+export const postReactions = sqliteTable(
+  'post_reactions',
+  {
+    postId: text('post_id')
+      .notNull()
+      .references(() => posts.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reaction: text('reaction').notNull(),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    primaryKey({ columns: [t.postId, t.userId, t.reaction] }),
+    enumCheck('post_reactions_reaction_check', 'reaction', REACTION_KEYS),
   ],
 );
 

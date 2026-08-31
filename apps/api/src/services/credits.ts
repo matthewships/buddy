@@ -1,6 +1,11 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 
-import { CREDITS_PER_RATING_POINT, DAILY_COMPLETION_BONUS, creditsForRating } from '@buddy/shared';
+import {
+  CREDITS_PER_RATING_POINT,
+  DAILY_COMPLETION_BONUS,
+  abandonPenalty,
+  creditsForRating,
+} from '@buddy/shared';
 
 import type { Db } from '../db/client.js';
 import { creditLedger, tasks, userStats } from '../db/schema.js';
@@ -220,4 +225,67 @@ export async function creditBalance(db: Db, userId: string): Promise<number> {
     .from(creditLedger)
     .where(and(eq(creditLedger.userId, userId), ne(creditLedger.amount, 0)));
   return Number(row?.total ?? 0);
+}
+
+/**
+ * Charges the penalty for abandoning a started task (§2.4).
+ *
+ * Two details carry the weight here.
+ *
+ * **The `refId` is the task *and the start time*, not the task.** The ledger's
+ * unique index is `(user, reason, ref_type, ref_id)`, which exists to make
+ * awards exactly-once. Keying on the task alone would make the *penalty*
+ * exactly-once too: start, abandon, restart, abandon again, and the second
+ * insert collides with the first and either errors or is silently swallowed.
+ * Each start is its own commitment, so each start is its own ledger key.
+ *
+ * **The charge is capped at the balance.** A leaderboard with negative scores
+ * invites a reading the product does not intend, and someone who abandons their
+ * very first task should land on zero rather than in debt.
+ *
+ * Returns the amount actually deducted, as a negative number (0 if the user had
+ * nothing to lose, or if this exact start was already charged).
+ */
+export async function chargeAbandon(
+  db: Db,
+  userId: string,
+  taskId: string,
+  startedAt: string,
+): Promise<number> {
+  const balance = await creditBalance(db, userId);
+  const amount = abandonPenalty(balance);
+  if (amount === 0) return 0;
+
+  const inserted = await db
+    .insert(creditLedger)
+    .values({
+      id: newId(),
+      userId,
+      amount,
+      reason: 'task_abandoned',
+      refType: 'task_start',
+      refId: `${taskId}:${startedAt}`,
+    })
+    .onConflictDoNothing()
+    .returning({ id: creditLedger.id });
+
+  // Already charged for this start: the unique index absorbed it.
+  if (inserted.length === 0) return 0;
+
+  const weekKey = isoWeekKey();
+  await db
+    .update(userStats)
+    .set({
+      // Clamped in SQL as well as above, because the balance is read before the
+      // write and a concurrent approval could land in between.
+      totalCredits: sql`MAX(0, ${userStats.totalCredits} + ${amount})`,
+      weeklyCredits: sql`CASE WHEN ${userStats.weekKey} = ${weekKey}
+                              THEN MAX(0, ${userStats.weeklyCredits} + ${amount})
+                              ELSE 0 END`,
+      weekKey,
+      updatedAt: nowIso(),
+    })
+    .where(eq(userStats.userId, userId));
+
+  return amount;
 }

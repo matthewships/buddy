@@ -13,13 +13,18 @@ import { badRequest, notFound } from '../lib/errors.js';
  * key embeds a ULID (`avatars/<userId>/<ulid>`), which is unguessable, and
  * replacing an avatar deletes the old object so a leaked URL stops resolving.
  *
- * Only the `avatars/` prefix is served. Proof images, if they are ever added,
- * are group-private and will need a different, authenticated path.
+ * The same reasoning extends to `posts/` (§2.7): the Feed is global, so every
+ * signed-in user can already see every post, and a bearer token on an <img> tag
+ * would defeat the CDN cache for no privacy gained. Deleting a post deletes the
+ * object, so a leaked URL stops resolving.
+ *
+ * Nothing else is served. Proof images, if they are ever added, are
+ * group-private and will need a different, authenticated path.
  */
 export const mediaRoutes = new Hono<AppEnv>().get('/:key{.+}', async (c) => {
   const key = decodeURIComponent(c.req.param('key'));
 
-  if (!key.startsWith('avatars/') || key.includes('..')) {
+  if ((!key.startsWith('avatars/') && !key.startsWith('posts/')) || key.includes('..')) {
     throw badRequest('Not a media key');
   }
 

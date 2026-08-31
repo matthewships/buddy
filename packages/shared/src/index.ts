@@ -18,5 +18,6 @@ export * from './interests';
 export * from './limits';
 export * from './majors';
 export * from './occupations';
+export * from './reactions';
 export * from './schemas';
 export * from './topics';

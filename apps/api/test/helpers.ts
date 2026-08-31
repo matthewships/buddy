@@ -34,6 +34,17 @@ export async function patch(path: string, body: unknown, token?: string) {
   });
 }
 
+export async function put(path: string, body: unknown, token?: string) {
+  return SELF.fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 export async function get(path: string, token?: string) {
   return SELF.fetch(`${BASE}${path}`, {
     headers: token ? { authorization: `Bearer ${token}` } : {},
@@ -190,11 +201,34 @@ export async function createTask(
   groupId: string,
   title = 'Read 20 pages',
   dueDate = today(),
+  /** Omitted by default, matching the mobile app: a task need not be timed. */
+  estimatedMinutes?: number,
 ): Promise<string> {
-  const res = await post('/api/tasks', { groupId, title, dueDate }, session.accessToken);
+  const res = await post(
+    '/api/tasks',
+    { groupId, title, dueDate, ...(estimatedMinutes ? { estimatedMinutes } : {}) },
+    session.accessToken,
+  );
   expect(res.status).toBe(201);
   const { task } = (await res.json()) as { task: { id: string } };
   return task.id;
+}
+
+/** Adds a third person to an existing group, for the rules that need one. */
+export async function addMember(
+  inviter: Session,
+  groupId: string,
+  email: string,
+  handle: string,
+): Promise<Session> {
+  const session = await signUp(email);
+  await onboard(session, handle);
+  await post(`/api/groups/${groupId}/invites`, { handle }, inviter.accessToken);
+  const { invites } = (await (await get('/api/invites', session.accessToken)).json()) as {
+    invites: { id: string }[];
+  };
+  await post(`/api/invites/${invites[0]!.id}/accept`, {}, session.accessToken);
+  return session;
 }
 
 /** Reads a user's denormalised stats straight from D1. */

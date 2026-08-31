@@ -24,7 +24,7 @@ export type EmailCodePurpose = (typeof EMAIL_CODE_PURPOSES)[number];
 export const PLATFORMS = ['ios', 'android'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
-export const REPORT_TARGETS = ['task', 'message', 'user'] as const;
+export const REPORT_TARGETS = ['task', 'message', 'user', 'post'] as const;
 export type ReportTarget = (typeof REPORT_TARGETS)[number];
 
 export const REPORT_STATUSES = ['open', 'actioned', 'dismissed'] as const;

@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -20,8 +20,9 @@ import { newId } from '../lib/ids.js';
 import { localDate, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { syncBadges } from '../services/badges.js';
-import { awardApproval, countReview } from '../services/credits.js';
+import { awardApproval, chargeAbandon, countReview } from '../services/credits.js';
 import { enqueuePush } from '../services/push.js';
+import { reviewRightsFor } from '../services/review-rights.js';
 import { assertMember } from './groups.js';
 
 /**
@@ -137,7 +138,7 @@ export const taskRoutes = new Hono<AppEnv>()
   })
 
   .post('/', zValidator('json', createTaskSchema), async (c) => {
-    const { groupId, title, notes, dueDate } = c.req.valid('json');
+    const { groupId, title, notes, dueDate, estimatedMinutes } = c.req.valid('json');
     const userId = currentUserId(c);
     const client = db(c.env.DB);
 
@@ -157,6 +158,7 @@ export const taskRoutes = new Hono<AppEnv>()
       title,
       notes: notes ?? null,
       dueDate,
+      estimatedMinutes: estimatedMinutes ?? null,
       status: 'planned',
     });
 
@@ -188,6 +190,9 @@ export const taskRoutes = new Hono<AppEnv>()
         ...(patch.title !== undefined && { title: patch.title }),
         ...(patch.notes !== undefined && { notes: patch.notes ?? null }),
         ...(patch.dueDate !== undefined && { dueDate: patch.dueDate }),
+        ...(patch.estimatedMinutes !== undefined && {
+          estimatedMinutes: patch.estimatedMinutes ?? null,
+        }),
       })
       .where(and(eq(tasks.id, id), eq(tasks.status, 'planned')));
 
@@ -228,6 +233,8 @@ export const taskRoutes = new Hono<AppEnv>()
       .set({
         status: 'done',
         doneAt: nowIso(),
+        // Finishing stops the clock, which is what lifts the chat lock.
+        startedAt: null,
         ...(proofText !== undefined && { proofText: proofText ?? null }),
         ...(proofImageKey !== undefined && { proofImageKey: proofImageKey ?? null }),
       })
@@ -241,14 +248,100 @@ export const taskRoutes = new Hono<AppEnv>()
 
     if (claimed.length === 0) throw conflict('That task has already moved on');
 
-    await notifyGroup(c, client, task.groupId, userId, {
+    // To the Buddy alone where there is one, rather than to everybody: a
+    // notification that reaches four people who cannot act on it is noise.
+    const rights = await reviewRightsFor(client, task);
+    await enqueuePush(c.env, {
+      userIds: rights.reviewerIds,
       title: 'A task is ready to review',
       body: task.title,
-      data: { type: 'task_done', taskId: id, url: '/(tabs)/today' },
+      data: { type: 'task_done', taskId: id, groupId: task.groupId, url: '/groups' },
     });
 
     const row = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
     return c.json({ task: row });
+  })
+
+  /**
+   * Starting the clock (§2.4).
+   *
+   * Two rules, both deliberate. **One running task at a time**, across every
+   * group — the point of starting is that it is the thing you are doing now, and
+   * three simultaneous commitments is none. And **an estimate is required**,
+   * because there is nothing to count down without one; the mobile app does not
+   * ask for one, so its tasks simply cannot be started until it is ported.
+   *
+   * Starting locks the owner out of this group's chat until the task ends. The
+   * lock is not stored anywhere: it is `started_at`, read by the chat room.
+   */
+  .post('/:id/start', async (c) => {
+    const id = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    const task = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    if (!task) throw notFound('No such task');
+    if (task.userId !== userId) throw forbidden('That task is not yours');
+    if (task.estimatedMinutes === null) {
+      throw badRequest('Say how long this will take before starting it');
+    }
+    if (task.status === 'approved' || task.status === 'done') {
+      throw conflict('That task is already finished');
+    }
+    if (task.startedAt !== null) return c.json({ task });
+
+    const running = await client.query.tasks.findFirst({
+      where: and(
+        eq(tasks.userId, userId),
+        isNotNull(tasks.startedAt),
+        inArray(tasks.status, ['planned', 'proof_requested']),
+      ),
+      columns: { id: true, title: true },
+    });
+    if (running) {
+      throw conflict(`Finish or drop "${running.title}" first — one task at a time`);
+    }
+
+    const startedAt = nowIso();
+    await client.update(tasks).set({ startedAt }).where(eq(tasks.id, id));
+
+    // Best-effort: greys the composer immediately rather than on the next send.
+    // Correctness does not depend on it — the room reads the truth per message.
+    c.executionCtx.waitUntil(c.env.GROUP_CHAT.getByName(task.groupId).noteFocusChange(userId));
+
+    const row = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    return c.json({ task: row });
+  })
+
+  /**
+   * Dropping a started task — the way out of the chat lock, and the only action
+   * in Buddy that costs points.
+   *
+   * The task itself is untouched apart from the clock: it goes back to being a
+   * plan, and can be started again later. What is charged is the broken
+   * commitment, not the task.
+   */
+  .post('/:id/abandon', async (c) => {
+    const id = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    const task = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    if (!task) throw notFound('No such task');
+    if (task.userId !== userId) throw forbidden('That task is not yours');
+    if (task.startedAt === null) throw conflict('That task is not running');
+
+    const startedAt = task.startedAt;
+    // Clear the clock first: the charge is idempotent on (task, start), so a
+    // failure after this point cannot double-charge, while the reverse order
+    // could leave someone charged and still locked.
+    await client.update(tasks).set({ startedAt: null }).where(eq(tasks.id, id));
+    const charged = await chargeAbandon(client, userId, id, startedAt);
+
+    c.executionCtx.waitUntil(c.env.GROUP_CHAT.getByName(task.groupId).noteFocusChange(userId));
+
+    const row = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    return c.json({ task: row, credits: charged });
   })
 
   /** Submitting or updating proof after a reviewer asked for it. */
@@ -305,8 +398,11 @@ export const taskRoutes = new Hono<AppEnv>()
     if (!task) throw notFound('No such task');
     if (task.userId === reviewerId) throw forbidden('You cannot review your own task');
 
-    // Any other member of the group may review (§2.4).
     await assertMember(client, task.groupId, reviewerId);
+
+    // Who may review depends on whether the group has named a Buddy (§2.4).
+    const rights = await reviewRightsFor(client, task, reviewerId);
+    if (!rights.allowed) throw forbidden(rights.reason ?? 'You cannot review that task');
 
     if (task.status === 'approved') throw conflict('That task has already been reviewed');
     if (task.status !== 'done') {

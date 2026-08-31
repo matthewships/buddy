@@ -1,10 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 
 import { MAX_MESSAGE_BODY, sendMessageSchema } from '@buddy/shared';
 
 import { db } from '../db/client.js';
-import { groupMembers, messages } from '../db/schema.js';
+import { groupMembers, messages, tasks } from '../db/schema.js';
 import type { Env } from '../env.js';
 import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';
@@ -40,6 +40,8 @@ interface SocketIdentity {
 type Outbound =
   | { type: 'message'; message: BroadcastMessage }
   | { type: 'presence'; connected: number }
+  /** One member's task started or ended; clients re-check their own composer. */
+  | { type: 'focus'; userId: string }
   | { type: 'error'; message: string };
 
 interface BroadcastMessage {
@@ -137,6 +139,40 @@ export class GroupChat extends DurableObject<Env> {
       return;
     }
 
+    /**
+     * The focus lock (§2.4): while one of this member's tasks is running, they
+     * are out of the chat until it ends.
+     *
+     * Read from D1 per message rather than held as state in this object and set
+     * by RPC. State would be faster and is wrong: a task that ends through any
+     * path which forgets to call the RPC — a rollover, a future endpoint, a
+     * retry that fails after the write — would leave someone locked out of their
+     * group chat with no way back. Reading the truth each time is self-healing,
+     * and it costs one indexed read alongside a write this handler already does.
+     *
+     * The lock is not closed on the socket: the task ends and they simply carry
+     * on, with no reconnect.
+     */
+    const running = await client.query.tasks.findFirst({
+      where: and(
+        eq(tasks.userId, identity.userId),
+        eq(tasks.groupId, groupId),
+        isNotNull(tasks.startedAt),
+        // Started *and* still open. A closed task with a stale clock — one the
+        // rollover swept, say — must not lock anyone out, and belt-and-braces
+        // here is cheap next to someone silently losing their group chat.
+        inArray(tasks.status, ['planned', 'proof_requested']),
+      ),
+      columns: { title: true },
+    });
+    if (running) {
+      this.send(ws, {
+        type: 'error',
+        message: `You are working on "${running.title}" — finish or drop it to chat`,
+      });
+      return;
+    }
+
     const message: BroadcastMessage = {
       id: newId(),
       groupId,
@@ -204,6 +240,18 @@ export class GroupChat extends DurableObject<Env> {
    * Worker when membership changes, so a removed member's socket does not linger
    * until they happen to close the app (§4.7).
    */
+  /**
+   * Nudges a member's clients to re-render after their task started or ended.
+   *
+   * Deliberately carries no lock state: this is a hint that something changed,
+   * not the thing being enforced. The enforcement is the D1 read in
+   * `webSocketMessage`, so a nudge that never arrives costs a stale composer
+   * until the next message, and nothing more.
+   */
+  async noteFocusChange(userId: string): Promise<void> {
+    this.broadcast({ type: 'focus', userId });
+  }
+
   async disconnectMember(userId: string): Promise<void> {
     for (const socket of this.ctx.getWebSockets()) {
       const identity = socket.deserializeAttachment() as SocketIdentity | null;

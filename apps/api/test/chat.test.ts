@@ -271,3 +271,113 @@ describe('chat history', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('the focus lock', () => {
+  /** Opens a socket, exactly as the tests above do. */
+  async function connectAs(groupId: string, token: string) {
+    const issued = await post(`/api/groups/${groupId}/chat-ticket`, {}, token);
+    const { ticket } = (await issued.json()) as { ticket: string };
+    const response = await SELF.fetch(
+      `${BASE}/api/chat/${groupId}?ticket=${encodeURIComponent(ticket)}`,
+      { headers: { Upgrade: 'websocket' } },
+    );
+    const socket = response.webSocket!;
+    socket.accept();
+    return socket;
+  }
+
+  async function timedTask(session: { accessToken: string }, groupId: string) {
+    const created = await post(
+      '/api/tasks',
+      {
+        groupId,
+        title: 'Deep work',
+        dueDate: new Date().toISOString().slice(0, 10),
+        estimatedMinutes: 90,
+      },
+      session.accessToken,
+    );
+    return (await created.json() as { task: { id: string } }).task.id;
+  }
+
+  it('refuses a message from someone whose task is running', async () => {
+    const { owner, groupId } = await pair('focuslock');
+    const taskId = await timedTask(owner, groupId);
+    await post(`/api/tasks/${taskId}/start`, {}, owner.accessToken);
+
+    const socket = await connectAs(groupId, owner.accessToken);
+    const refusal = nextMessage<{ message: string }>(socket, 'error');
+    socket.send(JSON.stringify({ body: 'anyone around?' }));
+
+    expect((await refusal).message).toContain('Deep work');
+
+    // Refused, not merely unbroadcast: nothing was written either.
+    const { results } = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM messages WHERE group_id = ?',
+    )
+      .bind(groupId)
+      .all<{ n: number }>();
+    expect(results[0]!.n).toBe(0);
+    socket.close();
+  });
+
+  it('lets everyone else carry on talking', async () => {
+    // One person's timer must not silence the group.
+    const { owner, buddy, groupId } = await pair('focusothers');
+    const taskId = await timedTask(owner, groupId);
+    await post(`/api/tasks/${taskId}/start`, {}, owner.accessToken);
+
+    const socket = await connectAs(groupId, buddy.accessToken);
+    const delivered = nextMessage<{ message: { body: string } }>(socket, 'message');
+    socket.send(JSON.stringify({ body: 'still here' }));
+
+    expect((await delivered).message.body).toBe('still here');
+    socket.close();
+  });
+
+  it('lifts as soon as the task is finished', async () => {
+    const { owner, groupId } = await pair('focusdone');
+    const taskId = await timedTask(owner, groupId);
+    await post(`/api/tasks/${taskId}/start`, {}, owner.accessToken);
+    await post(`/api/tasks/${taskId}/done`, {}, owner.accessToken);
+
+    const socket = await connectAs(groupId, owner.accessToken);
+    const delivered = nextMessage<{ message: { body: string } }>(socket, 'message');
+    socket.send(JSON.stringify({ body: 'done!' }));
+
+    expect((await delivered).message.body).toBe('done!');
+    socket.close();
+  });
+
+  it('lifts when the task is abandoned', async () => {
+    const { owner, groupId } = await pair('focusabandon');
+    const taskId = await timedTask(owner, groupId);
+    await post(`/api/tasks/${taskId}/start`, {}, owner.accessToken);
+    await post(`/api/tasks/${taskId}/abandon`, {}, owner.accessToken);
+
+    const socket = await connectAs(groupId, owner.accessToken);
+    const delivered = nextMessage<{ message: { body: string } }>(socket, 'message');
+    socket.send(JSON.stringify({ body: 'gave up' }));
+
+    expect((await delivered).message.body).toBe('gave up');
+    socket.close();
+  });
+
+  it('does not lock the user out of a different group', async () => {
+    // The lock belongs to the task's group. Locking every room would mean
+    // reaching into every one of them for no clear gain.
+    const { owner, groupId } = await pair('focusscope');
+    const other = await post('/api/groups', { name: 'Other room' }, owner.accessToken);
+    const otherId = (await other.json() as { group: { id: string } }).group.id;
+
+    const taskId = await timedTask(owner, groupId);
+    await post(`/api/tasks/${taskId}/start`, {}, owner.accessToken);
+
+    const socket = await connectAs(otherId, owner.accessToken);
+    const delivered = nextMessage<{ message: { body: string } }>(socket, 'message');
+    socket.send(JSON.stringify({ body: 'different room' }));
+
+    expect((await delivered).message.body).toBe('different room');
+    socket.close();
+  });
+});

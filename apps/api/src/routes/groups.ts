@@ -2,13 +2,21 @@ import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 
-import { GROUP_INVITE_TTL_MS, createGroupSchema, inviteToGroupSchema } from '@buddy/shared';
+import {
+  GROUP_INVITE_TTL_MS,
+  INVITE_LINK_MAX_USES,
+  createGroupSchema,
+  inviteToGroupSchema,
+  setGroupBuddySchema,
+} from '@buddy/shared';
 
 import { db, type Db } from '../db/client.js';
-import { groupInvites, groupMembers, groups, users } from '../db/schema.js';
+import { groupInviteLinks, groupInvites, groupMembers, groups, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, forbidden, gone, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
+import { enforceRateLimit } from '../lib/rate-limit.js';
+import { newInviteToken } from '../lib/tokens.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { enqueuePush } from '../services/push.js';
@@ -132,9 +140,108 @@ export const groupRoutes = new Hono<AppEnv>()
         emoji: group.emoji,
         kind: group.kind,
         createdAt: group.createdAt,
+        buddyUserId: group.buddyUserId,
+        buddyVerifierId: group.buddyVerifierId,
       },
       members,
     });
+  })
+
+  /**
+   * Naming the group's Buddy, and the member who verifies the Buddy's own tasks
+   * (§2.4).
+   *
+   * Any member may set this. These are small groups of people who chose each
+   * other, and a vote is machinery the product does not need yet — but the
+   * choice is deliberate, so if groups ever get bigger this is the line to
+   * revisit.
+   *
+   * Setting the Buddy to null returns the group to the any-member review rule.
+   */
+  .put('/:id/buddy', zValidator('json', setGroupBuddySchema), async (c) => {
+    const groupId = c.req.param('id');
+    const { buddyUserId, verifierUserId } = c.req.valid('json');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, userId);
+
+    if (buddyUserId) await assertMember(client, groupId, buddyUserId);
+    if (verifierUserId) {
+      await assertMember(client, groupId, verifierUserId);
+      // Nobody may approve their own task, so a Buddy who verifies themselves
+      // would be a group where the Buddy's tasks can never be reviewed.
+      if (verifierUserId === buddyUserId) {
+        throw badRequest('The Buddy cannot verify their own tasks — pick someone else');
+      }
+    }
+
+    await client
+      .update(groups)
+      .set({
+        buddyUserId,
+        // Clearing the Buddy clears their nominee with them: a verifier without
+        // a Buddy names nothing.
+        buddyVerifierId: buddyUserId ? (verifierUserId ?? null) : null,
+      })
+      .where(eq(groups.id, groupId));
+
+    const row = await client.query.groups.findFirst({ where: eq(groups.id, groupId) });
+    return c.json({
+      buddyUserId: row?.buddyUserId ?? null,
+      buddyVerifierId: row?.buddyVerifierId ?? null,
+    });
+  })
+
+  /**
+   * Mints a join link, for inviting someone who is not a user yet (§2.3).
+   *
+   * This reverses the original decision that "@handle covers the same need":
+   * it does not. A handle can only name someone who already signed up, which
+   * makes every group a closed room and every new member somebody else's
+   * problem to recruit.
+   */
+  .post('/:id/invite-links', async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, userId);
+    await enforceRateLimit(c.env.CACHE, 'inviteLink', userId);
+
+    const id = newId();
+    const token = newInviteToken();
+
+    await client.insert(groupInviteLinks).values({
+      id,
+      token,
+      groupId,
+      createdBy: userId,
+      maxUses: INVITE_LINK_MAX_USES,
+      expiresAt: new Date(Date.now() + GROUP_INVITE_TTL_MS).toISOString(),
+    });
+
+    return c.json({ token, maxUses: INVITE_LINK_MAX_USES }, 201);
+  })
+
+  /** Revoking one, for a link that got further than intended. */
+  .delete('/:id/invite-links/:linkId', async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, userId);
+    await client
+      .update(groupInviteLinks)
+      .set({ revokedAt: nowIso() })
+      .where(
+        and(
+          eq(groupInviteLinks.id, c.req.param('linkId')),
+          eq(groupInviteLinks.groupId, groupId),
+        ),
+      );
+
+    return c.json({ ok: true as const });
   })
 
   /**
@@ -208,6 +315,25 @@ export const groupRoutes = new Hono<AppEnv>()
     await client
       .delete(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)));
+
+    /**
+     * If the departing member held either review role, clear it. Reviews then
+     * fall back to the any-member rule rather than pointing at somebody who is
+     * no longer here — which would leave every task in the group unreviewable.
+     */
+    const group = await client.query.groups.findFirst({
+      where: eq(groups.id, groupId),
+      columns: { buddyUserId: true, buddyVerifierId: true },
+    });
+    if (group?.buddyUserId === userId || group?.buddyVerifierId === userId) {
+      await client
+        .update(groups)
+        .set({
+          ...(group.buddyUserId === userId && { buddyUserId: null, buddyVerifierId: null }),
+          ...(group.buddyVerifierId === userId && { buddyVerifierId: null }),
+        })
+        .where(eq(groups.id, groupId));
+    }
 
     /**
      * Tell the chat room the member is gone, so their socket is closed now

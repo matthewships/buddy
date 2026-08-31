@@ -17,6 +17,7 @@ import { db } from '../db/client.js';
 import {
   buddyProfiles,
   devices,
+  posts,
   refreshTokens,
   users,
   webPushSubscriptions,
@@ -31,9 +32,13 @@ import { vapidKeysFrom } from '../services/push.js';
 import { readTags, replaceTags } from '../services/tags.js';
 import { publicSelf } from './auth.js';
 
-/** Avatar keys are namespaced by user so one user cannot overwrite another's. */
+/** Media keys are namespaced by user so one user cannot overwrite another's. */
 function avatarKeyFor(userId: string): string {
   return `avatars/${userId}/${newId()}`;
+}
+
+function postKeyFor(userId: string): string {
+  return `posts/${userId}/${newId()}`;
 }
 
 export const meRoutes = new Hono<AppEnv>()
@@ -239,12 +244,26 @@ export const meRoutes = new Hono<AppEnv>()
     return c.json({ key, uploadUrl: `/api/me/avatar/${encodeURIComponent(key)}` });
   })
 
+  /**
+   * The same two-step upload as the avatar, for a Feed photo. Shares the PUT
+   * handler below, which authorises on the key's prefix.
+   */
+  .post('/post-image', async (c) => {
+    const userId = currentUserId(c);
+    const key = postKeyFor(userId);
+    return c.json({ key, uploadUrl: `/api/me/avatar/${encodeURIComponent(key)}` });
+  })
+
   .put('/avatar/:key{.+}', async (c) => {
     const userId = currentUserId(c);
     const key = decodeURIComponent(c.req.param('key'));
 
     // The key is client-supplied, so re-check ownership rather than trusting it.
-    if (!key.startsWith(`avatars/${userId}/`)) {
+    // Both prefixes are namespaced by user id, so one check covers avatars and
+    // post images alike.
+    const isAvatar = key.startsWith(`avatars/${userId}/`);
+    const isPostImage = key.startsWith(`posts/${userId}/`);
+    if (!isAvatar && !isPostImage) {
       throw badRequest('That upload key is not yours');
     }
 
@@ -260,6 +279,10 @@ export const meRoutes = new Hono<AppEnv>()
 
     await c.env.STORAGE.put(key, body, { httpMetadata: { contentType } });
 
+    // A post image is referenced by the post the client creates next, not by a
+    // column here, so there is nothing to update or clean up.
+    if (isPostImage) return c.json({ avatarKey: null, key });
+
     const client = db(c.env.DB);
     const previous = await client.query.users.findFirst({
       where: eq(users.id, userId),
@@ -273,7 +296,7 @@ export const meRoutes = new Hono<AppEnv>()
       c.executionCtx.waitUntil(c.env.STORAGE.delete(previous.avatarKey));
     }
 
-    return c.json({ avatarKey: key });
+    return c.json({ avatarKey: key, key });
   })
 
   /**
@@ -298,6 +321,13 @@ export const meRoutes = new Hono<AppEnv>()
     });
     if (!user) throw notFound('Account not found');
     if (user.deletedAt !== null) return c.json({ ok: true as const, alreadyDeleted: true as const });
+
+    // Their Feed photos, gathered before the rows go, so the R2 objects can be
+    // removed too. See the note in the batch below for why this is by hand.
+    const ownPosts = await client
+      .select({ imageKey: posts.imageKey })
+      .from(posts)
+      .where(eq(posts.userId, userId));
 
     const stamp = nowIso();
     // The handle and email are freed for reuse but must stay unique, so they are
@@ -329,14 +359,22 @@ export const meRoutes = new Hono<AppEnv>()
       // never fires. Without this line a deleted account keeps receiving
       // browser notifications.
       client.delete(webPushSubscriptions).where(eq(webPushSubscriptions.userId, userId)),
+      // Also explicit, and for the same reason: the Feed is global, so a soft
+      // delete would leave a departed account's photos on a public surface
+      // indefinitely. Unlike a chat message, a post is not part of anyone
+      // else's history, so there is nothing lost by removing it outright.
+      client.delete(posts).where(eq(posts.userId, userId)),
       client
         .update(refreshTokens)
         .set({ revokedAt: stamp })
         .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt))),
     ]);
 
-    if (user.avatarKey) {
-      c.executionCtx.waitUntil(c.env.STORAGE.delete(user.avatarKey));
+    const objects = [user.avatarKey, ...ownPosts.map((row) => row.imageKey)].filter(
+      (key): key is string => Boolean(key),
+    );
+    if (objects.length > 0) {
+      c.executionCtx.waitUntil(c.env.STORAGE.delete(objects));
     }
 
     return c.json({ ok: true as const, alreadyDeleted: false as const });

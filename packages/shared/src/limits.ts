@@ -66,6 +66,8 @@ export const RATE_LIMITS = {
   resendCode: { limit: 3, windowMs: 10 * 60 * 1000 },
   buddyRequest: { limit: 20, windowMs: 60 * 60 * 1000 },
   report: { limit: 10, windowMs: 60 * 60 * 1000 },
+  post: { limit: 20, windowMs: 60 * 60 * 1000 },
+  inviteLink: { limit: 20, windowMs: 60 * 60 * 1000 },
 } as const;
 
 /** Field length caps, mirrored by the Zod schemas. */
@@ -101,6 +103,28 @@ export const MAX_BIO = 280;
  */
 export const MAX_TOPICS = 3;
 export const MAX_INTERESTS = 5;
+
+/**
+ * Task time estimates (§2.4). Five minutes is the smallest commitment worth
+ * starting a clock for; twelve hours is past the point where a "task" is really
+ * a day's plan, and the clock stops being a useful signal.
+ */
+export const MIN_TASK_MINUTES = 5;
+export const MAX_TASK_MINUTES = 12 * 60;
+
+/** Feed posts (§2.7). */
+export const MAX_POST_CAPTION = 300;
+export const MAX_POST_BYTES = 5 * 1024 * 1024;
+
+/**
+ * How many times one invite link may be used, and how long it lasts.
+ *
+ * A link is a bearer capability — anyone holding it can join — so it is bounded
+ * on both axes rather than either. The TTL matches targeted group invites
+ * (`GROUP_INVITE_TTL_MS`), since both are "for people you already know".
+ */
+export const INVITE_LINK_MAX_USES = 25;
+export const MAX_INVITE_TOKEN = 64;
 
 /** Pagination. */
 export const DEFAULT_PAGE_SIZE = 20;

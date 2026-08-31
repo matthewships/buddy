@@ -16,6 +16,8 @@ import { adminRoutes, reportRoutes } from './routes/reports.js';
 import { buddyRequestRoutes } from './routes/buddy-requests.js';
 import { buddyRoutes } from './routes/buddies.js';
 import { groupRoutes, inviteRoutes } from './routes/groups.js';
+import { inviteLinkRoutes } from './routes/invite-links.js';
+import { postRoutes } from './routes/posts.js';
 import { meRoutes } from './routes/me.js';
 import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
@@ -73,6 +75,8 @@ const routes = app
   .route('/api/buddy-requests', buddyRequestRoutes)
   .route('/api/groups', groupRoutes)
   .route('/api/invites', inviteRoutes)
+  // Public: the preview has to work before the invitee has an account at all.
+  .route('/api/invite-links', inviteLinkRoutes)
   .route('/api/tasks', taskRoutes)
   // Group-scoped chat reads share the /api/groups prefix and its bearer auth.
   .route('/api/groups', chatRoutes)
@@ -80,6 +84,7 @@ const routes = app
   // ticket, and that prefix's bearer middleware would reject it first.
   .route('/api/chat', chatSocketRoutes)
   .route('/api/leaderboard', leaderboardRoutes)
+  .route('/api/posts', postRoutes)
   .route('/api/reports', reportRoutes)
   .route('/api/admin', adminRoutes)
   // Public: see routes/media.ts for why avatars are not behind bearer auth.

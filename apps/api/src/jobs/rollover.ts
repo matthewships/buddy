@@ -44,7 +44,11 @@ export async function runRollover(db: Db, now: Date = new Date()): Promise<Rollo
 
     const result = await db
       .update(tasks)
-      .set({ status: 'missed' })
+      // Stops the clock too. A task that ran past its own day keeps the owner
+      // locked out of chat otherwise — and no penalty is charged, because the
+      // day ending is not the same as walking away from a commitment. Charging
+      // someone who is asleep would be indefensible.
+      .set({ status: 'missed', startedAt: null })
       .where(
         and(
           eq(tasks.status, 'planned'),

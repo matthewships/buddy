@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { COUNTRY_KEYS } from './countries';
+import { REACTION_KEYS } from './reactions';
 import { EDUCATION_LEVEL_KEYS } from './education-levels';
 import { GOAL_KEYS } from './goals';
 import { INTEREST_KEYS } from './interests';
@@ -25,17 +26,21 @@ import {
   MAX_MAJOR_TEXT,
   MAX_MESSAGE_BODY,
   MAX_OCCUPATION_TEXT,
+  MAX_INVITE_TOKEN,
   MAX_PAGE_SIZE,
+  MAX_POST_CAPTION,
   MAX_PROOF_TEXT,
   MAX_PUSH_ENDPOINT,
   MAX_PUSH_KEY,
   MAX_REPORT_NOTE,
   MAX_REQUEST_MESSAGE,
   MAX_REVIEW_COMMENT,
+  MAX_TASK_MINUTES,
   MAX_TASK_NOTES,
   MAX_TASK_TITLE,
   MAX_TOPICS,
   MIN_HANDLE,
+  MIN_TASK_MINUTES,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
 } from './limits';
@@ -364,21 +369,67 @@ export const inviteToGroupSchema = z.object({
   handle: handleSchema,
 });
 
+/**
+ * Naming the group's Buddy, and the member who verifies the Buddy's own tasks
+ * (§2.4). Both nullable: clearing the Buddy is a real action, and returns the
+ * group to the any-member review rule.
+ */
+export const setGroupBuddySchema = z.object({
+  buddyUserId: ulidSchema.nullable(),
+  verifierUserId: ulidSchema.nullish(),
+});
+
+/** An invite-link token, as it appears in a URL. */
+export const inviteTokenSchema = z
+  .string()
+  .trim()
+  .min(16)
+  .max(MAX_INVITE_TOKEN)
+  .regex(/^[A-Za-z0-9_-]+$/, 'Not a valid invite link');
+
+/* ------------------------------------------------------------------ *
+ * Feed (§2.7)
+ * ------------------------------------------------------------------ */
+
+export const createPostSchema = z.object({
+  imageKey: z.string().min(1).max(200),
+  caption: z.string().trim().max(MAX_POST_CAPTION).optional(),
+});
+
+/**
+ * Reactions toggle: posting one the user already left removes it. A single
+ * endpoint rather than an add and a remove, because the client always knows
+ * which emoji was tapped and never needs to know which state it was in.
+ */
+export const reactToPostSchema = z.object({
+  reaction: z.enum(REACTION_KEYS),
+});
+
 /* ------------------------------------------------------------------ *
  * Tasks & reviews (§2.4)
  * ------------------------------------------------------------------ */
+
+/**
+ * `estimatedMinutes` is **optional**, and has to stay that way: the mobile app
+ * creates tasks without it, and requiring one would break every task it makes at
+ * runtime. The web form requires it; a task with no estimate simply cannot be
+ * started, since there would be nothing to count down.
+ */
+const estimatedMinutesSchema = z.number().int().min(MIN_TASK_MINUTES).max(MAX_TASK_MINUTES);
 
 export const createTaskSchema = z.object({
   groupId: ulidSchema,
   title: z.string().trim().min(1).max(MAX_TASK_TITLE),
   notes: z.string().trim().max(MAX_TASK_NOTES).optional(),
   dueDate: localDateSchema,
+  estimatedMinutes: estimatedMinutesSchema.optional(),
 });
 
 export const updateTaskSchema = z.object({
   title: z.string().trim().min(1).max(MAX_TASK_TITLE).optional(),
   notes: z.string().trim().max(MAX_TASK_NOTES).nullish(),
   dueDate: localDateSchema.optional(),
+  estimatedMinutes: estimatedMinutesSchema.nullish(),
 });
 
 export const listTasksQuerySchema = z.object({
