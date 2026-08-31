@@ -86,10 +86,19 @@ export function useChatSocket(groupId: string) {
         const payload = JSON.parse(event.data as string) as
           | { type: 'message'; message: ChatMessage }
           | { type: 'presence'; connected: number }
+          | { type: 'focus'; userId: string }
           | { type: 'error'; message: string };
 
         if (payload.type === 'message') appendMessage(payload.message);
         if (payload.type === 'presence') setConnected(payload.connected);
+        /**
+         * Somebody's task started or ended. The room enforces the lock itself on
+         * every message, so this is only a prompt to re-read the tasks and grey
+         * the composer now rather than on the next attempt to send.
+         */
+        if (payload.type === 'focus') {
+          void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+        }
       } catch {
         // A frame we can't parse is not worth tearing the connection down for.
       }

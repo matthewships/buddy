@@ -12,6 +12,12 @@ export interface GroupSummary {
   memberCount: number;
 }
 
+/** The group detail carries the two review roles; the list does not. */
+export interface GroupDetail extends GroupSummary {
+  buddyUserId: string | null;
+  buddyVerifierId: string | null;
+}
+
 export interface GroupMember {
   id: string;
   handle: string;
@@ -54,7 +60,7 @@ export function useGroup(id: string) {
     queryKey: groupKeys.detail(id),
     enabled: id.length > 0,
     queryFn: async () =>
-      unwrap<{ group: GroupSummary; members: GroupMember[] }>(
+      unwrap<{ group: GroupDetail; members: GroupMember[] }>(
         await api.api.groups[':id'].$get({ param: { id } }),
       ),
   });
@@ -122,4 +128,29 @@ export function useRespondToInvite() {
       onSuccess: invalidate,
     }),
   };
+}
+
+/**
+ * Naming the group's Buddy and, when there is one, the member who verifies the
+ * Buddy's own tasks. Any member may set this.
+ */
+export function useSetGroupBuddy(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { buddyUserId: string | null; verifierUserId?: string | null }) =>
+      unwrap<{ buddyUserId: string | null; buddyVerifierId: string | null }>(
+        await api.api.groups[':id'].buddy.$put({ param: { id: groupId }, json: input }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) }),
+  });
+}
+
+/** Mints a join link to send to someone who is not on Buddy yet. */
+export function useCreateInviteLink(groupId: string) {
+  return useMutation({
+    mutationFn: async () =>
+      unwrap<{ token: string; maxUses: number }>(
+        await api.api.groups[':id']['invite-links'].$post({ param: { id: groupId } }),
+      ),
+  });
 }

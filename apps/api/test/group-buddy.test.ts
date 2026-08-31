@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addMember,
   createTask,
+  get,
   pair,
   post,
   put,
@@ -253,5 +254,39 @@ describe('a task that runs past its own day', () => {
     // And the clock is free again for a new task.
     const next = await createTask(owner, groupId, 'Fresh start', undefined, 30);
     expect((await post(`/api/tasks/${next}/start`, {}, owner.accessToken)).status).toBe(200);
+  });
+});
+
+describe('the review queue', () => {
+  it('only lists tasks this caller may actually review', async () => {
+    // Offering a review that will be refused is worse than not offering it, so
+    // the queue applies the same rule the review endpoint enforces.
+    const { owner, buddy, groupId } = await pair('queuerule');
+    const third = await addMember(owner, groupId, 'qr-third@example.com', 'qrthird');
+    await put(`/api/groups/${groupId}/buddy`, { buddyUserId: buddy.userId }, owner.accessToken);
+
+    const taskId = await createTask(owner, groupId, 'Needs a look');
+    await markDone(owner, taskId);
+
+    const forBuddy = (await (
+      await get('/api/tasks?scope=review', buddy.accessToken)
+    ).json()) as { tasks: { id: string }[] };
+    const forThird = (await (
+      await get('/api/tasks?scope=review', third.accessToken)
+    ).json()) as { tasks: { id: string }[] };
+
+    expect(forBuddy.tasks.map((t) => t.id)).toContain(taskId);
+    expect(forThird.tasks.map((t) => t.id)).not.toContain(taskId);
+  });
+
+  it('still lists everything when no Buddy is named', async () => {
+    const { owner, buddy, groupId } = await pair('queuenobuddy');
+    const taskId = await createTask(owner, groupId, 'Open to anyone');
+    await markDone(owner, taskId);
+
+    const queue = (await (
+      await get('/api/tasks?scope=review', buddy.accessToken)
+    ).json()) as { tasks: { id: string }[] };
+    expect(queue.tasks.map((t) => t.id)).toContain(taskId);
   });
 });

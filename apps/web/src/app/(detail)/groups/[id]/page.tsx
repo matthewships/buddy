@@ -5,8 +5,16 @@ import { useState } from 'react';
 
 import { handleSchema } from '@buddy/shared';
 
-import { useGroup, useInviteToGroup, useLeaveGroup } from '@/api/groups';
-import { localToday, useGroupTasks, type Task as GroupTask } from '@/api/tasks';
+import { useMe } from '@/api/auth';
+import {
+  useCreateInviteLink,
+  useGroup,
+  useInviteToGroup,
+  useLeaveGroup,
+  useSetGroupBuddy,
+  type GroupDetail,
+  type GroupMember,
+} from '@/api/groups';
 import {
   Avatar,
   BackLink,
@@ -14,16 +22,19 @@ import {
   Card,
   ErrorText,
   Field,
+  GroupTasks,
   Screen,
+  SharePanel,
   Spinner,
-  StatusPill,
 } from '@/components';
 import { activityLabel } from '@/lib/activity';
+import { verifierFor } from '@/lib/review-rights';
 
-export default function GroupDetail() {
+export default function GroupDetailPage() {
   const router = useRouter();
   const id = useParams<{ id: string }>().id;
 
+  const me = useMe();
   const group = useGroup(id);
   const invite = useInviteToGroup(id);
   const leave = useLeaveGroup();
@@ -31,7 +42,7 @@ export default function GroupDetail() {
   const [handle, setHandle] = useState('');
   const handleValid = handleSchema.safeParse(handle).success;
 
-  if (group.isPending) {
+  if (group.isPending || me.isPending) {
     return (
       <Screen>
         <div className="flex flex-1 items-center justify-center text-ink-subtle">
@@ -41,7 +52,7 @@ export default function GroupDetail() {
     );
   }
 
-  if (group.isError || !group.data) {
+  if (group.isError || !group.data || !me.data) {
     return (
       <Screen>
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
@@ -55,6 +66,7 @@ export default function GroupDetail() {
   }
 
   const { group: info, members } = group.data;
+  const viewerId = me.data.id;
 
   return (
     <Screen>
@@ -66,9 +78,14 @@ export default function GroupDetail() {
           {info.name}
         </h1>
         <p className="text-sm text-ink-subtle">
-          {members.length} {members.length === 1 ? 'member' : 'members'}
+          {members.length} {members.length === 1 ? 'member' : 'members'} · checked by{' '}
+          {verifierFor(info, members, viewerId)}
         </p>
       </div>
+
+      <GroupTasks group={info} members={members} viewerId={viewerId} />
+
+      <BuddyCard group={info} members={members} viewerId={viewerId} />
 
       <Card>
         <p className="mb-2 text-sm font-semibold text-ink-muted">Members</p>
@@ -81,6 +98,7 @@ export default function GroupDetail() {
             <div className="flex flex-1 flex-col">
               <p className="text-base font-semibold text-ink">
                 {member.displayName}
+                {member.id === info.buddyUserId ? ' · Buddy' : ''}
                 {member.role === 'owner' ? ' · owner' : ''}
               </p>
               <p className="text-sm text-ink-muted">
@@ -93,12 +111,212 @@ export default function GroupDetail() {
         ))}
       </Card>
 
+      <InviteCard
+        groupId={id}
+        groupName={info.name}
+        handle={handle}
+        onHandleChange={setHandle}
+        handleValid={handleValid}
+        invite={invite}
+      />
+
       <Card>
-        <p className="mb-2 text-sm font-semibold text-ink-muted">Invite by @handle</p>
+        <p className="mb-2 text-sm font-semibold text-ink-muted">Chat</p>
+        <Button
+          label="Open chat"
+          variant="secondary"
+          onClick={() => router.push(`/groups/${id}/chat`)}
+        />
+      </Card>
+
+      <div className="mb-6 mt-2">
+        <Button
+          label="Leave group"
+          variant="ghost"
+          disabled={leave.isPending}
+          onClick={() => leave.mutate(id, { onSuccess: () => router.replace('/groups') })}
+        />
+      </div>
+    </Screen>
+  );
+}
+
+/**
+ * Naming the group's Buddy, and — when the viewer is the Buddy — who checks
+ * them.
+ *
+ * The second picker is shown only to the Buddy, because it is theirs to answer:
+ * nobody may approve their own task, so a single verifier needs somebody
+ * verifying *them*, and the person best placed to choose is the one being
+ * checked. Left unset it falls back to any member, which is stated rather than
+ * left to be discovered.
+ */
+function BuddyCard({
+  group,
+  members,
+  viewerId,
+}: {
+  group: GroupDetail;
+  members: GroupMember[];
+  viewerId: string;
+}) {
+  const setBuddy = useSetGroupBuddy(group.id);
+  const buddy = members.find((m) => m.id === group.buddyUserId);
+  const viewerIsBuddy = viewerId === group.buddyUserId;
+
+  return (
+    <Card>
+      <p className="mb-1 text-sm font-semibold text-ink-muted">Who verifies tasks</p>
+      <p className="mb-3 text-sm text-ink-muted">
+        {buddy
+          ? `${buddy.displayName} reviews everyone's tasks. ${
+              members.length > 2
+                ? `Their own are checked by ${verifierFor(group, members, buddy.id)}.`
+                : ''
+            }`
+          : 'Anyone in the group can review anyone else. Name a Buddy to make one person responsible.'}
+      </p>
+
+      <PersonPicker
+        label="Buddy"
+        members={members}
+        selectedId={group.buddyUserId}
+        onSelect={(id) =>
+          setBuddy.mutate({
+            buddyUserId: id,
+            // Changing the Buddy clears the old nominee: it was that person's
+            // choice about their own work, not a property of the group.
+            verifierUserId: id === group.buddyUserId ? group.buddyVerifierId : null,
+          })
+        }
+      />
+
+      {viewerIsBuddy && members.length > 2 ? (
+        <div className="mt-4">
+          <p className="mb-2 text-xs text-ink-subtle">
+            You review everyone. Pick who reviews you — otherwise anyone can.
+          </p>
+          <PersonPicker
+            label="Who checks you"
+            members={members.filter((m) => m.id !== group.buddyUserId)}
+            selectedId={group.buddyVerifierId}
+            onSelect={(id) =>
+              setBuddy.mutate({ buddyUserId: group.buddyUserId, verifierUserId: id })
+            }
+          />
+        </div>
+      ) : null}
+
+      <ErrorText message={setBuddy.error?.message} />
+    </Card>
+  );
+}
+
+function PersonPicker({
+  label,
+  members,
+  selectedId,
+  onSelect,
+}: {
+  label: string;
+  members: GroupMember[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-row flex-wrap gap-2">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={selectedId === null}
+        onClick={() => onSelect(null)}
+        className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${
+          selectedId === null
+            ? 'border-brand bg-brand font-semibold text-brand-fg'
+            : 'border-surface-border bg-surface text-ink hover:border-brand'
+        }`}
+      >
+        Anyone
+      </button>
+      {members.map((member) => {
+        const active = member.id === selectedId;
+        return (
+          <button
+            key={member.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onSelect(member.id)}
+            className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${
+              active
+                ? 'border-brand bg-brand font-semibold text-brand-fg'
+                : 'border-surface-border bg-surface text-ink hover:border-brand'
+            }`}
+          >
+            {member.displayName}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Two ways in: a handle for someone already on Buddy, and a link for someone who
+ * is not.
+ *
+ * The link is the one that matters for a group that wants to grow — a handle can
+ * only name somebody who already signed up, which made every group a closed room.
+ */
+function InviteCard({
+  groupId,
+  groupName,
+  handle,
+  onHandleChange,
+  handleValid,
+  invite,
+}: {
+  groupId: string;
+  groupName: string;
+  handle: string;
+  onHandleChange: (value: string) => void;
+  handleValid: boolean;
+  invite: ReturnType<typeof useInviteToGroup>;
+}) {
+  const createLink = useCreateInviteLink(groupId);
+  const [link, setLink] = useState<string | null>(null);
+
+  return (
+    <Card>
+      <p className="mb-2 text-sm font-semibold text-ink-muted">Invite someone</p>
+
+      {link ? (
+        <SharePanel url={link} groupName={groupName} />
+      ) : (
+        <>
+          <Button
+            label={createLink.isPending ? 'Making a link…' : 'Invite by link'}
+            loading={createLink.isPending}
+            onClick={() =>
+              createLink.mutate(undefined, {
+                onSuccess: (result) =>
+                  setLink(`${window.location.origin}/join/${result.token}`),
+              })
+            }
+          />
+          <p className="mt-1 text-xs text-ink-subtle">
+            Send it on WhatsApp, Telegram or anywhere else. They can join even if they have never
+            used Buddy.
+          </p>
+          <ErrorText message={createLink.error?.message} />
+        </>
+      )}
+
+      <div className="mt-4 border-t border-surface-border pt-4">
         <Field
-          label="Handle"
+          label="Or invite by @handle"
           value={handle}
-          onChangeText={(value) => setHandle(value.replace(/[^A-Za-z0-9_]/g, ''))}
+          onChangeText={(value) => onHandleChange(value.replace(/[^A-Za-z0-9_]/g, ''))}
           autoCapitalize="none"
           placeholder="theirhandle"
         />
@@ -112,97 +330,10 @@ export default function GroupDetail() {
             variant="secondary"
             disabled={!handleValid || invite.isPending}
             loading={invite.isPending}
-            onClick={() => invite.mutate(handle, { onSuccess: () => setHandle('') })}
+            onClick={() => invite.mutate(handle, { onSuccess: () => onHandleChange('') })}
           />
         </div>
-      </Card>
-
-      <GroupTaskBoard groupId={id} />
-
-      <Card>
-        <p className="mb-2 text-sm font-semibold text-ink-muted">Chat</p>
-        <Button
-          label="Open chat"
-          variant="secondary"
-          onClick={() => router.push(`/groups/${id}/chat`)}
-        />
-      </Card>
-
-      <div className="mt-2">
-        <Button
-          label="Leave group"
-          variant="ghost"
-          disabled={leave.isPending}
-          onClick={() => leave.mutate(id, { onSuccess: () => router.replace('/groups') })}
-        />
       </div>
-    </Screen>
-  );
-}
-
-/**
- * The group's tasks grouped by day (§5.2).
- *
- * Read-only here: acting on a task belongs on the Today tab, where the review
- * queue and the owner's own actions already live. This view exists so a member
- * can see how the group has actually been doing over the last few days.
- */
-function GroupTaskBoard({ groupId }: { groupId: string }) {
-  const tasks = useGroupTasks(groupId);
-
-  if (tasks.isPending) {
-    return (
-      <Card>
-        <Spinner />
-      </Card>
-    );
-  }
-
-  const byDay = new Map<string, GroupTask[]>();
-  for (const task of tasks.data?.tasks ?? []) {
-    byDay.set(task.dueDate, [...(byDay.get(task.dueDate) ?? []), task]);
-  }
-  // The API returns due_date descending, so insertion order is already newest
-  // first.
-  const days = [...byDay.entries()];
-
-  return (
-    <Card>
-      <p className="mb-2 text-sm font-semibold text-ink-muted">Tasks by day</p>
-      {days.length === 0 ? (
-        <p className="text-sm text-ink-subtle">Nobody has planned anything in this group yet.</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {days.slice(0, 7).map(([day, dayTasks]) => (
-            <div key={day} className="flex flex-col gap-1.5">
-              <p className="text-xs font-semibold uppercase text-ink-subtle">{formatDay(day)}</p>
-              {dayTasks.map((task) => (
-                <div key={task.id} className="flex flex-row items-start gap-2">
-                  <p className="flex-1 text-sm text-ink">
-                    <span className="font-semibold">{task.ownerDisplayName}</span> · {task.title}
-                  </p>
-                  <StatusPill status={task.status} />
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
     </Card>
   );
-}
-
-function formatDay(date: string): string {
-  const today = localToday();
-  if (date === today) return 'Today';
-  const yesterday = new Date(Date.parse(`${today}T00:00:00`) - 86_400_000);
-  const y = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(
-    yesterday.getDate(),
-  ).padStart(2, '0')}`;
-  if (date === y) return 'Yesterday';
-  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
 }

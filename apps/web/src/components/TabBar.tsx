@@ -4,17 +4,27 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 /**
- * The five tabs from §5.2, in the mobile app's order.
+ * The five tabs (§5.2).
  *
- * Glyphs and colours match apps/mobile/app/(tabs)/_layout.tsx — text glyphs
- * rather than an icon set, which is what the app ships today. The bar is
- * `sticky` at the bottom of the phone-width column rather than fixed to the
- * viewport, so it sits with the app rather than floating over a wide page.
+ * **Today is gone.** It aggregated tasks across groups, which put the daily loop
+ * one level away from the group it belongs to — tasks were already stored
+ * against a group, and the screen that showed them was not. Tasks now live in
+ * the group, with a member toggle; the cross-group review queue Today also
+ * carried became a per-group section, which is where it belongs now that the
+ * reviewer is the group's Buddy rather than whoever gets there first.
+ *
+ * Buddies leads, because finding someone is the first thing a new account can
+ * usefully do — it has no group yet, and every other tab would be empty.
+ *
+ * Glyphs rather than an icon set, matching apps/mobile/app/(tabs)/_layout.tsx.
+ * The bar is `sticky` at the bottom of the phone-width column rather than fixed
+ * to the viewport, so it sits with the app rather than floating over a wide
+ * page.
  */
 const TABS = [
-  { href: '/today', label: 'Today', glyph: '✓' },
-  { href: '/groups', label: 'Groups', glyph: '◍' },
   { href: '/buddies', label: 'Buddies', glyph: '☺' },
+  { href: '/groups', label: 'Groups', glyph: '◍' },
+  { href: '/feed', label: 'Feed', glyph: '❋' },
   { href: '/board', label: 'Board', glyph: '▲' },
   { href: '/profile', label: 'Profile', glyph: '☰' },
 ] as const;

@@ -19,7 +19,7 @@ import { LoadingScreen } from './Spinner';
  * route the browser actually opens.
  *
  * The rules are the ones app/index.tsx applies, in the same order:
- * signed out -> the auth stack; signed in but not onboarded -> onboarding;
+ * signed out -> the auth stack; signed in but not onboarded -> the questions;
  * otherwise the tabs. Onboarding state is read from /me rather than local state
  * alone, so a user who onboarded on another device is not asked again, and the
  * store's cached value covers the window while that request is in flight.
@@ -72,8 +72,8 @@ export function RequireSession({
  * gets a form for the few milliseconds before the effect below fires, and a
  * form is harmless — worst case they sign in again.
  *
- * Still `/today` and not the onboarding-aware destination `LandingRedirect`
- * picks: an unonboarded user bounces off `/today` into the questions via
+ * Still `/buddies` and not the onboarding-aware destination `LandingRedirect`
+ * picks: an unonboarded user bounces off `/buddies` into the questions via
  * `RequireSession`, which is what this route did before and one fewer /me
  * request on a screen that does not need it.
  */
@@ -82,7 +82,7 @@ export function RedirectIfSignedIn() {
   const status = useSession((s) => s.status);
 
   useEffect(() => {
-    if (status === 'signedIn') router.replace('/today');
+    if (status === 'signedIn') router.replace('/buddies');
   }, [router, status]);
 
   return null;
@@ -90,7 +90,7 @@ export function RedirectIfSignedIn() {
 
 /**
  * The entry route's half of the same split: `/` shows the landing screen to
- * everyone and this sends a session on to where it belongs — /today, or
+ * everyone and this sends a session on to where it belongs — /buddies, or
  * onboarding if it was never finished. The rules are app/index.tsx's, in its
  * order.
  *
@@ -118,7 +118,7 @@ export function LandingRedirect({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (waiting || status !== 'signedIn') return;
     const onboarded = me.data?.onboarded ?? cachedOnboarded;
-    router.replace(onboarded ? '/today' : FIRST_STEP);
+    router.replace(onboarded ? '/buddies' : FIRST_STEP);
   }, [cachedOnboarded, me.data?.onboarded, router, status, waiting]);
 
   if (status === 'signedIn') return <LoadingScreen />;
@@ -147,7 +147,7 @@ export function RedirectIfOnboarded() {
   const onboarded = me.data?.onboarded ?? cachedOnboarded;
 
   useEffect(() => {
-    if (status === 'signedIn' && onboarded) router.replace('/today');
+    if (status === 'signedIn' && onboarded) router.replace('/buddies');
   }, [onboarded, router, status]);
 
   return null;

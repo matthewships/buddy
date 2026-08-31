@@ -106,10 +106,15 @@ self.addEventListener('notificationclick', (event) => {
  * which has none, unchanged.
  *
  * Rewriting here rather than sending two urls keeps one payload for both
- * clients, and keeps the mapping next to the client it is a quirk of.
+ * clients, and keeps the mapping next to the client it is a quirk of. That
+ * matters more than usual now: **the web has no /today**. Tasks moved into the
+ * group they belong to, and the app still has the tab, so the payload keeps
+ * pointing at it and this is where the two part company. Without the line
+ * below, every task notification on the web would open a 404.
  */
 function webPath(url) {
-  if (typeof url !== 'string' || !url.startsWith('/')) return '/today';
+  if (typeof url !== 'string' || !url.startsWith('/')) return '/buddies';
   const path = url.replace(/\/\([^)]*\)/g, '');
-  return path === '' ? '/today' : path;
+  if (path === '') return '/buddies';
+  return path === '/today' ? '/groups' : path;
 }

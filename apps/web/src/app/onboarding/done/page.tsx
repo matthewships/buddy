@@ -7,6 +7,7 @@ import { EDUCATION_LEVELS, MAJORS, MAX_HANDLE, MIN_HANDLE } from '@buddy/shared'
 
 import { useHandleAvailable, useMe, useUpdateMe } from '@/api/auth';
 import { useUploadAvatar } from '@/api/avatar';
+import { useAcceptInviteLink } from '@/api/invite-links';
 import { Avatar, Button, Card, ErrorText, Field, Screen } from '@/components';
 import { draftToPatch, useDraft } from '@/onboarding/draft';
 
@@ -36,6 +37,7 @@ export default function OnboardingDone() {
   const me = useMe();
   const updateMe = useUpdateMe();
   const uploadAvatar = useUploadAvatar();
+  const acceptInvite = useAcceptInviteLink();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
 
@@ -71,11 +73,37 @@ export default function OnboardingDone() {
   };
 
   const enter = () => {
+    const token = draft.inviteToken;
+
+    /**
+     * Someone who arrived on a join link is redeemed here, at the end of a flow
+     * that began several screens and one email round trip ago, and lands in the
+     * group they were actually invited to.
+     *
+     * A failure is not worth blocking on: the account is real and the profile is
+     * saved, so the worst case is landing on Buddies with the link still in the
+     * message that brought them — which is recoverable. Being stuck on a "you're
+     * all set" screen would not be.
+     */
+    if (token) {
+      acceptInvite.mutate(token, {
+        onSuccess: (result) => {
+          draft.reset();
+          router.replace(`/groups/${result.group.id}`);
+        },
+        onError: () => {
+          draft.reset();
+          router.replace('/buddies');
+        },
+      });
+      return;
+    }
+
     // Cleared only once the server has the answers: a failed write leaves them
     // in place so "Finish" can simply be pressed again.
     draft.reset();
-    // Buddies, not Today: a new account has no group yet, so Today would be an
-    // empty screen. Finding someone is the first real thing to do.
+    // Buddies, not the group tab: a new account has no group yet, so anything
+    // else would be an empty screen. Finding someone is the first real thing.
     router.replace('/buddies');
   };
 
@@ -144,9 +172,16 @@ export default function OnboardingDone() {
         <div className="mt-2">
           {saved ? (
             <Button
-              label={uploadAvatar.isSuccess ? 'Find a buddy' : 'Skip for now'}
+              label={
+                draft.inviteToken
+                  ? 'Go to the group'
+                  : uploadAvatar.isSuccess
+                    ? 'Find a buddy'
+                    : 'Skip for now'
+              }
               onClick={enter}
-              disabled={uploadAvatar.isPending}
+              loading={acceptInvite.isPending}
+              disabled={uploadAvatar.isPending || acceptInvite.isPending}
             />
           ) : (
             <Button

@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -109,6 +109,37 @@ export const taskRoutes = new Hono<AppEnv>()
             // Someone else's task, in a group I'm in, waiting on a review.
             ne(tasks.userId, userId),
             eq(tasks.status, 'done'),
+            /**
+             * ...and one this caller is actually allowed to review. The three
+             * branches mirror `reviewRightsFor`, in SQL because this is a list
+             * rather than a single decision — offering a review that will be
+             * refused is worse than not offering it.
+             *
+             * A group with no Buddy, or one whose Buddy has left, keeps the
+             * original any-member rule, which is what makes this safe for every
+             * group that predates the feature.
+             */
+            sql`(
+              SELECT CASE
+                WHEN g.buddy_user_id IS NULL
+                  OR g.buddy_user_id NOT IN (
+                    SELECT user_id FROM group_members WHERE group_id = g.id
+                  )
+                  THEN 1
+                WHEN ${tasks.userId} = g.buddy_user_id THEN
+                  CASE
+                    WHEN g.buddy_verifier_id IS NULL
+                      OR g.buddy_verifier_id = g.buddy_user_id
+                      OR g.buddy_verifier_id NOT IN (
+                        SELECT user_id FROM group_members WHERE group_id = g.id
+                      )
+                      THEN 1
+                    ELSE g.buddy_verifier_id = ${userId}
+                  END
+                ELSE g.buddy_user_id = ${userId}
+              END
+              FROM groups g WHERE g.id = ${tasks.groupId}
+            )`,
           ]
         : scope === 'all'
           ? // Everyone's tasks in the one group, already membership-checked above.

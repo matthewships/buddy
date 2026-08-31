@@ -40,6 +40,15 @@ interface DraftValues {
    */
   goalKeys: string[];
   goalText: string;
+  /**
+   * A group join link the visitor arrived on, carried through the whole signup.
+   *
+   * This is the reason the draft persists rather than merely existing: the token
+   * has to survive nine question screens, registration, and a trip to a mail
+   * client for the verification code. Losing it would drop someone who was
+   * invited to a specific group onto a generic home screen with no way back.
+   */
+  inviteToken: string | null;
   isOpenBuddy: boolean;
   headline: string;
   about: string;
@@ -67,6 +76,7 @@ const initial: DraftValues = {
   bio: '',
   goalKeys: [],
   goalText: '',
+  inviteToken: null,
   isOpenBuddy: true,
   headline: '',
   about: '',

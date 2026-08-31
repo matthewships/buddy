@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { MAX_REPORT_NOTE } from '@buddy/shared';
+import { MAX_REPORT_NOTE, type ReportTarget } from '@buddy/shared';
 
 import { useReport } from '@/api/board';
 
@@ -36,7 +36,7 @@ export function ReportSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  targetType: 'task' | 'message' | 'user';
+  targetType: ReportTarget;
   targetId: string;
   targetLabel: string;
 }) {

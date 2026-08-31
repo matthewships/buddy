@@ -12,6 +12,10 @@ export interface Task {
   title: string;
   notes: string | null;
   dueDate: string;
+  /** How long the owner said it would take; null on tasks the app created. */
+  estimatedMinutes: number | null;
+  /** When the clock was started, or null when it is not running. */
+  startedAt: string | null;
   status: TaskStatus;
   proofText: string | null;
   proofImageKey: string | null;
@@ -118,6 +122,7 @@ export function useCreateTask() {
       title: string;
       notes?: string;
       dueDate: string;
+      estimatedMinutes?: number;
     }) => unwrap<{ task: Task }>(await api.api.tasks.$post({ json: input })),
     onSuccess: invalidate,
   });
@@ -179,6 +184,41 @@ export function useReviewTask() {
       | { id: string; action: 'request_proof'; comment?: string }) =>
       unwrap<{ task: Task; award: Award | null }>(
         await api.api.tasks[':id'].review.$post({ param: { id }, json: review as never }),
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * A task is running when its clock has been started and it has not closed.
+ * Both halves matter: a swept or finished task can still carry a start time,
+ * and treating that as running would keep its owner locked out of chat.
+ */
+export function isRunning(task: Task): boolean {
+  return task.startedAt !== null && (task.status === 'planned' || task.status === 'proof_requested');
+}
+
+/** Milliseconds left on a running task; negative once it has overrun. */
+export function remainingMs(task: Task, now = Date.now()): number {
+  if (!task.startedAt || task.estimatedMinutes === null) return 0;
+  return Date.parse(task.startedAt) + task.estimatedMinutes * 60_000 - now;
+}
+
+export function useStartTask() {
+  const invalidate = useTaskInvalidation();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap<{ task: Task }>(await api.api.tasks[':id'].start.$post({ param: { id } })),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAbandonTask() {
+  const invalidate = useTaskInvalidation();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap<{ task: Task; credits: number }>(
+        await api.api.tasks[':id'].abandon.$post({ param: { id } }),
       ),
     onSuccess: invalidate,
   });
