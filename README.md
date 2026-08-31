@@ -23,8 +23,11 @@ agree on. Both clients compile against the Worker's own route types through
 Hono's `hc<AppType>()`, so a changed response shape is a type error rather than
 a runtime surprise.
 
-`apps/web` is the same 21 screens as the app, against the same API — not a
-second backend. Its data layer is a deliberate copy of the app's rather than a
+`apps/web` was a port of the app's 21 screens against the same API — not a
+second backend. It has since moved ahead of the app: the student signup
+questionnaire, the rebuilt buddy directory and `/profile/edit` are web-only
+until `apps/mobile` is ported. The app keeps working because every shared and
+schema change was additive (ARCHITECTURE.md §2.1). Its data layer is a deliberate copy of the app's rather than a
 shared package; `ARCHITECTURE.md` §5.4 records why, and every place the browser
 forced a genuine difference (tokens in `localStorage`, no push, `crossOrigin`
 on avatars).
@@ -157,6 +160,17 @@ end to end without deploying. On an iPhone, Safari only offers push to a site
 added to the Home Screen; everywhere else no install is needed.
 
 ## Outstanding
+
+- **`apps/mobile` has not been ported to the student profile.** It still asks
+  the goal/occupation questions and shows neither institution, level, subject,
+  country, topics nor hobbies. It compiles and behaves correctly — the API
+  derives `occupation_key` from the level of study — but a student who signs up
+  on the web and opens the app sees a thinner version of their own profile.
+- **The tab bar still reads Today · Groups · Buddies · Board · Profile.** The
+  agreed shape is Buddies · Groups · Feed · Board · Profile, with Today deleted
+  and its task list moved into each group. That is blocked on the Groups and
+  Feed design, chiefly because Today also carries the cross-group review queue,
+  which belongs to no single group.
 
 - **Push credentials (mobile only).** An APNs key and FCM v1 credentials need
   uploading to EAS before push works on a real device. The web client is not

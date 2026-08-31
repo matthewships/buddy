@@ -35,7 +35,65 @@ Backend cost: Workers **Paid plan ($5/mo)** covers everything at early scale. Ex
 ## 2. Product rules (please correct anything wrong)
 
 ### 2.1 Registration & profile
-Every new user goes through:
+
+**Revised 2026-08-31 — students only, and questions before the account.**
+
+Buddy is now a student product (school through PhD). Signup asks nine questions
+*before* an account exists, and creates the account last:
+
+1. **Level of study** — High school · Foundation/College · Undergraduate ·
+   Master's · PhD · Postdoc · Recent graduate. Stored as `education_level`.
+2. **Institution** (free text) + optional city.
+3. **Major / field of study** — chips + "Other", stored as `major_key` +
+   `major_text`, the same pair-of-columns pattern as goals.
+4. **Where you're from** — ISO 3166-1 alpha-2, stored as `country`.
+5. **Goal** — unchanged, still up to `MAX_GOALS`, still the heaviest term in
+   matching.
+6. **Favourite topics** (max 3) and 7. **hobbies & interests** (max 5), both in
+   `user_tags`.
+8. **Bio** — a free line, optional.
+9. **"Are you willing to be someone's buddy?"** + headline and availability.
+
+Then **email + password + `@handle`** → 6-digit code → verified → one
+`PATCH /me` writes every answer → optional avatar prompt. (A subscription step
+would sit between verification and the write; skipped for now.)
+
+Three consequences worth recording:
+
+- **The questions precede the account**, so the answers live in a
+  sessionStorage-backed draft (`apps/web/src/onboarding/draft.ts`) until there
+  is somewhere to write them. That is what makes the flow survive the trip to a
+  mail client for the verification code. The rationale is Finch's: the first
+  screen is where abandonment concentrates, and personalising before collecting
+  costs nothing while asking for a password first costs the user.
+- **`@handle` is claimed at registration**, because it is the one answer checked
+  against every other user, and a collision should surface on the screen it was
+  typed on. It stays optional on the wire so the mobile app, which still claims
+  one during onboarding, is unaffected.
+- **The occupation *question* is gone; the column is not.** `occupation_key` is
+  indexed, CHECK-constrained and read by `apps/mobile`, so `PATCH /me` derives
+  it from the level of study via `OCCUPATION_FOR_LEVEL`. An explicit
+  `occupationKey` in a patch still wins, which is what the app sends.
+- **Onboarding completion** is now "a claimed handle (not the registration
+  placeholder), a goal, and a level **or** an occupation". The disjunction is
+  load-bearing: mobile never sends a level, and requiring one would leave every
+  app user stuck in the onboarding gate.
+
+**Institutions are free text**, so "the same institution" is a definition rather
+than a comparison. `normaliseInstitution()` in `packages/shared` is that
+definition — it folds case, accents, punctuation, dotted acronyms (`M.I.T.` =
+`MIT`) and a leading "the" — and the result is stored in
+`institution_normalised` so the comparison is an indexed equality. It has
+exactly one definition because two things depend on it: the "same institution as
+me" filter and the `sameInstitution` term in the match score. If they disagreed,
+the sort would rank someone the filter had hidden. It deliberately does not
+attempt fuzzy matching; silently merging two schools is worse than missing a
+match.
+
+---
+
+The original flow, for reference:
+
 1. **Email + password** → we send a 6-digit verification code by email → verified.
 2. **Identity**: display name, unique `@handle`, avatar (optional), timezone (auto-detected).
 3. **Goal** — "What are you working toward?" Pick one suggestion chip **or** type your own:
@@ -52,7 +110,20 @@ Goal + occupation are collected from **everyone** (not only open buddies) becaus
 
 ### 2.2 Buddy directory & requests (for users who know nobody)
 - The directory lists users with `is_open_buddy = true` (excluding self and existing group-mates), each as a card: avatar, name, **goal**, **occupation**, headline, activity indicator ("Active now / Active 12 min ago"), credits, streak, reviews given, badges.
-- Default sort: **same goal first, then same occupation, then most recently active**. Filters: goal, occupation, "active in the last 15 min".
+- Default sort: **Recommended**, a score computed in SQL. **Revised 2026-08-31:**
+  the weights are powers of two, which makes the ranking strictly lexicographic —
+  each signal outweighs every weaker signal *combined*, so the order is the whole
+  rule: `sameGoal` (128) → `sameInstitution` (64) → `sameMajor` (32) →
+  `sameOccupation` (16) → `sameLevel` (8) → `sharedTopic` (4) → `sameCountry` (2)
+  → `activeNow` (1). Hand-tuned weights would mean that adding a signal quietly
+  changes what the existing ones mean, and three small matches would start
+  outranking a shared goal with nothing to announce it.
+- Second sort: **Points**, by total credits. Each sort needs its own keyset
+  cursor, so the cursor carries its sort and a mismatched one restarts from the
+  first page rather than paging through a comparison that means nothing.
+- Filters: level of study, subject, topic, goal, country, "active in the last
+  15 min", and **"same institution as me"** — a toggle rather than a list,
+  because institutions are free text and there is nothing to enumerate.
 - Tapping a card opens the **full buddy profile** (about me, availability, badges, stats, member since) so the user can learn about them before requesting.
 - **Send request** (optional short message). Rules:
   - Only **one pending request at a time** per requester.
@@ -337,16 +408,23 @@ apps/api/
 ### 5.2 Screens (v1)
 ```
 Auth          Welcome → Register (email, password) → Verify code → Login / Forgot password / Reset
-Onboarding    Name & @handle & avatar → Goal (chips + custom) → Occupation (chips + custom)
-              → "Willing to be a buddy?" → Buddy profile (headline, about, availability) → Done
+Signup        Level → Institution → Major → From → Goal → Topics → Hobbies → About
+  (revised)   → "Willing to be a buddy?" → Register (name, @handle, email, password)
+              → Verify code → Done (writes everything, offers an avatar)
+              Web routes live under /start/*, outside any session guard
 Tab: Today    Today's tasks across my groups; add task; mark done (+proof); buddies' tasks; review actions
 Tab: Groups   List → Group (members, tasks by day, chat) → Invite by @handle → Chat
               (share-link invites are not in v1; @handle covers the same need)
-Tab: Buddies  Directory (cards: goal, occupation, headline, active status, stats) with filters
+Tab: Buddies  Directory (cards: level · major, institution · country, goal, topic/hobby
+  (revised)   chips, active status, stats) with Recommended/Points sort and filters;
+              Request on the card expands in place into an optional message
               → Buddy profile (full) → Send request → pinned card with 5:00 countdown
               → Incoming request banner (Accept / Decline) for recipients
 Tab: Board    Leaderboard weekly / all-time, my rank, badges strip
-Tab: Profile  Stats, badges, streak, edit goal/occupation/buddy profile, availability toggle,
+Tab: Profile  The same ProfileView a prospective buddy reads — study, where you're from,
+  (revised)   bio, goals, topics, hobbies, track record, badges — plus Edit profile
+              (/profile/edit, which is also the only way an account predating the
+              student profile can fill one in), avatar, availability toggle,
               settings, change password, sign out, delete account
 ```
 
