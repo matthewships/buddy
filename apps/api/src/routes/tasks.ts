@@ -279,6 +279,14 @@ export const taskRoutes = new Hono<AppEnv>()
 
     if (claimed.length === 0) throw conflict('That task has already moved on');
 
+    /**
+     * Finishing stops the clock, so the room is told for the same reason
+     * starting tells it: other members' screens would otherwise keep showing a
+     * clock that is no longer running until their next refetch. Cosmetic only —
+     * the lock itself is read from D1 per message.
+     */
+    c.executionCtx.waitUntil(c.env.GROUP_CHAT.getByName(task.groupId).noteFocusChange(userId));
+
     // To the Buddy alone where there is one, rather than to everybody: a
     // notification that reaches four people who cannot act on it is noise.
     const rights = await reviewRightsFor(client, task);
