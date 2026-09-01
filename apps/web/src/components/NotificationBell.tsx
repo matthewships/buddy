@@ -78,14 +78,36 @@ export function NotificationBell() {
         ) : null}
       </button>
 
-      <Sheet open={open} onClose={() => setOpen(false)} title="Waiting on you">
-        <div className="flex flex-row items-center justify-between">
-          <h2 className="text-lg font-bold text-ink">Waiting on you</h2>
-          <Button label="Close" variant="ghost" className="w-auto" onClick={() => setOpen(false)} />
+      {/*
+        A side panel, not a bottom sheet. The bell answers "what needs me", which
+        is a list you scan top-down — a bottom sheet starts that list halfway
+        down the screen and grows it upward, so the first item lands wherever the
+        last one happened to push it.
+      */}
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Waiting on you"
+        placement="side"
+      >
+        <div className="sticky -top-5 -mx-5 -mt-5 flex flex-row items-center justify-between border-b border-surface-border bg-surface px-5 py-3">
+          <h2 className="text-lg font-bold text-ink">
+            Waiting on you{count > 0 ? <span className="text-ink-subtle"> · {count}</span> : null}
+          </h2>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setOpen(false)}
+            className="-mr-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
 
         {count === 0 ? (
-          <p className="py-6 text-center text-sm text-ink-subtle">
+          <p className="py-10 text-center text-sm text-ink-subtle">
             Nothing needs you right now.
           </p>
         ) : null}

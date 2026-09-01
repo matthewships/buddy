@@ -200,6 +200,15 @@ export function GroupTasks({
       ) : null}
 
       <section className="flex flex-col gap-2">
+        {/*
+          Above the list, not below it. This is a log that only grows: every task
+          the person has ever had here, newest day first. Putting the one control
+          that adds to it at the bottom meant scrolling past every past day to
+          reach it, and the scroll got longer the more the app was used — the
+          people with the most to plan had the furthest to go.
+        */}
+        {viewingSelf ? <AddTask groupId={group.id} /> : null}
+
         {forSelected.length === 0 ? (
           <p className="px-1 py-2 text-sm text-ink-subtle">
             {viewingSelf
@@ -230,8 +239,6 @@ export function GroupTasks({
             </div>
           ))
         )}
-
-        {viewingSelf ? <AddTask groupId={group.id} /> : null}
       </section>
     </div>
   );

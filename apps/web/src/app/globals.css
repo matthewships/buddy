@@ -22,3 +22,25 @@
     scrollbar-width: thin;
   }
 }
+
+/* The side panel slides in from the column's edge. Its own keyframe rather than
+   a `theme.extend.keyframes` entry: tailwind.config.js is held byte-identical to
+   apps/mobile's, and a CSS animation means nothing to React Native. */
+@keyframes sheet-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.sheet-slide-in {
+  animation: sheet-slide-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-slide-in {
+    animation: none;
+  }
+}
