@@ -4,12 +4,13 @@ import { linkButtonClass } from './buttonStyles';
 import { Screen } from './Frame';
 
 /**
- * The landing content, shared by `/` and `/welcome`.
+ * The compact signed-out screen at `/welcome`.
  *
- * Two routes render the same screen: `/` is the public landing page, and
- * `/welcome` has to keep existing because `RequireSession` sends a signed-out
- * user there. One component rather than two copies, so the copy and the
- * spacing cannot drift.
+ * `RequireSession` sends a signed-out user here, which is why it exists and why
+ * it stayed small when `/` became a landing page: somebody who has just been
+ * signed out mid-session wants the way back in, not a pitch for the product
+ * they were already using. The two routes said the same thing while `/` had
+ * nothing else to say; now they answer different questions.
  *
  * Deliberately *not* a client component. This is the first paint of the site
  * for anyone arriving without a session, and a `'use client'` here would put
