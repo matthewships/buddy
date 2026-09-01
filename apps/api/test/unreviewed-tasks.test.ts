@@ -34,7 +34,12 @@ async function reviewCount(id: string): Promise<number> {
 async function stats(session: Session, handle: string) {
   const res = await get(`/api/users/${handle}`, session.accessToken);
   const body = (await res.json()) as {
-    stats: { totalCredits: number; currentStreak: number; reviewsGiven: number };
+    stats: {
+      totalCredits: number;
+      currentStreak: number;
+      reviewsGiven: number;
+      tasksApproved: number;
+    };
   };
   return body.stats;
 }

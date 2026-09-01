@@ -14,6 +14,8 @@ export interface GroupSummary {
 
 /** The group detail carries the two review roles; the list does not. */
 export interface GroupDetail extends GroupSummary {
+  /** Whoever made the group. Only they, or the Buddy, may change the Buddy. */
+  createdBy: string;
   buddyUserId: string | null;
   buddyVerifierId: string | null;
 }

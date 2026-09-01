@@ -118,6 +118,7 @@ export function GroupTasks({
               task.status !== 'approved',
           ).length;
           const busy = all.some((task) => task.userId === member.id && isRunning(task));
+          const isBuddy = member.id === group.buddyUserId;
 
           return (
             <button
@@ -140,6 +141,26 @@ export function GroupTasks({
                     aria-hidden="true"
                     className="absolute -right-0.5 -top-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-surface bg-brand"
                   />
+                ) : null}
+                {/*
+                  Who checks the work, marked on the person rather than
+                  explained in a sentence underneath. The group screen already
+                  said it in prose — "checked by Ana" — which is the kind of
+                  line you read once and never again, and it left the roster
+                  itself showing four identical faces. Bottom-left, clear of the
+                  running-clock dot, which is the one thing allowed to sit at
+                  the top.
+                */}
+                {isBuddy ? (
+                  <span
+                    title="Checks the group's tasks"
+                    className="absolute -bottom-0.5 -left-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-surface bg-brand text-brand-fg"
+                  >
+                    <span className="sr-only">Buddy — checks the group&rsquo;s tasks</span>
+                    <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={4}>
+                      <path d="M4 12.5 9.5 18 20 6.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
                 ) : null}
               </span>
               <span

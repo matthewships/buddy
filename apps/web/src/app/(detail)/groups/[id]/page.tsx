@@ -16,6 +16,7 @@ import {
   type GroupMember,
 } from '@/api/groups';
 import {
+  Avatar,
   BackLink,
   Button,
   ErrorText,
@@ -255,6 +256,13 @@ function InviteSheet({
  * a single verifier needs somebody verifying *them*, and the person best placed
  * to choose is the one being checked. Left unset it falls back to any member,
  * which is stated rather than left to be discovered.
+ *
+ * Who may change it is now stated on the screen rather than discovered by
+ * being refused. The server lets anyone name the first Buddy and then narrows
+ * changes to the group's creator or the Buddy themselves — a rule that exists
+ * because the alternative let whoever disliked their review appoint
+ * themselves. A picker that silently 403s teaches nobody that; a disabled one
+ * with the reason under it does.
  */
 function SettingsSheet({
   open,
@@ -277,6 +285,10 @@ function SettingsSheet({
 
   const buddy = members.find((m) => m.id === group.buddyUserId);
   const viewerIsBuddy = viewerId === group.buddyUserId;
+  // Mirrors the server rule in PUT /groups/:id/buddy. The server is still the
+  // authority; this only decides what to offer.
+  const mayChangeBuddy = !group.buddyUserId || viewerId === group.createdBy || viewerIsBuddy;
+  const creator = members.find((m) => m.id === group.createdBy);
 
   return (
     <Sheet open={open} onClose={onClose} title="Group settings">
@@ -301,6 +313,7 @@ function SettingsSheet({
           label="Buddy"
           members={members}
           selectedId={group.buddyUserId}
+          disabled={!mayChangeBuddy}
           onSelect={(id) =>
             setBuddy.mutate({
               buddyUserId: id,
@@ -310,6 +323,18 @@ function SettingsSheet({
             })
           }
         />
+
+        {!mayChangeBuddy ? (
+          <p className="text-xs text-ink-subtle">
+            {creator ? `${creator.displayName} made this group, so only they` : 'Only whoever made this group'}
+            {' '}or {buddy?.displayName ?? 'the Buddy'} can change this. It is the one setting the
+            group cannot quietly opt out of.
+          </p>
+        ) : !group.buddyUserId ? (
+          <p className="text-xs text-ink-subtle">
+            Anyone can name the first Buddy. After that only you or they can change it.
+          </p>
+        ) : null}
 
         {viewerIsBuddy && members.length > 2 ? (
           <div className="mt-3">
@@ -356,25 +381,39 @@ function SettingsSheet({
   );
 }
 
+/**
+ * Choosing a person, with their face on the button.
+ *
+ * It was a row of name pills, which is a list of strings where the group screen
+ * everywhere else shows a row of faces — so picking the Buddy looked nothing
+ * like the roster the choice is about, and in a group with two Alexes it was
+ * genuinely ambiguous.
+ */
 function PersonPicker({
   label,
   members,
   selectedId,
   onSelect,
+  disabled = false,
 }: {
   label: string;
   members: GroupMember[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  disabled?: boolean;
 }) {
+  const base =
+    'flex cursor-pointer flex-row items-center gap-2 rounded-full border py-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+
   return (
     <div role="radiogroup" aria-label={label} className="flex flex-row flex-wrap gap-2">
       <button
         type="button"
         role="radio"
         aria-checked={selectedId === null}
+        disabled={disabled}
         onClick={() => onSelect(null)}
-        className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${
+        className={`${base} px-3 text-sm ${
           selectedId === null
             ? 'border-brand bg-brand font-semibold text-brand-fg'
             : 'border-surface-border bg-surface text-ink hover:border-brand'
@@ -390,13 +429,15 @@ function PersonPicker({
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={disabled}
             onClick={() => onSelect(member.id)}
-            className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${
+            className={`${base} pl-1 pr-3 text-sm ${
               active
                 ? 'border-brand bg-brand font-semibold text-brand-fg'
                 : 'border-surface-border bg-surface text-ink hover:border-brand'
             }`}
           >
+            <Avatar avatarKey={member.avatarKey} displayName={member.displayName} size={24} />
             {member.displayName}
           </button>
         );

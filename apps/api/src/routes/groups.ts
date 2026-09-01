@@ -140,6 +140,10 @@ export const groupRoutes = new Hono<AppEnv>()
         emoji: group.emoji,
         kind: group.kind,
         createdAt: group.createdAt,
+        // Returned so the client can offer the same answer the rule below
+        // enforces. Inferring it from the `owner` member role would be a
+        // second source for one fact, and the two can disagree.
+        createdBy: group.createdBy,
         buddyUserId: group.buddyUserId,
         buddyVerifierId: group.buddyVerifierId,
       },
@@ -151,10 +155,23 @@ export const groupRoutes = new Hono<AppEnv>()
    * Naming the group's Buddy, and the member who verifies the Buddy's own tasks
    * (§2.4).
    *
-   * Any member may set this. These are small groups of people who chose each
-   * other, and a vote is machinery the product does not need yet — but the
-   * choice is deliberate, so if groups ever get bigger this is the line to
-   * revisit.
+   * This used to be "any member may set this", with a note that the line would
+   * want revisiting. It does, because the rule it guards is the product: the
+   * Buddy is the person who decides whether your work counts, and letting
+   * anybody reassign that at any moment means the member facing a review they
+   * do not like can simply appoint themselves. Accountability nobody can
+   * quietly opt out of is the whole proposition.
+   *
+   * So the first naming is open — a group with no Buddy is already on the
+   * weaker any-member rule, and agreeing on one is a decision the group makes
+   * together, not a privilege. Changing or clearing one, once named, belongs to
+   * the person who made the group or to the Buddy themselves, who must always
+   * be able to put the job down.
+   *
+   * The nomination of who checks the Buddy stays with the Buddy. Nobody may
+   * approve their own task, so that slot exists to answer "who checks the
+   * checker" — and the answer is not one the checker's own reviewee should be
+   * able to install.
    *
    * Setting the Buddy to null returns the group to the any-member review rule.
    */
@@ -165,6 +182,29 @@ export const groupRoutes = new Hono<AppEnv>()
     const client = db(c.env.DB);
 
     await assertMember(client, groupId, userId);
+
+    const current = await client.query.groups.findFirst({ where: eq(groups.id, groupId) });
+    if (!current) throw notFound('No such group');
+
+    const changingBuddy = (current.buddyUserId ?? null) !== (buddyUserId ?? null);
+    if (changingBuddy && current.buddyUserId) {
+      const mayChange = userId === current.createdBy || userId === current.buddyUserId;
+      if (!mayChange) {
+        throw forbidden(
+          'Only whoever made the group, or the Buddy themselves, can change who checks tasks',
+        );
+      }
+    }
+
+    // The Buddy's own verifier is the Buddy's call — see the note above.
+    if (
+      !changingBuddy &&
+      current.buddyUserId &&
+      (current.buddyVerifierId ?? null) !== (verifierUserId ?? null) &&
+      userId !== current.buddyUserId
+    ) {
+      throw forbidden('Only the Buddy can choose who checks their own tasks');
+    }
 
     if (buddyUserId) await assertMember(client, groupId, buddyUserId);
     if (verifierUserId) {
