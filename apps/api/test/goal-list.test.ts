@@ -108,6 +108,33 @@ describe('the goal list', () => {
     expect((await me(session)).goalText).toBe('Learn to sail');
   });
 
+  /**
+   * The one PATCH the web signup sends: no `goalKey`, just the list, in the
+   * same request that claims the handle. Onboarding has to complete on it —
+   * completion is gated on `goal_key`, which now only exists because the route
+   * derived it here.
+   */
+  it('completes onboarding from a goals-list patch alone', async () => {
+    const session = await signUp('goals-signup@example.com');
+
+    const res = await patch(
+      '/api/me',
+      {
+        handle: 'goalssignup',
+        displayName: 'Signup Sam',
+        goalKeys: ['fitness', 'reading'],
+        educationLevel: 'undergraduate',
+      },
+      session.accessToken,
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { onboarded: boolean }).onboarded).toBe(true);
+
+    const profile = await me(session);
+    expect(profile.goalKey).toBe('fitness');
+    expect(profile.goalKeys).toEqual(['fitness', 'reading']);
+  });
+
   it('rejects a goal key that is not in the list', async () => {
     const session = await signUp('goals-bogus@example.com');
     await onboard(session, 'goalsbogus');

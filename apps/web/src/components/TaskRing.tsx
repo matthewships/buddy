@@ -7,6 +7,19 @@ import { serverNow } from '@/hooks/useCountdown';
 import { formatClock } from './TaskClock';
 
 /**
+ * Inside the ring, where six or seven characters do not fit: `h:mm` once there
+ * is an hour to show, `m:ss` below that. Tasks run up to twelve hours, so
+ * `formatClock`'s `h:mm:ss` would overflow the circle on a routine 90-minute
+ * task rather than an exotic one. The seconds still tick where they fit, which
+ * is the hour of the task where a moving digit means anything.
+ */
+function compactClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  if (total < 3600) return formatClock(ms);
+  return `${Math.floor(total / 3600)}:${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}`;
+}
+
+/**
  * The clock on a running task, drawn as a ring that fills as the time goes (§2.4).
  *
  * A number alone tells you how long is left; the ring tells you how much of the
@@ -63,7 +76,10 @@ export function TaskRing({
   const circumference = 2 * Math.PI * radius;
 
   const colour = over ? 'text-danger' : elapsed > 0.75 ? 'text-warning' : 'text-brand';
-  const label = over ? `+${formatClock(-remainingMs)}` : formatClock(remainingMs);
+  const label = over ? `+${compactClock(-remainingMs)}` : compactClock(remainingMs);
+  // The full form, seconds and all, is what a screen reader gets: it has the
+  // room the ring does not.
+  const spoken = over ? `${formatClock(-remainingMs)} over time` : `${formatClock(remainingMs)} left`;
 
   return (
     <div
@@ -73,7 +89,7 @@ export function TaskRing({
       // that interrupts a screen reader every second makes a screen unusable.
       role="timer"
       aria-live="polite"
-      aria-label={over ? `${formatClock(-remainingMs)} over time` : `${label} left`}
+      aria-label={spoken}
     >
       <svg
         width={size}

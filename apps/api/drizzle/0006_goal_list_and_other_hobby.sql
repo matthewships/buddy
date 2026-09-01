@@ -1,11 +1,8 @@
 -- An uncapped goal list, and the free text behind the `Other` hobby (§2.1).
 --
--- Hand-written for the reason 0003 and 0004 record: `drizzle-kit generate`
--- renders a table-level CHECK by rebuilding the table — create __new_users,
--- copy, DROP TABLE users, rename — and the `PRAGMA foreign_keys=OFF` it emits
--- is a no-op inside the transaction D1 wraps each migration in. Six tables
--- carry ON DELETE CASCADE foreign keys to users, so that DROP would cascade the
--- database away. Both columns here are plain ADD COLUMNs, which is safe.
+-- Generated, and kept as generated: both columns are plain ADD COLUMNs with no
+-- CHECK, so drizzle-kit had no table-level constraint to render and did not
+-- reach for the rebuild that 0003 and 0004 had to be hand-written to avoid.
 --
 -- `goal_keys` is JSON, and deliberately not a join table or more numbered
 -- columns. Signup no longer caps the goal picker, but goals past the second are
@@ -15,10 +12,10 @@
 -- adds is the rest of the answer and the order it was given in — and order is
 -- exactly what `user_tags` does not store.
 --
--- No membership CHECK, following `country` in 0004: a constraint over a JSON
--- array could only ever be widened by rebuilding the table, and Zod already
--- rejects any key outside GOAL_KEYS on the way in.
-ALTER TABLE `users` ADD COLUMN `goal_keys` text;--> statement-breakpoint
+-- No membership CHECK on it, following `country` in 0004: a constraint over a
+-- JSON array could only ever be widened by rebuilding the table, and Zod
+-- already rejects any key outside GOAL_KEYS on the way in.
+ALTER TABLE `users` ADD `goal_keys` text;--> statement-breakpoint
 -- The `custom` hobby's text, mirroring goal_text and major_text. Nullable:
 -- everyone who onboarded before `Other` existed has no such hobby.
-ALTER TABLE `users` ADD COLUMN `interest_text` text;
+ALTER TABLE `users` ADD `interest_text` text;

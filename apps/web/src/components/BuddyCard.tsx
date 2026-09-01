@@ -28,12 +28,20 @@ const MAX_CHIPS = 3;
 function chipLabels(
   topics: readonly string[],
   interests: readonly string[],
+  /** The word behind a `custom` hobby: "Other" is not worth a chip. */
+  interestText: string | null,
 ): { key: string; text: string }[] {
   // Topics first: they are the closest thing on a card to "what we would
   // actually talk about", and hobbies fill whatever room is left.
   return [
     ...topics.map((key) => ({ key: `t:${key}`, text: label(TOPICS, key) ?? key })),
-    ...interests.map((key) => ({ key: `i:${key}`, text: label(INTERESTS, key) ?? key })),
+    ...interests.map((key) => ({
+      key: `i:${key}`,
+      text:
+        key === 'custom' && interestText?.trim()
+          ? interestText.trim()
+          : (label(INTERESTS, key) ?? key),
+    })),
   ].slice(0, MAX_CHIPS);
 }
 
@@ -80,7 +88,7 @@ export function BuddyCard({
   const level = label(EDUCATION_LEVELS, buddy.educationLevel);
   const major = buddy.majorText?.trim() || label(MAJORS, buddy.majorKey);
   const from = label(COUNTRIES, buddy.country);
-  const chips = chipLabels(buddy.topics, buddy.interests);
+  const chips = chipLabels(buddy.topics, buddy.interests, buddy.interestText);
   const isActive = buddy.activity === 'Active now';
 
   // "Master's · Physics" reads as one fact, so it is one line; either half

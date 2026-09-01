@@ -42,9 +42,17 @@ export default function OnboardingDone() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
 
-  // Only for the signed-in-but-handle-less case above. Everyone who came
-  // through /register already claimed one, and is never asked again.
-  const needsHandle = me.data ? !me.data.handleClaimed && !draft.handle.trim() : false;
+  /**
+   * Only for the signed-in-but-handle-less case above. Everyone who came
+   * through /register already claimed one, and is never asked again.
+   *
+   * Keyed on the *claim*, not on whether the field currently has text in it.
+   * Reading the draft here would flip this false on the first keystroke —
+   * unmounting the field mid-type and releasing the auto-save to fire with a
+   * one-character handle, which the API rejects and which nothing on the
+   * resulting screen could then correct.
+   */
+  const needsHandle = me.data ? !me.data.handleClaimed : false;
   const handle = draft.handle.trim().toLowerCase();
   const handleWellFormed =
     /^[a-z0-9_]+$/.test(handle) && handle.length >= MIN_HANDLE && handle.length <= MAX_HANDLE;
