@@ -30,9 +30,20 @@ export function goalLabel(key: GoalKey): string {
 }
 
 /**
- * How many goals a user may pick. Two, because most people are juggling one
- * big thing and one habit, and a buddy card stops being scannable past that.
- * The second goal is optional; `goal_key` is still the primary one and the
- * only one older clients read.
+ * How many goals get their own indexed column on `users`, not how many a person
+ * may pick — signup no longer caps the picker at all. The first two are stored
+ * as `goal_key` and `goal_key_2` because those are what matching, the directory
+ * filters and the mobile app read; the whole ordered list is kept alongside
+ * them in `goal_keys`.
+ *
+ * So this is the width of the *indexed* pair. A buddy card still shows two, for
+ * the reason it always did: a card listing six goals stops being scannable.
  */
-export const MAX_GOALS = 2;
+export const MAX_INDEXED_GOALS = 2;
+
+/**
+ * @deprecated The picker is uncapped; use {@link MAX_INDEXED_GOALS} when you
+ * mean the two indexed columns. Kept so a client compiled against the old name
+ * still builds.
+ */
+export const MAX_GOALS = MAX_INDEXED_GOALS;

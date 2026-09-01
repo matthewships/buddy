@@ -13,7 +13,10 @@ import {
 } from '../src/schemas';
 import {
   DEFAULT_PAGE_SIZE,
+  GOAL_KEYS,
   MAX_GOAL_TEXT,
+  MAX_INDEXED_GOALS,
+  MAX_INTEREST_TEXT,
   MAX_PAGE_SIZE,
   creditsForRating,
   earnedBadges,
@@ -102,6 +105,49 @@ describe('goalSchema', () => {
     ).toBe(false);
   });
 
+  /**
+   * Signup stopped capping the picker, so the list has to survive the schema
+   * whole — the cap that used to be here is now only the width of the indexed
+   * pair the route derives from it.
+   */
+  it('accepts as many goals as the list has', () => {
+    // The whole list includes `custom`, which drags its text requirement along.
+    const parsed = goalSchema.parse({
+      goalKey: 'thesis',
+      goalKeys: [...GOAL_KEYS],
+      goalText: 'And one of my own',
+    });
+    expect(parsed.goalKeys).toHaveLength(GOAL_KEYS.length);
+    expect(parsed.goalKeys?.length).toBeGreaterThan(MAX_INDEXED_GOALS);
+  });
+
+  it('deduplicates a list that repeats a goal, keeping first-pick order', () => {
+    const parsed = goalSchema.parse({
+      goalKey: 'thesis',
+      goalKeys: ['thesis', 'fitness', 'thesis', 'coding'],
+    });
+    expect(parsed.goalKeys).toEqual(['thesis', 'fitness', 'coding']);
+  });
+
+  it('rejects an unknown key inside the list', () => {
+    expect(
+      goalSchema.safeParse({ goalKey: 'thesis', goalKeys: ['thesis', 'become_a_wizard'] }).success,
+    ).toBe(false);
+  });
+
+  it('requires goal text when custom is anywhere in the list, not just first', () => {
+    expect(goalSchema.safeParse({ goalKey: 'thesis', goalKeys: ['thesis', 'custom'] }).success).toBe(
+      false,
+    );
+    expect(
+      goalSchema.safeParse({
+        goalKey: 'thesis',
+        goalKeys: ['thesis', 'custom'],
+        goalText: 'Learn to sail',
+      }).success,
+    ).toBe(true);
+  });
+
   it('accepts goal text up to MAX_GOAL_TEXT and rejects one character more', () => {
     expect(
       goalSchema.safeParse({ goalKey: 'thesis', goalText: 'x'.repeat(MAX_GOAL_TEXT) }).success,
@@ -138,6 +184,38 @@ describe('updateMeSchema', () => {
 
   it('accepts null to clear the second goal', () => {
     expect(updateMeSchema.parse({ goalKey2: null }).goalKey2).toBeNull();
+  });
+
+  it('accepts a goals list on its own, for the client that no longer sends a pair', () => {
+    const parsed = updateMeSchema.parse({ goalKeys: ['thesis', 'fitness', 'coding', 'reading'] });
+    expect(parsed.goalKeys).toEqual(['thesis', 'fitness', 'coding', 'reading']);
+    expect(parsed.goalKey).toBeUndefined();
+  });
+
+  it('enforces the custom rule against the list, not only the primary key', () => {
+    expect(updateMeSchema.safeParse({ goalKeys: ['thesis', 'custom'] }).success).toBe(false);
+    expect(
+      updateMeSchema.safeParse({ goalKeys: ['thesis', 'custom'], goalText: 'Sail' }).success,
+    ).toBe(true);
+  });
+
+  it('requires text for the Other hobby, and only when interests are sent', () => {
+    expect(updateMeSchema.safeParse({ interests: ['custom'] }).success).toBe(false);
+    expect(
+      updateMeSchema.safeParse({ interests: ['custom'], interestText: 'Falconry' }).success,
+    ).toBe(true);
+    // A patch that touches something else entirely is not judged on a `custom`
+    // the user picked long ago.
+    expect(updateMeSchema.safeParse({ bio: 'hello' }).success).toBe(true);
+  });
+
+  it('caps the Other hobby text', () => {
+    expect(
+      updateMeSchema.safeParse({
+        interests: ['custom'],
+        interestText: 'x'.repeat(MAX_INTEREST_TEXT + 1),
+      }).success,
+    ).toBe(false);
   });
 });
 

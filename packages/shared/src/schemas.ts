@@ -23,6 +23,7 @@ import {
   MAX_HEADLINE,
   MAX_INSTITUTION,
   MAX_INTERESTS,
+  MAX_INTEREST_TEXT,
   MAX_MAJOR_TEXT,
   MAX_MESSAGE_BODY,
   MAX_OCCUPATION_TEXT,
@@ -173,6 +174,18 @@ export const changePasswordSchema = z.object({
  * ------------------------------------------------------------------ */
 
 /**
+ * The whole ordered list of goals, as the signup picker now collects it.
+ *
+ * Deduplicated, and bounded by construction rather than by a cap: the enum has
+ * twelve members, so "as many as you like" cannot grow without bound. Order is
+ * meaning — the first pick is the primary goal, and the server derives
+ * `goalKey`/`goalKey2` from the first two.
+ */
+export const goalKeysSchema = z
+  .array(z.enum(GOAL_KEYS))
+  .transform((v) => [...new Set(v)]);
+
+/**
  * Goal and occupation are each a key plus free text. When the key is `custom`
  * the text is what the user typed and is required; otherwise the text is an
  * optional elaboration (field of study, job title, which exam).
@@ -181,18 +194,19 @@ export const goalSchema = z
   .object({
     goalKey: z.enum(GOAL_KEYS),
     /**
-     * The optional second goal (`MAX_GOALS` is 2). Kept as its own field rather
-     * than turning `goalKey` into an array: `goal_key` is indexed, carries a
-     * CHECK constraint and is what every existing client reads, so widening it
-     * would break them for no gain. The primary goal stays primary.
+     * The second indexed goal. Kept as its own field rather than only living in
+     * `goalKeys`: `goal_key` and `goal_key_2` are indexed, carry CHECK
+     * constraints and are what matching and the mobile app read, so they stay
+     * the primary pair. `goalKeys` carries the rest.
      */
     goalKey2: z.enum(GOAL_KEYS).nullish(),
+    goalKeys: goalKeysSchema.optional(),
     goalText: z.string().trim().max(MAX_GOAL_TEXT).optional(),
   })
-  .refine((v) => v.goalKey !== 'custom' || (v.goalText?.length ?? 0) > 0, {
-    message: 'Describe your goal',
-    path: ['goalText'],
-  })
+  .refine(
+    (v) => !(v.goalKey === 'custom' || v.goalKeys?.includes('custom')) || (v.goalText?.length ?? 0) > 0,
+    { message: 'Describe your goal', path: ['goalText'] },
+  )
   .refine((v) => !v.goalKey2 || v.goalKey2 !== v.goalKey, {
     message: 'Pick two different goals',
     path: ['goalKey2'],
@@ -244,6 +258,13 @@ export const updateMeSchema = z
     isOpenBuddy: z.boolean().optional(),
     goalKey: z.enum(GOAL_KEYS).optional(),
     goalKey2: z.enum(GOAL_KEYS).nullish(),
+    /**
+     * The full ordered list, which signup now sends instead of a pair. The
+     * route derives `goalKey`/`goalKey2` from its first two, so a client may
+     * send this alone; a client that knows only the pair (the mobile app) keeps
+     * sending the pair and the route derives the list from it instead.
+     */
+    goalKeys: goalKeysSchema.optional(),
     goalText: z.string().trim().max(MAX_GOAL_TEXT).nullish(),
     /**
      * Still accepted, but signup no longer asks: the route derives it from
@@ -274,11 +295,22 @@ export const updateMeSchema = z
       .max(MAX_INTERESTS)
       .transform((v) => [...new Set(v)])
       .optional(),
+    /** What `custom` means, when it is one of the interests (§2.1). */
+    interestText: z.string().trim().max(MAX_INTEREST_TEXT).nullish(),
     buddyProfile: buddyProfileSchema.optional(),
   })
-  .refine((v) => v.goalKey !== 'custom' || (v.goalText?.length ?? 0) > 0, {
-    message: 'Describe your goal',
-    path: ['goalText'],
+  .refine(
+    (v) => !(v.goalKey === 'custom' || v.goalKeys?.includes('custom')) || (v.goalText?.length ?? 0) > 0,
+    { message: 'Describe your goal', path: ['goalText'] },
+  )
+  /**
+   * The same rule for the `Other` hobby. Only checked when `interests` is
+   * present: a patch that touches nothing else must not be rejected for a
+   * `custom` the user chose long ago and still has stored text for.
+   */
+  .refine((v) => !v.interests?.includes('custom') || (v.interestText?.trim().length ?? 0) > 0, {
+    message: 'Say what that hobby is',
+    path: ['interestText'],
   })
   // Only meaningful when both halves are present; a patch that sends just
   // goalKey2 cannot see the stored goalKey, so the route re-checks it (§2.1).

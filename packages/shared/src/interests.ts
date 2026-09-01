@@ -12,6 +12,7 @@ export const INTERESTS = [
   { key: 'running', label: 'Running' },
   { key: 'football', label: 'Football' },
   { key: 'basketball', label: 'Basketball' },
+  { key: 'tennis', label: 'Tennis' },
   { key: 'swimming', label: 'Swimming' },
   { key: 'cycling', label: 'Cycling' },
   { key: 'hiking', label: 'Hiking' },
@@ -38,6 +39,13 @@ export const INTERESTS = [
   { key: 'gardening', label: 'Gardening' },
   { key: 'pets', label: 'Pets' },
   { key: 'meditation', label: 'Meditation' },
+  /**
+   * The escape hatch, last in the list and keyed `custom` like the `Other` in
+   * GOALS and MAJORS. Picking it requires `interestText`, which is the only
+   * hobby anyone writes in their own words — the rest are keys precisely so the
+   * directory can filter on them.
+   */
+  { key: 'custom', label: 'Other' },
 ] as const satisfies readonly { key: string; label: string }[];
 
 export type InterestKey = (typeof INTERESTS)[number]['key'];

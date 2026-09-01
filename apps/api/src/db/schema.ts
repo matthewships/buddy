@@ -81,6 +81,14 @@ export const users = sqliteTable(
     // and read by every client, and only the directory query needs to know
     // there are now two.
     goalKey2: text('goal_key_2'),
+    /**
+     * Every goal the user picked, in pick order, as a JSON array — signup stopped
+     * capping the picker. `goal_key` and `goal_key_2` remain the indexed,
+     * CHECK-constrained pair that matching and the mobile app read; PATCH /me
+     * derives them from the first two entries here, so the two representations
+     * cannot disagree. Null on accounts that predate the list.
+     */
+    goalKeys: text('goal_keys', { mode: 'json' }).$type<string[]>(),
     goalText: text('goal_text'),
     // Kept, and kept correct, though signup no longer asks: it is indexed,
     // CHECK-constrained and read by apps/mobile. PATCH /me derives it from
@@ -97,6 +105,8 @@ export const users = sqliteTable(
      * instead of a function applied to every row in the directory.
      */
     institutionNormalised: text('institution_normalised'),
+    /** What `custom` means, when it is one of the user's interests. */
+    interestText: text('interest_text'),
     majorKey: text('major_key'),
     majorText: text('major_text'),
     /** ISO 3166-1 alpha-2. */

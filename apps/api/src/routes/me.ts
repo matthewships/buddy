@@ -95,14 +95,44 @@ export const meRoutes = new Hono<AppEnv>()
       if (taken) throw conflict('That handle is taken', { field: 'handle' });
     }
 
-    const nextGoalKey = patch.goalKey ?? current.goalKey;
+    /**
+     * Goals arrive in one of two shapes, and leave in both (§2.1).
+     *
+     * The web picker is uncapped and sends the whole ordered list as
+     * `goalKeys`; the mobile app knows only the indexed pair and sends
+     * `goalKey`/`goalKey2`. Whichever arrives, both representations are written
+     * here, so `goal_key` — which matching, the directory filter and every
+     * older client read — can never drift from the list.
+     *
+     * A pair-shaped patch rewrites the list to exactly those two, which does
+     * drop any extra goals picked on the web. That is the honest reading of a
+     * two-goal client saying "these are my goals": merging the dropped ones
+     * back in would invent an answer the user did not give.
+     */
+    const goalList = patch.goalKeys;
+    const nextGoalKey = goalList ? (goalList[0] ?? null) : (patch.goalKey ?? current.goalKey);
     // The schema can only compare the two halves when both are in the patch. A
     // patch carrying just goalKey2 has to be checked against what is stored,
-    // otherwise the same goal could land in both columns.
-    const nextGoalKey2 = patch.goalKey2 !== undefined ? patch.goalKey2 : current.goalKey2;
-    if (nextGoalKey2 && nextGoalKey2 === nextGoalKey) {
+    // otherwise the same goal could land in both columns. A list needs no such
+    // check: it is deduplicated on the way in.
+    const nextGoalKey2 = goalList
+      ? (goalList[1] ?? null)
+      : patch.goalKey2 !== undefined
+        ? patch.goalKey2
+        : current.goalKey2;
+    if (!goalList && nextGoalKey2 && nextGoalKey2 === nextGoalKey) {
       throw conflict('Pick two different goals', { field: 'goalKey2' });
     }
+
+    /**
+     * The list as it will be stored: sent whole, or reconstructed from the pair
+     * so that a mobile patch leaves the two in step.
+     */
+    const nextGoalKeys =
+      goalList ??
+      (patch.goalKey !== undefined || patch.goalKey2 !== undefined
+        ? [nextGoalKey, nextGoalKey2].filter((key): key is string => key !== null)
+        : undefined);
 
     const nextLevel =
       patch.educationLevel !== undefined ? patch.educationLevel : current.educationLevel;
@@ -150,9 +180,15 @@ export const meRoutes = new Hono<AppEnv>()
       ...(patch.timezone !== undefined && { timezone: patch.timezone }),
       ...(patch.avatarKey !== undefined && { avatarKey: patch.avatarKey ?? null }),
       ...(patch.isOpenBuddy !== undefined && { isOpenBuddy: patch.isOpenBuddy }),
-      ...(patch.goalKey !== undefined && { goalKey: patch.goalKey }),
-      ...(patch.goalKey2 !== undefined && { goalKey2: patch.goalKey2 ?? null }),
+      // Derived above rather than copied from the patch, so the list and the
+      // indexed pair are written from one decision.
+      ...(nextGoalKeys !== undefined && {
+        goalKey: nextGoalKey,
+        goalKey2: nextGoalKey2,
+        goalKeys: nextGoalKeys,
+      }),
       ...(patch.goalText !== undefined && { goalText: patch.goalText ?? null }),
+      ...(patch.interestText !== undefined && { interestText: patch.interestText ?? null }),
       ...(derivedOccupation !== undefined && { occupationKey: derivedOccupation }),
       ...(patch.occupationText !== undefined && {
         occupationText: patch.occupationText ?? null,

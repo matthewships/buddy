@@ -43,6 +43,13 @@
       "when": 1788142790119,
       "tag": "0005_groups_clock_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788229800000,
+      "tag": "0006_goal_list_and_other_hobby",
+      "breakpoints": true
     }
   ]
 }

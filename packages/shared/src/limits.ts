@@ -98,11 +98,17 @@ export const MAX_BIO = 280;
  * How many topics and interests a profile may carry.
  *
  * Small on purpose: these render as chips on a directory card, and a card that
- * lists a dozen of them stops being scannable — the same reasoning that caps
- * goals at two.
+ * lists a dozen of them stops being scannable — the same reasoning that keeps
+ * a card down to the two indexed goals.
  */
 export const MAX_TOPICS = 3;
 export const MAX_INTERESTS = 5;
+
+/**
+ * The free text behind the `Other` hobby. Shorter than a goal's 200: a goal is
+ * a sentence about what someone is working toward, a hobby is a noun.
+ */
+export const MAX_INTEREST_TEXT = 60;
 
 /**
  * Task time estimates (§2.4). Five minutes is the smallest commitment worth

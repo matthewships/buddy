@@ -286,7 +286,9 @@ export function publicSelf(user: {
   timezone: string;
   goalKey: string | null;
   goalKey2: string | null;
+  goalKeys: string[] | null;
   goalText: string | null;
+  interestText: string | null;
   occupationKey: string | null;
   occupationText: string | null;
   educationLevel: string | null;
@@ -310,7 +312,14 @@ export function publicSelf(user: {
     timezone: user.timezone,
     goalKey: user.goalKey,
     goalKey2: user.goalKey2,
+    /**
+     * The full ordered list. Falls back to the indexed pair for an account that
+     * predates the column, so a client can read this one field and never have
+     * to reassemble the pair itself.
+     */
+    goalKeys: user.goalKeys ?? [user.goalKey, user.goalKey2].filter((k): k is string => k !== null),
     goalText: user.goalText,
+    interestText: user.interestText,
     occupationKey: user.occupationKey,
     occupationText: user.occupationText,
     educationLevel: user.educationLevel,
