@@ -80,6 +80,17 @@ export function GroupTasks({
   const viewingSelf = selected?.id === viewerId;
 
   const forSelected = all.filter((task) => task.userId === selected?.id);
+
+  /**
+   * The selected member's tasks, bucketed by due date. The API already orders
+   * newest day first, so insertion order into the Map is the order to render.
+   */
+  const days = [...forSelected.reduce((acc, task) => {
+    const list = acc.get(task.dueDate) ?? [];
+    list.push(task);
+    acc.set(task.dueDate, list);
+    return acc;
+  }, new Map<string, Task[]>())];
   const waitingOnMe = all.filter(
     (task) => task.status === 'done' && canReview(group, members, task, viewerId),
   );
@@ -175,21 +186,56 @@ export function GroupTasks({
               : `${selected?.displayName ?? 'They'} hasn't planned anything yet.`}
           </p>
         ) : (
-          forSelected.map((task) =>
-            viewingSelf ? (
-              <MyTask key={task.id} task={task} />
-            ) : canReview(group, members, task, viewerId) && task.status === 'done' ? (
-              <ReviewTask key={task.id} task={task} />
-            ) : (
-              <TheirTask key={task.id} task={task} />
-            ),
-          )
+          /*
+            Grouped by the day the work was for. The list is every task this
+            person has ever had here, newest day first, and undivided it read as
+            one long undated pile in which today — the only day anyone can still
+            act on — looked exactly like a fortnight ago.
+          */
+          days.map(([day, dayTasks]) => (
+            <div key={day} className="flex flex-col gap-2">
+              <h3 className="mt-2 px-1 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+                {dayLabel(day, today)}
+              </h3>
+              {dayTasks.map((task) =>
+                viewingSelf ? (
+                  <MyTask key={task.id} task={task} />
+                ) : canReview(group, members, task, viewerId) && task.status === 'done' ? (
+                  <ReviewTask key={task.id} task={task} />
+                ) : (
+                  <TheirTask key={task.id} task={task} />
+                ),
+              )}
+            </div>
+          ))
         )}
 
         {viewingSelf ? <AddTask groupId={group.id} /> : null}
       </section>
     </div>
   );
+}
+
+/**
+ * "Today", "Yesterday", or a written date — the words people actually use for
+ * the two days that matter, and something unambiguous for the rest.
+ */
+function dayLabel(day: string, today: string): string {
+  if (day === today) return 'Today';
+
+  const asDate = new Date(`${day}T00:00:00`);
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (asDate.getTime() === yesterday.getTime()) return 'Yesterday';
+
+  const future = day > today;
+  const formatted = asDate.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+  // A task planned ahead reads as a promise, not as history.
+  return future ? `Coming up · ${formatted}` : formatted;
 }
 
 /**
@@ -484,6 +530,17 @@ function MyTask({ task }: { task: Task }) {
           <span className={`font-semibold ${overrun ? 'text-warning' : 'text-brand'}`}>
             {overrun ? 'Running over' : 'In progress'}
           </span>
+        ) : task.status === 'planned' ? (
+          /*
+            Nothing, when there is nothing to say. "Planned" on every row in a
+            list of plans is a word that only makes the rows which are *not*
+            planned harder to pick out, and the estimate is already in the
+            circle to the left. What is worth saying is when there isn't one —
+            because that is the task that cannot be started.
+          */
+          task.estimatedMinutes === null ? (
+            <span className="text-ink-subtle">No time set</span>
+          ) : null
         ) : (
           <StatusPill status={task.status} />
         )
@@ -772,6 +829,10 @@ function TheirTask({ task }: { task: Task }) {
       meta={
         running ? (
           <span className="font-semibold text-brand">In progress</span>
+        ) : task.status === 'planned' ? (
+          task.estimatedMinutes === null ? (
+            <span className="text-ink-subtle">No time set</span>
+          ) : null
         ) : (
           <StatusPill status={task.status} />
         )
