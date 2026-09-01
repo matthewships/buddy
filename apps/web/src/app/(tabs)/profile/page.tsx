@@ -244,7 +244,7 @@ function NotificationCard() {
             <p className="text-sm text-ink-muted">
               {notifications.enabled
                 ? notifications.pushActive
-                  ? 'On: buddy requests, invites, reviews and chat reach you even with Buddy closed.'
+                  ? 'On: buddy requests, invites, reviews, chat and the morning nudge reach you even with Buddy closed.'
                   : 'On for buddy requests, while a Buddy tab is open.'
                 : 'Notifications are allowed, but turned off here.'}
             </p>
@@ -252,9 +252,9 @@ function NotificationCard() {
 
           {notifications.state === 'default' ? (
             <p className="text-sm text-ink-muted">
-              Get notified about buddy requests, group invites, task reviews and chat — the same
-              alerts the app sends. A buddy request expires in 5 minutes, so a missed one is a
-              lost one.
+              Get notified about buddy requests, group invites, task reviews, chat, and a nudge
+              at 8am on a morning with nothing planned — the same alerts the app sends. A buddy
+              request expires in 5 minutes, so a missed one is a lost one.
             </p>
           ) : null}
 

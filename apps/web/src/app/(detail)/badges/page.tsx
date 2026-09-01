@@ -17,6 +17,25 @@ export default function Badges() {
   const me = useMe();
   const profile = useProfile(me.data?.handle ?? '');
 
+  /**
+   * `me` is checked for failure before anything waits on `profile`. The profile
+   * query is keyed on the handle `me` provides, so until it arrives the query is
+   * disabled — and a disabled query is `pending` forever, not errored. Folding
+   * the two together would spin indefinitely on a failed `/me` rather than
+   * reaching the error branch below.
+   */
+  if (me.isError) {
+    return (
+      <Screen>
+        <BackLink fallback="/profile" label="Profile" />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+          <p className="text-base text-danger">Couldn&apos;t load your badges.</p>
+          <Button label="Try again" variant="ghost" onClick={() => void me.refetch()} />
+        </div>
+      </Screen>
+    );
+  }
+
   if (me.isPending || profile.isPending || !profile.data) {
     return (
       <Screen>

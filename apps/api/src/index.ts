@@ -21,6 +21,7 @@ import { postRoutes } from './routes/posts.js';
 import { meRoutes } from './routes/me.js';
 import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
+import { runNudges } from './jobs/nudge.js';
 import { runRollover } from './jobs/rollover.js';
 import { runWeekly } from './jobs/weekly.js';
 import { deliverPush, type PushMessage } from './services/push.js';
@@ -28,7 +29,7 @@ import { deliverPush, type PushMessage } from './services/push.js';
 /**
  * The Buddy API (§3): a single Worker with three entry points — `fetch` for
  * REST plus the chat WebSocket upgrade, `queue` for push delivery, and
- * `scheduled` for the rollover and leaderboard crons.
+ * `scheduled` for the rollover, nudge and leaderboard crons.
  *
  * Routes are mounted onto one Hono app and the app's type is exported as
  * `AppType`, which the Expo client consumes through `hc<AppType>()` — that is
@@ -161,6 +162,23 @@ export default {
         console.log(
           `[rollover] timezones=${result.timezones} missed=${result.missed} streaksReset=${result.streaksReset}`,
         );
+
+        /**
+         * The 8am-local nudge rides the same hourly firing (jobs/nudge.ts).
+         * Its own try/catch because, unlike the rollover, nothing downstream
+         * depends on it: a nudge that fails must not take the day's rollover
+         * or the weekly close down with it.
+         */
+        try {
+          const nudges = await runNudges(db(env.DB), env);
+          if (nudges.timezones > 0) {
+            console.log(
+              `[nudge] timezones=${nudges.timezones} nudged=${nudges.nudged} alreadySent=${nudges.alreadySent}`,
+            );
+          }
+        } catch (error) {
+          console.error('[nudge] failed', error);
+        }
 
         // The Monday 00:05 UTC firing also closes the week (§4.9). Both crons
         // land here, so the cron expression identifies which one ran.
