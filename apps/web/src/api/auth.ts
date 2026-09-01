@@ -119,6 +119,8 @@ export interface Me extends StudentFields {
   occupationKey: string | null;
   occupationText: string | null;
   isOpenBuddy: boolean;
+  /** Today's status, with expiry already applied by the server (§2.6). */
+  statusKey: string | null;
   onboarded: boolean;
   /** False while the handle is still the placeholder registration assigns. */
   handleClaimed: boolean;
@@ -155,6 +157,30 @@ export function useUpdateMe() {
       // of invalidating and paying for a second round trip.
       queryClient.setQueryData(meQueryKey, me);
       setOnboarded(me.onboarded);
+    },
+  });
+}
+
+/**
+ * Sets or clears today's status.
+ *
+ * The group query is invalidated as well as `me`: the status is shown on the
+ * member strip, and the copy of it there comes from the group response rather
+ * than from this one.
+ */
+export function useSetStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (statusKey: string | null) =>
+      unwrap<{ statusKey: string | null; statusDate: string | null }>(
+        await api.api.me.status.$put({ json: { statusKey } as never }),
+      ),
+    onSuccess: (result) => {
+      queryClient.setQueryData(meQueryKey, (previous: Me | undefined) =>
+        previous ? { ...previous, statusKey: result.statusKey } : previous,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['groups'] });
     },
   });
 }

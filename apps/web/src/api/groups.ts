@@ -31,6 +31,12 @@ export interface GroupMember {
   role: 'owner' | 'member';
   joinedAt: string;
   lastSeenAt: string | null;
+  /**
+   * Today's status (§2.6), already expired against that member's own local day
+   * by the server — a group spans timezones, and the client has no business
+   * deciding whose midnight has passed.
+   */
+  statusKey: string | null;
 }
 
 export interface GroupInvite {

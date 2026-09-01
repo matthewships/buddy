@@ -31,6 +31,22 @@ export function localDate(timezone: string, at: Date = new Date()): string {
   }).format(at);
 }
 
+/**
+ * `localDate`, falling back to UTC on a timezone the runtime cannot resolve.
+ *
+ * The jobs log and skip such a row, because a job can afford to leave it for
+ * the next hour. A request cannot: refusing to set someone's status because
+ * their stored timezone is unrecognised would be a 500 on a field they never
+ * typed. UTC is wrong by at most a day boundary, and the value expires anyway.
+ */
+export function localDateOrUtc(timezone: string, at: Date = new Date()): string {
+  try {
+    return localDate(timezone, at);
+  } catch {
+    return localDate('UTC', at);
+  }
+}
+
 /** The local wall-clock hour (0-23) in `timezone` — the hourly cron's trigger. */
 export function localHour(timezone: string, at: Date = new Date()): number {
   return Number(

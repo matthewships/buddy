@@ -7,6 +7,7 @@ import { GOAL_KEYS } from './goals';
 import { INTEREST_KEYS } from './interests';
 import { MAJOR_KEYS } from './majors';
 import { OCCUPATION_KEYS } from './occupations';
+import { STATUS_KEYS } from './statuses';
 import { TOPIC_KEYS } from './topics';
 import { MAX_RATING, MIN_RATING } from './credits';
 import {
@@ -529,6 +530,11 @@ export const listMessagesQuerySchema = paginationSchema.extend({
 
 export const leaderboardQuerySchema = paginationSchema.extend({
   scope: z.enum(LEADERBOARD_SCOPES).default('weekly'),
+});
+
+/** Setting or clearing today's status (§2.6). Null clears it. */
+export const setStatusSchema = z.object({
+  statusKey: z.enum(STATUS_KEYS).nullable(),
 });
 
 /**

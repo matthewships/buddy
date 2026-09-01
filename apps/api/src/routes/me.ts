@@ -8,6 +8,8 @@ import {
   normaliseInstitution,
   occupationForLevel,
   registerDeviceSchema,
+  setStatusSchema,
+  statusIsCurrent,
   unsubscribeWebPushSchema,
   updateMeSchema,
   webPushSubscriptionSchema,
@@ -26,7 +28,7 @@ import type { AppEnv } from '../env.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { placeholderHandle } from '../lib/handles.js';
 import { newId } from '../lib/ids.js';
-import { nowIso } from '../lib/time.js';
+import { localDateOrUtc, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { vapidKeysFrom } from '../services/push.js';
 import { readTags, replaceTags } from '../services/tags.js';
@@ -59,6 +61,15 @@ export const meRoutes = new Hono<AppEnv>()
     return c.json({
       ...publicSelf(user),
       ...tags,
+      /**
+       * Expiry is applied here rather than left to the client, so what this
+       * returns is what a groupmate would actually see. A client deciding for
+       * itself would need the setter's timezone and the same day arithmetic,
+       * and the two could disagree about whose midnight had passed.
+       */
+      statusKey: statusIsCurrent(user.statusDate, localDateOrUtc(user.timezone))
+        ? user.statusKey
+        : null,
       buddyProfile: profile
         ? {
             headline: profile.headline,
@@ -68,6 +79,35 @@ export const meRoutes = new Hono<AppEnv>()
           }
         : null,
     });
+  })
+
+  /**
+   * Today's status (§2.6).
+   *
+   * Its own route rather than a field on PATCH /me, because it is not a profile
+   * fact: it is set from the group screen, it is true for one day, and it is
+   * written far more often than anything in the profile. The stored day comes
+   * from the server using the caller's timezone — a client that sent its own
+   * date could keep a status alive indefinitely by sending yesterday's.
+   */
+  .put('/status', zValidator('json', setStatusSchema), async (c) => {
+    const client = db(c.env.DB);
+    const userId = currentUserId(c);
+    const { statusKey } = c.req.valid('json');
+
+    const user = await client.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { timezone: true },
+    });
+    if (!user) throw notFound('Account not found');
+
+    // Cleared together: a date with no key says nothing, and a key with no date
+    // would be a status that never expires.
+    const statusDate = statusKey === null ? null : localDateOrUtc(user.timezone);
+
+    await client.update(users).set({ statusKey, statusDate }).where(eq(users.id, userId));
+
+    return c.json({ statusKey, statusDate });
   })
 
   /**

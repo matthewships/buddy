@@ -2,8 +2,15 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { MAX_PROOF_TEXT, MAX_TASK_MINUTES, MAX_TASK_TITLE } from '@buddy/shared';
+import {
+  MAX_PROOF_TEXT,
+  MAX_TASK_MINUTES,
+  MAX_TASK_TITLE,
+  STATUSES,
+  status as statusFor,
+} from '@buddy/shared';
 
+import { useSetStatus } from '@/api/auth';
 import type { GroupDetail, GroupMember } from '@/api/groups';
 import {
   isRunning,
@@ -77,6 +84,7 @@ export function GroupTasks({
   const all = tasks.data?.tasks ?? [];
   const today = localToday();
   const selected = members.find((m) => m.id === selectedId) ?? members.find((m) => m.id === viewerId);
+  const [pickingStatus, setPickingStatus] = useState(false);
   const viewingSelf = selected?.id === viewerId;
 
   const forSelected = all.filter((task) => task.userId === selected?.id);
@@ -162,6 +170,21 @@ export function GroupTasks({
                     </svg>
                   </span>
                 ) : null}
+                {/*
+                  Today's status, on the face rather than in a list somewhere
+                  else. Bottom-right, so it never collides with the Buddy mark
+                  or the running clock. It is one glyph because the strip has
+                  room for one glyph — the words are on the row underneath.
+                */}
+                {statusFor(member.statusKey ?? '') ? (
+                  <span
+                    title={statusFor(member.statusKey ?? '')!.label}
+                    className="absolute -bottom-0.5 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 border-surface bg-surface text-[10px] leading-none"
+                  >
+                    <span className="sr-only">{statusFor(member.statusKey ?? '')!.label}</span>
+                    <span aria-hidden="true">{statusFor(member.statusKey ?? '')!.emoji}</span>
+                  </span>
+                ) : null}
               </span>
               <span
                 className={`max-w-16 truncate text-xs ${active ? 'font-semibold text-ink' : 'text-ink-muted'}`}
@@ -185,6 +208,20 @@ export function GroupTasks({
           <span className="text-xs text-ink-muted">Invite</span>
         </button>
       </div>
+
+      {selected ? (
+        <TodayStatus
+          member={selected}
+          isViewer={selected.id === viewerId}
+          onChange={() => setPickingStatus(true)}
+        />
+      ) : null}
+
+      <StatusPicker
+        open={pickingStatus}
+        onClose={() => setPickingStatus(false)}
+        current={members.find((m) => m.id === viewerId)?.statusKey ?? null}
+      />
 
       {waitingOnMe.length > 0 ? (
         <section className="flex flex-col gap-2">
@@ -248,6 +285,141 @@ export function GroupTasks({
  * "Today", "Yesterday", or a written date — the words people actually use for
  * the two days that matter, and something unambiguous for the rest.
  */
+/**
+ * The selected person's status, in words (§2.6).
+ *
+ * Two different jobs behind one row. On yourself it is the control — a status
+ * nobody can set is decoration, and this is the screen it is about, so it is
+ * set from here rather than from a settings page nobody visits daily. On
+ * somebody else it carries the line the status *invites*, which is the whole
+ * point of the feature: "Stuck" on its own is a mood, and "Ask what it is stuck
+ * on" is a thing to do.
+ *
+ * Nothing renders for another member who has set nothing. An empty prompt to
+ * message someone about nothing is worse than a quiet screen.
+ */
+function TodayStatus({
+  member,
+  isViewer,
+  onChange,
+}: {
+  member: GroupMember;
+  isViewer: boolean;
+  onChange: () => void;
+}) {
+  const current = statusFor(member.statusKey ?? '');
+
+  if (!isViewer) {
+    if (!current) return null;
+    return (
+      <div className="flex flex-row items-center gap-2 rounded-2xl border border-surface-border bg-surface px-4 py-2.5">
+        <span aria-hidden="true" className="text-lg">
+          {current.emoji}
+        </span>
+        <div className="flex min-w-0 flex-col">
+          <span className="text-sm font-semibold text-ink">
+            {member.displayName.split(' ')[0]} · {current.label}
+          </span>
+          <span className="text-xs text-ink-muted">{current.invites}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      className="flex cursor-pointer flex-row items-center gap-2 rounded-2xl border border-surface-border bg-surface px-4 py-2.5 text-left transition-colors hover:border-brand"
+    >
+      <span aria-hidden="true" className="text-lg">
+        {current?.emoji ?? '💬'}
+      </span>
+      <span className="flex-1 text-sm text-ink">
+        {current ? (
+          <>
+            Today you&rsquo;re <span className="font-semibold">{current.label.toLowerCase()}</span>
+          </>
+        ) : (
+          'Tell the group how today is going'
+        )}
+      </span>
+      <span className="text-sm font-semibold text-brand">{current ? 'Change' : 'Set'}</span>
+    </button>
+  );
+}
+
+/**
+ * The picker. Bottom placement, because it belongs to the row that opened it
+ * rather than to the app — the same rule the invite and proof sheets follow.
+ *
+ * Clearing is offered as plainly as setting. A status that can only be replaced
+ * and never removed forces a person who simply does not want to say anything
+ * today to keep saying yesterday's thing until midnight.
+ */
+function StatusPicker({
+  open,
+  onClose,
+  current,
+}: {
+  open: boolean;
+  onClose: () => void;
+  current: string | null;
+}) {
+  const setStatus = useSetStatus();
+
+  const choose = (key: string | null) => {
+    setStatus.mutate(key, { onSuccess: onClose });
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="How is today going?">
+      <div className="flex flex-row items-center justify-between">
+        <h2 className="text-lg font-bold text-ink">How is today going?</h2>
+        <Button label="Close" variant="ghost" className="w-auto" onClick={onClose} />
+      </div>
+      <p className="-mt-1 text-sm text-ink-muted">
+        Your group sees this until midnight. It is how they know whether to leave you alone or say
+        something.
+      </p>
+
+      <ul className="flex flex-col divide-y divide-surface-border">
+        {STATUSES.map((option) => (
+          <li key={option.key}>
+            <button
+              type="button"
+              disabled={setStatus.isPending}
+              onClick={() => choose(option.key)}
+              className={`flex w-full cursor-pointer flex-row items-center gap-3 py-3 text-left disabled:opacity-60 ${
+                option.key === current ? 'font-semibold' : ''
+              }`}
+            >
+              <span aria-hidden="true" className="text-xl">
+                {option.emoji}
+              </span>
+              <span className="flex-1 text-base text-ink">{option.label}</span>
+              {option.key === current ? (
+                <span className="text-sm font-semibold text-brand">Current</span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <ErrorText message={setStatus.error?.message} />
+
+      {current ? (
+        <Button
+          label="Clear it"
+          variant="ghost"
+          disabled={setStatus.isPending}
+          onClick={() => choose(null)}
+        />
+      ) : null}
+    </Sheet>
+  );
+}
+
 function dayLabel(day: string, today: string): string {
   if (day === today) return 'Today';
 

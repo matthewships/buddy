@@ -113,6 +113,18 @@ export const users = sqliteTable(
     country: text('country'),
     city: text('city'),
     bio: text('bio'),
+    /**
+     * Today's status (§2.6). Two columns rather than one, because a status is
+     * only true for the day it was set: `status_date` is the setter's own local
+     * day, and the value is simply not shown on any other one. That makes
+     * expiry a comparison at read time — no cron, and nothing to clean up.
+     *
+     * Not CHECK-constrained, for the same reason `user_badges.badge_key` is
+     * not: the option list lives in packages/shared, and retiring one should
+     * stay a config change rather than a migration.
+     */
+    statusKey: text('status_key'),
+    statusDate: text('status_date'),
     isOpenBuddy: integer('is_open_buddy', { mode: 'boolean' }).notNull().default(false),
     // Set when the user finishes onboarding (handle, goal, occupation). The app
     // reads it to decide between the onboarding stack and the tabs; deriving it

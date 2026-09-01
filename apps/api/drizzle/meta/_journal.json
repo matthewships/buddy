@@ -57,6 +57,13 @@
       "when": 1788238154572,
       "tag": "0007_post_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788299257372,
+      "tag": "0008_user_status",
+      "breakpoints": true
     }
   ]
 }

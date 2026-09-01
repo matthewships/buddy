@@ -279,7 +279,7 @@ function StandingsSheet({
         board where everybody is on nothing, "nobody is ahead" is the truth and
         "you are joint first" is not.
       */}
-      {!standings.isPending && entries.every((entry) => entry.credits === 0) ? (
+      {standings.isSuccess && entries.every((entry) => entry.credits === 0) ? (
         <p className="text-sm text-ink-muted">
           Nobody has earned credits {scope === 'weekly' ? 'this week' : 'yet'}. The first approved
           task starts it.

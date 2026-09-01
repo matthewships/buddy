@@ -7,6 +7,7 @@ import {
   INVITE_LINK_MAX_USES,
   createGroupSchema,
   groupLeaderboardQuerySchema,
+  statusIsCurrent,
   inviteToGroupSchema,
   setGroupBuddySchema,
 } from '@buddy/shared';
@@ -18,7 +19,7 @@ import { badRequest, conflict, forbidden, gone, notFound } from '../lib/errors.j
 import { newId } from '../lib/ids.js';
 import { enforceRateLimit } from '../lib/rate-limit.js';
 import { newInviteToken } from '../lib/tokens.js';
-import { nowIso } from '../lib/time.js';
+import { localDateOrUtc, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { groupLeaderboard } from '../services/leaderboard.js';
 import { enqueuePush } from '../services/push.js';
@@ -118,7 +119,7 @@ export const groupRoutes = new Hono<AppEnv>()
     const group = await client.query.groups.findFirst({ where: eq(groups.id, groupId) });
     if (!group) throw notFound('No such group');
 
-    const members = await client
+    const rows = await client
       .select({
         id: users.id,
         handle: users.handle,
@@ -129,11 +130,26 @@ export const groupRoutes = new Hono<AppEnv>()
         role: groupMembers.role,
         joinedAt: groupMembers.joinedAt,
         lastSeenAt: users.lastSeenAt,
+        timezone: users.timezone,
+        statusKey: users.statusKey,
+        statusDate: users.statusDate,
       })
       .from(groupMembers)
       .innerJoin(users, eq(users.id, groupMembers.userId))
       .where(and(eq(groupMembers.groupId, groupId), isNull(users.deletedAt)))
       .orderBy(groupMembers.joinedAt);
+
+    /**
+     * Each status is measured against its *own* setter's local day (§2.6). A
+     * group spans timezones, and a status set in Tokyo would read as stale to a
+     * member in London hours before its owner's day was over. The timezone and
+     * the stored date are then dropped: they are how the answer is worked out,
+     * not anybody else's business.
+     */
+    const members = rows.map(({ timezone, statusDate, statusKey, ...member }) => ({
+      ...member,
+      statusKey: statusIsCurrent(statusDate, localDateOrUtc(timezone)) ? statusKey : null,
+    }));
 
     return c.json({
       group: {
