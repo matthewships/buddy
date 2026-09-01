@@ -19,6 +19,14 @@ function VerifyForm() {
   const resend = useResendCode();
   // Answers collected before the account existed, waiting to be written.
   const hasDraft = useDraft((d) => d.educationLevel !== null || d.goalKeys.length > 0);
+  /**
+   * Deliberately *not* folded into `hasDraft`. A token is not an answer, and
+   * `/onboarding/done` writes the draft to `PATCH /me` the moment it renders —
+   * so treating "has an invite" as "has answers" would send someone with an
+   * empty draft there and overwrite their real profile with blanks. It only
+   * decides where a verification with nothing to save goes.
+   */
+  const inviteToken = useDraft((d) => d.inviteToken);
 
   const [code, setCode] = useState('');
   const canSubmit = code.length === EMAIL_CODE_LENGTH && !verify.isPending;
@@ -30,11 +38,15 @@ function VerifyForm() {
       {
         /*
           Verification signs the user in. Someone who came through the questions
-          has answers waiting in the draft and goes straight to the write; anyone
-          else — a mobile signup, or a returning unverified account — goes to
-          `/`, which routes on `onboarded` as it always did.
+          has answers waiting in the draft and goes straight to the write —
+          which redeems any invite token afterwards, so answers win over the
+          link. With nothing to write, an invite is the next best destination;
+          failing that `/`, which routes on `onboarded` as it always did.
         */
-        onSuccess: () => router.replace(hasDraft ? '/onboarding/done' : '/'),
+        onSuccess: () =>
+          router.replace(
+            hasDraft ? '/onboarding/done' : inviteToken ? `/join/${inviteToken}` : '/',
+          ),
       },
     );
   };

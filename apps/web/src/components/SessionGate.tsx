@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 
 import { useMe } from '@/api/auth';
 import { useSession } from '@/auth/store';
+import { useDraft } from '@/onboarding/draft';
 import { FIRST_STEP } from '@/onboarding/steps';
 
 import { LoadingScreen } from './Spinner';
@@ -76,14 +77,27 @@ export function RequireSession({
  * picks: an unonboarded user bounces off `/buddies` into the questions via
  * `RequireSession`, which is what this route did before and one fewer /me
  * request on a screen that does not need it.
+ *
+ * A pending join link outranks it. `signIn()` runs inside the login and verify
+ * mutation functions, so the session flips while the mutation is still pending
+ * and this effect fires *before* those screens' own `onSuccess` navigation —
+ * they replace it and win. That makes this the fallback rather than the
+ * decision, and a fallback that drops an invitation is how the invite link
+ * broke in the first place, so it carries the same rule.
+ *
+ * Never `/onboarding/done`, whatever the draft holds: that screen writes the
+ * draft to `PATCH /me` on arrival, and someone signing in to an existing
+ * account is exactly who must not have their profile overwritten by answers
+ * typed while signed out.
  */
 export function RedirectIfSignedIn() {
   const router = useRouter();
   const status = useSession((s) => s.status);
+  const inviteToken = useDraft((d) => d.inviteToken);
 
   useEffect(() => {
-    if (status === 'signedIn') router.replace('/buddies');
-  }, [router, status]);
+    if (status === 'signedIn') router.replace(inviteToken ? `/join/${inviteToken}` : '/buddies');
+  }, [inviteToken, router, status]);
 
   return null;
 }
