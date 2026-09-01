@@ -50,7 +50,13 @@ export async function awardApproval(
   db: Db,
   params: {
     ownerId: string;
-    reviewerId: string;
+    /**
+     * Null when nobody reviewed it — the rollover closing a task that sat
+     * `done` with no reviewer. There is no one to credit with a review, and
+     * `task_reviews.reviewer_id` is NOT NULL for the same reason: an
+     * unreviewed approval is an absence, not an anonymous reviewer.
+     */
+    reviewerId: string | null;
     taskId: string;
     dueDate: string;
     rating: number;
@@ -90,20 +96,30 @@ export async function awardApproval(
       })
       .where(eq(userStats.userId, ownerId)),
 
-    db
-      .update(userStats)
-      .set({
-        reviewsGiven: sql`${userStats.reviewsGiven} + 1`,
-        updatedAt: nowIso(),
-      })
-      .where(eq(userStats.userId, reviewerId)),
+    ...(reviewerId
+      ? [
+          db
+            .update(userStats)
+            .set({
+              reviewsGiven: sql`${userStats.reviewsGiven} + 1`,
+              updatedAt: nowIso(),
+            })
+            .where(eq(userStats.userId, reviewerId)),
+        ]
+      : []),
 
     ...streakStatements(db, ownerId, dueDate),
   ];
 
   await db.batch(statements as never);
 
-  const bonus = await maybeAwardDailyBonus(db, ownerId, dueDate);
+  /**
+   * The daily bonus is for finishing everything you said you would, and an
+   * unreviewed close is not evidence of that — it only means nobody looked. So
+   * a sweep never *triggers* the bonus, though one already earned by a real
+   * approval that day stands: the ledger is keyed on the day and pays once.
+   */
+  const bonus = reviewerId ? await maybeAwardDailyBonus(db, ownerId, dueDate) : 0;
   const stats = await db.query.userStats.findFirst({ where: eq(userStats.userId, ownerId) });
 
   return { credits, dailyBonus: bonus, streak: stats?.currentStreak ?? 0 };

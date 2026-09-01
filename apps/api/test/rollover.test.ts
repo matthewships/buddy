@@ -46,12 +46,14 @@ describe('day rollover', () => {
     expect(await taskStatus(id)).toBe('planned');
   });
 
-  it('does not touch tasks that are already done, approved or missed', async () => {
+  it('does not touch tasks that are already done or approved', async () => {
     const { owner, buddy, groupId } = await pair('rollstates');
 
+    // Yesterday's, so the reviewer still has their full extra day. Stale ones
+    // are closed instead — see unreviewed-tasks.test.ts.
     const done = await createTask(owner, groupId, 'Done one');
     await post(`/api/tasks/${done}/done`, {}, owner.accessToken);
-    await backdate(done, daysAgo(2));
+    await backdate(done, daysAgo(1));
 
     const approved = await createTask(owner, groupId, 'Approved one');
     await post(`/api/tasks/${approved}/done`, {}, owner.accessToken);
@@ -64,7 +66,8 @@ describe('day rollover', () => {
 
     await runRollover(db(env.DB));
 
-    // Only `planned` is swept — a submitted task still deserves its review.
+    // The `missed` sweep takes only `planned` — a submitted task still
+    // deserves its review, and an approved one is finished.
     expect(await taskStatus(done)).toBe('done');
     expect(await taskStatus(approved)).toBe('approved');
   });
