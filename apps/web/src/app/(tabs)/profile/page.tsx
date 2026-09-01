@@ -115,6 +115,7 @@ export default function Profile() {
         profile={stats.data}
         onChangePhoto={() => fileInputRef.current?.click()}
         changingPhoto={uploadAvatar.isPending}
+        showBadgeProgress
         banner={
           <div className="flex flex-col gap-3">
             {/*

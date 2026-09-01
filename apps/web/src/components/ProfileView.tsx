@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { COUNTRIES, EDUCATION_LEVELS, GOALS, INTERESTS, MAJORS, TOPICS } from '@buddy/shared';
@@ -8,6 +9,7 @@ import type { PublicProfile } from '@/api/users';
 import { activityLabel } from '@/lib/activity';
 
 import { Avatar } from './Avatar';
+import { NextBadgeLine } from './BadgeList';
 import { Card } from './Card';
 
 function label(list: readonly { key: string; label: string }[], key: string | null) {
@@ -83,6 +85,7 @@ export function ProfileView({
   actions,
   onChangePhoto,
   changingPhoto = false,
+  showBadgeProgress = false,
 }: {
   profile: PublicProfile;
   banner?: ReactNode;
@@ -94,6 +97,16 @@ export function ProfileView({
    */
   onChangePhoto?: () => void;
   changingPhoto?: boolean;
+  /**
+   * Turns the badge card from a trophy cabinet into a ladder: the next badge
+   * with its distance, and a way through to the full list.
+   *
+   * Owner's screen only, and the one place this view deliberately differs from
+   * a stranger's. What you present is the badges you hold, which both screens
+   * show identically; how close you are to the next one is not something a
+   * stranger reads before sending a request.
+   */
+  showBadgeProgress?: boolean;
 }) {
   const goal = profile.goalText?.trim() || label(GOALS, profile.goalKey);
   const goal2 = label(GOALS, profile.goalKey2);
@@ -195,6 +208,18 @@ export function ProfileView({
           {profile.stats.reviewsGiven} reviews given · member since{' '}
           {new Date(profile.memberSince).toLocaleDateString()}
         </p>
+
+        {/*
+          Points sat here as a number that bought nothing. The badge they are
+          working toward belongs against them, not two cards further down.
+        */}
+        {showBadgeProgress ? (
+          <NextBadgeLine
+            stats={profile.stats}
+            badges={profile.badges}
+            className="mt-3 border-t border-surface-border pt-3"
+          />
+        ) : null}
       </Card>
 
       {hasGoalBlock ? (
@@ -253,19 +278,40 @@ export function ProfileView({
         </Card>
       ) : null}
 
-      {profile.badges.length > 0 ? (
+      {/*
+        A stranger's profile still hides this when there is nothing in it — an
+        empty cabinet says nothing about them. Your own always shows, because an
+        account with no badges is exactly the one that needs telling there are
+        some, and what the first one costs.
+      */}
+      {profile.badges.length > 0 || showBadgeProgress ? (
         <Card>
           <Block title="Badges">
-            <div className="mt-1 flex flex-row flex-wrap gap-2">
-              {profile.badges.map((badge) => (
-                <span
-                  key={badge.key}
-                  className="rounded-full border border-surface-border bg-surface-muted px-3 py-1.5 text-xs text-ink"
-                >
-                  {badge.emoji} {badge.name}
-                </span>
-              ))}
-            </div>
+            {profile.badges.length > 0 ? (
+              <div className="mt-1 flex flex-row flex-wrap gap-2">
+                {profile.badges.map((badge) => (
+                  <span
+                    key={badge.key}
+                    className="rounded-full border border-surface-border bg-surface-muted px-3 py-1.5 text-xs text-ink"
+                  >
+                    {badge.emoji} {badge.name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-ink-muted">
+                None yet. The first one is a single approved task away.
+              </p>
+            )}
+
+            {showBadgeProgress ? (
+              <Link
+                href="/badges"
+                className="mt-3 w-fit text-sm font-semibold text-brand hover:opacity-80"
+              >
+                See all badges →
+              </Link>
+            ) : null}
           </Block>
         </Card>
       ) : null}

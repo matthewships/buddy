@@ -1,5 +1,6 @@
 export { Avatar, avatarUrl } from './Avatar';
 export { BackLink } from './BackLink';
+export { BadgeLadder, NextBadgeLine } from './BadgeList';
 export { BuddyCard } from './BuddyCard';
 export { Button } from './Button';
 export { Card } from './Card';
