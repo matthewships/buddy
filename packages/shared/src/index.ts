@@ -15,6 +15,7 @@ export * from './enums';
 export * from './goals';
 export * from './institutions';
 export * from './interests';
+export * from './level-fit';
 export * from './limits';
 export * from './majors';
 export * from './occupations';

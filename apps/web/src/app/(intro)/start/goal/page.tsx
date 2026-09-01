@@ -1,6 +1,6 @@
 'use client';
 
-import { GOALS, MAX_GOAL_TEXT } from '@buddy/shared';
+import { goalsForLevel, MAX_GOAL_TEXT } from '@buddy/shared';
 
 import { Chips, Field, QuestionScreen } from '@/components';
 import { useDraft } from '@/onboarding/draft';
@@ -9,11 +9,21 @@ import { useDraft } from '@/onboarding/draft';
  * The one question that is about what someone is *doing* rather than who they
  * are, and the one the whole accountability loop hangs off — so it stays in
  * signup, and it stays weighted highest in the directory's matching.
+ *
+ * The options follow the answer to question one. Offering "Thesis /
+ * dissertation" to a fifteen-year-old is not a harmless extra chip: it is the
+ * moment they work out the product was not built for them.
  */
 export default function GoalStep() {
+  const educationLevel = useDraft((d) => d.educationLevel);
   const goalKeys = useDraft((d) => d.goalKeys);
   const goalText = useDraft((d) => d.goalText);
   const setDraft = useDraft((d) => d.set);
+
+  // Anything already picked stays on screen even if a later change of level
+  // would have hidden it, so a chip can always be un-picked by the person who
+  // picked it.
+  const options = goalsForLevel(educationLevel, goalKeys);
 
   // A `custom` goal must carry text — the same rule the API enforces (§2.1).
   // It applies wherever "Other" sits in the list, not just in the first slot.
@@ -34,7 +44,7 @@ export default function GoalStep() {
       */}
       <Chips
         label="Goals"
-        options={GOALS}
+        options={options}
         selected={goalKeys}
         onChange={(keys) => setDraft({ goalKeys: keys })}
       />
@@ -45,7 +55,13 @@ export default function GoalStep() {
         onChangeText={(value) => setDraft({ goalText: value })}
         maxLength={MAX_GOAL_TEXT}
         hint={`${goalText.length}/${MAX_GOAL_TEXT}`}
-        placeholder={needsText ? 'Finish my dissertation' : 'e.g. Organic chemistry finals'}
+        placeholder={
+          needsText
+            ? educationLevel === 'high_school'
+              ? 'Get into my first-choice university'
+              : 'Finish my dissertation'
+            : 'e.g. Organic chemistry finals'
+        }
       />
     </QuestionScreen>
   );

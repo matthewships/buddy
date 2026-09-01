@@ -13,24 +13,44 @@ import { useDraft } from '@/onboarding/draft';
  * What that costs is matching: "MIT" and "M.I.T." are different strings. The
  * server folds them with `normaliseInstitution()` before storing, so the
  * directory still treats them as one school.
+ *
+ * Asked at every level, but not in the same words. "Where do you study?" is
+ * wrong for someone who graduated last summer and wrong for a postdoc, and
+ * both of them still have an institution worth matching on — an alumni network
+ * and a workplace respectively. The question earns its place everywhere once
+ * the tense follows the answer to question one.
  */
 export default function InstitutionStep() {
+  const educationLevel = useDraft((d) => d.educationLevel);
   const institution = useDraft((d) => d.institution);
   const city = useDraft((d) => d.city);
   const setDraft = useDraft((d) => d.set);
 
+  const atSchool = educationLevel === 'high_school';
+  const graduated = educationLevel === 'recent_graduate';
+  const working = educationLevel === 'postdoc';
+
   return (
     <QuestionScreen
-      title="Where do you study?"
+      title={
+        atSchool
+          ? 'Which school do you go to?'
+          : graduated
+            ? 'Where did you study?'
+            : working
+              ? 'Where are you based?'
+              : 'Where do you study?'
+      }
+      subtitle={graduated ? 'Where you just came from still finds you the most people.' : undefined}
       canContinue={institution.trim().length > 0}
       skipLabel="Skip for now"
     >
       <Field
-        label="School or university"
+        label={atSchool ? 'School' : working ? 'University or lab' : 'School or university'}
         value={institution}
         onChangeText={(value) => setDraft({ institution: value })}
         maxLength={MAX_INSTITUTION}
-        placeholder="e.g. University of Toronto"
+        placeholder={atSchool ? 'e.g. Riverside High School' : 'e.g. University of Toronto'}
         autoCapitalize="words"
         autoFocus
       />

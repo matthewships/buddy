@@ -6,9 +6,9 @@ import { useEffect, useState } from 'react';
 import {
   COUNTRIES,
   EDUCATION_LEVELS,
-  GOALS,
+  goalsForLevel,
   INTERESTS,
-  MAJORS,
+  majorsForLevel,
   MAX_AVAILABILITY,
   MAX_BIO,
   MAX_CITY,
@@ -180,7 +180,7 @@ export default function EditProfile() {
         <div className="flex flex-col gap-4">
           <Chips
             label="Field of study"
-            options={MAJORS}
+            options={majorsForLevel(form.educationLevel, form.majorKey ? [form.majorKey] : [])}
             selected={form.majorKey}
             onSelect={(key) => patch({ majorKey: key === form.majorKey ? null : key })}
           />
@@ -199,7 +199,7 @@ export default function EditProfile() {
         <div className="flex flex-col gap-4">
           <Chips
             label="Goals"
-            options={GOALS}
+            options={goalsForLevel(form.educationLevel, form.goalKeys)}
             selected={form.goalKeys}
             onChange={(keys) => patch({ goalKeys: keys })}
           />
