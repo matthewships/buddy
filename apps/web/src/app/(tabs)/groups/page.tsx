@@ -116,9 +116,15 @@ export default function Groups() {
             />
           </div>
         </Card>
-      ) : (
+      ) : /*
+          The "New group" button is for someone who already has one. With an
+          empty list it would sit above a card explaining the list is empty,
+          which is two halves of one idea — so the empty state below carries
+          the action instead.
+        */
+      list.length > 0 ? (
         <Button label="New group" variant="secondary" onClick={() => setCreating(true)} />
-      )}
+      ) : null}
 
       {list.length === 0 ? (
         groups.isPending ? (
@@ -126,11 +132,30 @@ export default function Groups() {
             <Spinner />
           </div>
         ) : (
+          /*
+            The first screen of an empty account, and the one that decides
+            whether anything else happens.
+
+            It used to send people to `@handle` invites, which can only name
+            somebody who already signed up — so the first thing a new user was
+            told to do was the one thing they could not do, since they know
+            nobody here yet. The link is what grows a group, and it is inside a
+            group, so the honest order is: make the group, then send the link.
+          */
           <Card>
-            <p className="text-base text-ink">No groups yet.</p>
-            <p className="mt-1 text-sm text-ink-subtle">
-              Create one and invite people by @handle, or find a buddy in the Buddies tab.
+            <p className="text-base font-bold text-ink">Start with one group.</p>
+            <p className="mt-1 text-sm text-ink-muted">
+              A group is where a task lives — you write down what you&rsquo;ll finish today, and
+              someone checks it off. Name it after the people, not the work: your flatmates, your
+              seminar, two friends from the library.
             </p>
+            <p className="mt-2 text-sm text-ink-subtle">
+              Once it exists you get a link to send on WhatsApp or anywhere else. They can join
+              even if they have never used Buddy.
+            </p>
+            <div className="mt-4">
+              <Button label="Create your first group" onClick={() => setCreating(true)} />
+            </div>
           </Card>
         )
       ) : (
