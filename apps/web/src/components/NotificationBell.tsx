@@ -3,46 +3,42 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { useIncomingRequests } from '@/api/buddies';
-import { useInvites, useRespondToInvite } from '@/api/groups';
-import { useReviewQueue } from '@/api/tasks';
+import { useRespondToInvite } from '@/api/groups';
+import { useWaitingOnYou } from '@/hooks/useWaitingOnYou';
 
 import { Avatar } from './Avatar';
 import { Button } from './Button';
 import { Sheet } from './Sheet';
 
 /**
- * One place to find everything waiting on you.
+ * One place to find everything waiting on you — see `useWaitingOnYou` for what
+ * counts and why it needs no table.
  *
- * Until now the three things that need a decision each lived on a different
- * screen: a group invite on the Groups tab, a buddy request on Buddies, and a
- * task waiting for your review inside whichever group it belongs to. Nothing
- * told you any of them existed unless you happened to open that tab, so the
- * push notification was the only thing that ever surfaced them — and a push you
+ * The three things that need a decision each live on a different screen: a
+ * group invite on the Groups tab, a buddy request on Buddies, and a task
+ * waiting for your review inside whichever group it belongs to. Nothing tells
+ * you any of them exists unless you happen to open that tab, so the push
+ * notification was the only thing that ever surfaced them — and a push you
  * swipe away is gone.
  *
- * Deliberately built on the queries the app already runs rather than on a
- * notifications table. Everything here is a *pending decision* that some screen
- * is already fetching, so the bell costs no extra requests, cannot drift out of
- * sync with the screens it summarises, and empties itself when the work is
- * done. A stored feed of past events — "Ana approved your task" — is a
- * different feature with a different shape, and it needs a table; this is not a
- * cheap version of that, it is the answer to "what needs me right now".
+ * **It lives on the profile screen, not in a strip above every tab.** A bar
+ * pinned over all five screens spent a permanent slice of a phone-sized column
+ * on a control that is empty most of the time. The count now rides the Profile
+ * tab, which is on screen anyway, and the panel opens from the profile — the
+ * same shape the group screen uses for standings, so "an icon in the top-right
+ * corner opens a side panel" means one thing throughout the app.
  */
 export function NotificationBell() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  const invites = useInvites();
-  const requests = useIncomingRequests();
-  const reviews = useReviewQueue();
   const respond = useRespondToInvite();
-
-  const inviteList = invites.data?.invites ?? [];
-  const requestList = requests.data?.requests ?? [];
-  const reviewList = reviews.data?.tasks ?? [];
-
-  const count = inviteList.length + requestList.length + reviewList.length;
+  const {
+    invites: inviteList,
+    requests: requestList,
+    reviews: reviewList,
+    count,
+  } = useWaitingOnYou();
 
   const go = (href: string) => {
     setOpen(false);

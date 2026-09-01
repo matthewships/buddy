@@ -9,6 +9,7 @@ export { ConfirmSheet } from './ConfirmSheet';
 export { DurationInput, durationError } from './DurationInput';
 export { ErrorText } from './ErrorText';
 export { Field } from './Field';
+export { IconButton } from './IconButton';
 export { AppFrame, Screen } from './Frame';
 export { GroupTasks } from './GroupTasks';
 export { RatingPicker } from './RatingPicker';

@@ -131,6 +131,15 @@ export function useLeaveGroup() {
 export function useInvites() {
   return useQuery({
     queryKey: groupKeys.invites,
+    /**
+     * Polled, because the count on the Profile tab is built from this and is
+     * now the only ambient sign that anything is waiting. Without an interval
+     * the badge only moved when something else happened to invalidate the
+     * query, so an invite that arrived while the app sat open stayed invisible
+     * until the user reloaded. A minute is well inside the seven days an invite
+     * lasts, and it is one small request.
+     */
+    refetchInterval: 60_000,
     queryFn: async () => unwrap<{ invites: GroupInvite[] }>(await api.api.invites.$get()),
   });
 }

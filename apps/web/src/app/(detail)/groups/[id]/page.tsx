@@ -24,6 +24,7 @@ import {
   ErrorText,
   Field,
   GroupTasks,
+  IconButton,
   Screen,
   SharePanel,
   Sheet,
@@ -163,29 +164,6 @@ export default function GroupDetailPage() {
         onLeft={() => router.replace('/groups')}
       />
     </Screen>
-  );
-}
-
-/** A round, icon-only action. Labelled for anyone who cannot see the glyph. */
-function IconButton({
-  label,
-  glyph,
-  onClick,
-}: {
-  label: string;
-  glyph: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand"
-    >
-      <span className="h-5 w-5">{glyph}</span>
-    </button>
   );
 }
 

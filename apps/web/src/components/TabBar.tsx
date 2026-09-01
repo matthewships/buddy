@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { useWaitingOnYou } from '@/hooks/useWaitingOnYou';
+
 /**
  * The five tabs (§5.2).
  *
@@ -20,6 +22,12 @@ import { usePathname } from 'next/navigation';
  * The bar is `sticky` at the bottom of the phone-width column rather than fixed
  * to the viewport, so it sits with the app rather than floating over a wide
  * page.
+ *
+ * Profile carries the count of everything waiting on a decision from you. It is
+ * the right tab for it because that is where the panel listing those items now
+ * opens — a badge has to point somewhere, and pointing at the screen that
+ * answers it is the whole job. It also means the app spends no permanent space
+ * on saying "nothing needs you", which is true most of the time.
  */
 const TABS = [
   { href: '/buddies', label: 'Buddies', glyph: '☺' },
@@ -31,6 +39,7 @@ const TABS = [
 
 export function TabBar() {
   const pathname = usePathname();
+  const { count: waiting } = useWaitingOnYou();
 
   return (
     <nav
@@ -39,6 +48,8 @@ export function TabBar() {
     >
       {TABS.map((tab) => {
         const active = pathname === tab.href;
+        const badge = tab.href === '/profile' ? waiting : 0;
+
         return (
           <Link
             key={tab.href}
@@ -48,10 +59,26 @@ export function TabBar() {
               active ? 'text-brand' : 'text-ink-subtle hover:text-ink-muted'
             }`}
           >
-            <span aria-hidden="true" className="text-lg leading-none">
+            <span aria-hidden="true" className="relative text-lg leading-none">
               {tab.glyph}
+              {badge > 0 ? (
+                <span className="absolute -right-2.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold leading-none text-white">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              ) : null}
             </span>
             {tab.label}
+            {/*
+              The glyph and its badge are `aria-hidden`, so the count is said
+              here instead — a screen reader announcing "Profile" with no
+              mention of the three things waiting behind it would be the one
+              reader that never learns they exist.
+            */}
+            {badge > 0 ? (
+              <span className="sr-only">
+                , {badge} waiting on you
+              </span>
+            ) : null}
           </Link>
         );
       })}

@@ -86,6 +86,8 @@ export function useMyTasks(date: string) {
 export function useReviewQueue() {
   return useQuery({
     queryKey: taskKeys.review,
+    /** Same reason as `useInvites`: the Profile tab's badge is built from this. */
+    refetchInterval: 60_000,
     queryFn: async () =>
       unwrap<{ tasks: Task[] }>(await api.api.tasks.$get({ query: { scope: 'review' } })),
   });
