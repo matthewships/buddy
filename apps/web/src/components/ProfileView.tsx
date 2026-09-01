@@ -112,7 +112,15 @@ export function ProfileView({
       ) : null}
 
       <ChipList title="Favourite topics" values={labels(TOPICS, profile.topics)} />
-      <ChipList title="Hobbies and interests" values={labels(INTERESTS, profile.interests)} />
+      <ChipList
+        title="Hobbies and interests"
+        // `custom` is the one chip whose label is the user's own word.
+        values={labels(INTERESTS, profile.interests).map((value, index) =>
+          profile.interests[index] === 'custom' && profile.interestText?.trim()
+            ? profile.interestText.trim()
+            : value,
+        )}
+      />
 
       {profile.buddyProfile?.about ? (
         <Card>

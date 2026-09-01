@@ -59,6 +59,7 @@ export const userRoutes = new Hono<AppEnv>()
       bio: user.bio,
       topics: tags.topics,
       interests: tags.interests,
+      interestText: user.interestText,
       isOpenBuddy: user.isOpenBuddy,
       memberSince: user.createdAt,
       lastSeenAt: user.lastSeenAt,

@@ -12,11 +12,11 @@ import {
   MAX_AVAILABILITY,
   MAX_BIO,
   MAX_CITY,
-  MAX_GOALS,
   MAX_GOAL_TEXT,
   MAX_HEADLINE,
   MAX_INSTITUTION,
   MAX_INTERESTS,
+  MAX_INTEREST_TEXT,
   MAX_MAJOR_TEXT,
   MAX_TOPICS,
   TOPICS,
@@ -62,6 +62,7 @@ export default function EditProfile() {
     goalText: string;
     topics: string[];
     interests: string[];
+    interestText: string;
     bio: string;
     headline: string;
     availability: string;
@@ -79,10 +80,13 @@ export default function EditProfile() {
       majorKey: loaded.majorKey,
       majorText: loaded.majorText ?? '',
       country: loaded.country,
-      goalKeys: [loaded.goalKey, loaded.goalKey2].filter((key): key is string => Boolean(key)),
+      // The list, not the indexed pair: seeding from the pair would silently
+      // drop every goal past the second the moment this form saved.
+      goalKeys: loaded.goalKeys,
       goalText: loaded.goalText ?? '',
       topics: loaded.topics,
       interests: loaded.interests,
+      interestText: loaded.interestText ?? '',
       bio: loaded.bio ?? '',
       headline: loaded.buddyProfile?.headline ?? '',
       availability: loaded.buddyProfile?.availability ?? '',
@@ -106,9 +110,11 @@ export default function EditProfile() {
 
   const needsMajorText = form.majorKey === 'custom';
   const needsGoalText = form.goalKeys.includes('custom');
+  const needsInterestText = form.interests.includes('custom');
   const canSave =
     (!needsMajorText || form.majorText.trim().length > 0) &&
     (!needsGoalText || form.goalText.trim().length > 0) &&
+    (!needsInterestText || form.interestText.trim().length > 0) &&
     form.goalKeys.length > 0;
 
   const save = () => {
@@ -120,11 +126,12 @@ export default function EditProfile() {
         majorKey: form.majorKey,
         majorText: optional(form.majorText),
         country: form.country,
-        goalKey: form.goalKeys[0],
-        goalKey2: form.goalKeys[1] ?? null,
+        // The server derives the indexed pair from the list's first two.
+        goalKeys: form.goalKeys,
         goalText: optional(form.goalText),
         topics: form.topics,
         interests: form.interests,
+        ...(needsInterestText ? { interestText: optional(form.interestText) } : {}),
         bio: optional(form.bio),
         buddyProfile: {
           headline: optional(form.headline) ?? undefined,
@@ -191,10 +198,9 @@ export default function EditProfile() {
         <p className="mb-2 text-sm font-semibold text-ink-muted">Goals</p>
         <div className="flex flex-col gap-4">
           <Chips
-            label={`Goal (max ${MAX_GOALS})`}
+            label="Goals"
             options={GOALS}
             selected={form.goalKeys}
-            max={MAX_GOALS}
             onChange={(keys) => patch({ goalKeys: keys })}
           />
           <Field
@@ -256,6 +262,20 @@ export default function EditProfile() {
           max={MAX_INTERESTS}
           onChange={(keys) => patch({ interests: keys })}
         />
+        {form.interests.includes('custom') ? (
+          <div className="mt-3">
+            <Field
+              label="What is it?"
+              value={form.interestText}
+              onChangeText={(value) => patch({ interestText: value })}
+              maxLength={MAX_INTEREST_TEXT}
+              placeholder="e.g. Falconry"
+              error={
+                needsInterestText && !form.interestText.trim() ? 'Say what that hobby is' : null
+              }
+            />
+          </div>
+        ) : null}
       </Card>
 
       <Card>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { EDUCATION_LEVELS, MAJORS, MAX_HANDLE, MIN_HANDLE } from '@buddy/shared';
 
@@ -16,20 +16,21 @@ function labelFor(list: readonly { key: string; label: string }[], key: string |
 }
 
 /**
- * The single write that saves everything the questions collected, and the point
- * at which the API stamps `onboarded_at`.
+ * The end of signup: the answers are written, and the only thing left to ask
+ * for is a photo.
  *
- * The photo is asked for here rather than as a tenth question. It is the one
- * answer that needs an account to exist — the upload is authenticated and keyed
- * by user id — and putting a file picker in the middle of the flow is the kind
- * of step people abandon on. Skipping is a plain choice, not a penalty; the
- * profile prompts for it later.
+ * The save happens on arrival rather than behind a Finish button. Every answer
+ * was given several screens ago — asking someone to confirm what they already
+ * typed is a step that exists for the code's benefit, not theirs, and it used
+ * to make the photo a *second* action gated behind the first ("Available once
+ * your profile is saved"). Now the profile is saved by the time this screen has
+ * finished rendering, and the photo is a genuine choice: add one, or don't.
  *
- * So is the handle, in one specific case. Someone who registered on the mobile
- * app and never finished lands here already signed in, which means the flow
- * skipped `/register` — the only screen that asks for a handle. Onboarding
- * cannot complete without one, so without this field they would answer every
- * question, fail to complete, and be sent back to the first question forever.
+ * The handle is the one thing that can still block the save, and only in one
+ * case. Someone who registered on the mobile app and never finished lands here
+ * already signed in, which means the flow skipped `/register` — the only screen
+ * that asks for a handle. Onboarding cannot complete without one, so they get
+ * the field and an explicit button; everyone else never sees either.
  */
 export default function OnboardingDone() {
   const router = useRouter();
@@ -60,17 +61,25 @@ export default function OnboardingDone() {
         ? 'That handle is taken'
         : null;
 
-  const canFinish = !needsHandle || (handleWellFormed && !handleTaken);
+  const canSave = !needsHandle || (handleWellFormed && !handleTaken);
 
   const level = labelFor(EDUCATION_LEVELS, draft.educationLevel);
   const major = draft.majorText.trim() || labelFor(MAJORS, draft.majorKey);
 
-  // Two phases on one screen: save, then offer the photo. The upload is
-  // authenticated and keyed by user id, so it cannot run until the profile
-  // exists — and navigating away on save would take the offer with it.
-  const finish = () => {
-    updateMe.mutate(draftToPatch(draft), { onSuccess: () => setSaved(true) });
-  };
+  const save = () => updateMe.mutate(draftToPatch(draft), { onSuccess: () => setSaved(true) });
+
+  /**
+   * Fired once, on arrival. The ref rather than `updateMe.isIdle` because React
+   * runs effects twice in development, and two PATCHes racing would have the
+   * second overwrite nothing but still show its error.
+   */
+  const autoSaved = useRef(false);
+  useEffect(() => {
+    if (autoSaved.current || !me.data || needsHandle || saved) return;
+    autoSaved.current = true;
+    // `save` closes over the draft, which no longer changes on this screen.
+    save();
+  }, [me.data, needsHandle, saved, save]);
 
   const enter = () => {
     const token = draft.inviteToken;
@@ -81,9 +90,9 @@ export default function OnboardingDone() {
      * group they were actually invited to.
      *
      * A failure is not worth blocking on: the account is real and the profile is
-     * saved, so the worst case is landing on Buddies with the link still in the
-     * message that brought them — which is recoverable. Being stuck on a "you're
-     * all set" screen would not be.
+     * saved, so the worst case is landing on the groups tab with the link still
+     * in the message that brought them — which is recoverable. Being stuck on a
+     * "you're all set" screen would not be.
      */
     if (token) {
       acceptInvite.mutate(token, {
@@ -93,52 +102,91 @@ export default function OnboardingDone() {
         },
         onError: () => {
           draft.reset();
-          router.replace('/buddies');
+          router.replace('/groups');
         },
       });
       return;
     }
 
     // Cleared only once the server has the answers: a failed write leaves them
-    // in place so "Finish" can simply be pressed again.
+    // in place so the save can simply be retried.
     draft.reset();
-    // Buddies, not the group tab: a new account has no group yet, so anything
-    // else would be an empty screen. Finding someone is the first real thing.
-    router.replace('/buddies');
+    /**
+     * Groups, not Buddies. The first real thing to do in Buddy is to write down
+     * what you are going to finish today and start the clock on it — and a
+     * group is where a task lives. Finding a buddy matters, but it is the
+     * second move, and sending a request to a stranger is a worse first
+     * experience than doing one thing you said you would do.
+     */
+    router.replace('/groups');
   };
+
+  const summary = [level, major, draft.institution.trim()].filter(Boolean).join(' · ');
+  const saving = updateMe.isPending;
 
   return (
     <Screen>
-      <div className="flex flex-1 flex-col justify-center gap-4">
-        <h1 className="text-3xl font-bold text-ink">
-          {saved ? 'One last thing' : "You're all set"}
-        </h1>
-        <p className="text-base text-ink-muted">
-          {[level, major, draft.institution.trim()].filter(Boolean).join(' · ') ||
-            'Your profile is ready.'}
-        </p>
+      <div className="flex flex-col gap-5 pb-8 pt-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold text-ink">You&rsquo;re all set</h1>
+          <p className="text-base text-ink-muted">
+            {summary || 'Your profile is ready.'}
+          </p>
+        </div>
+
+        {needsHandle && !saved ? (
+          <Card>
+            <Field
+              label="Pick a handle"
+              value={draft.handle}
+              onChangeText={(value) => draft.set({ handle: value.replace(/\s/g, '') })}
+              error={handleError}
+              hint="How buddies find and invite you"
+              placeholder="e.g. alex_h"
+              autoCapitalize="none"
+              autoComplete="username"
+            />
+            <div className="mt-3">
+              <Button
+                label="Save and continue"
+                onClick={save}
+                loading={saving}
+                disabled={saving || !canSave}
+              />
+            </div>
+            <ErrorText message={updateMe.error?.message} />
+          </Card>
+        ) : null}
 
         <Card>
-          <div className="flex flex-row items-center gap-4">
-            <Avatar avatarKey={null} displayName={draft.displayName || 'You'} size={56} />
-            <div className="flex flex-1 flex-col">
-              <p className="text-base font-semibold text-ink">Add a photo?</p>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Avatar
+              avatarKey={me.data?.avatarKey ?? null}
+              displayName={draft.displayName || me.data?.displayName || 'You'}
+              size={88}
+            />
+            <div className="flex flex-col gap-1">
+              <p className="text-lg font-semibold text-ink">
+                {uploadAvatar.isSuccess ? 'Looking good' : 'Add a photo'}
+              </p>
               <p className="text-sm text-ink-muted">
                 Optional — but a directory of blank circles is harder to choose from.
               </p>
             </div>
             <Button
-              label={uploadAvatar.isPending ? 'Uploading…' : 'Choose'}
-              variant="ghost"
-              disabled={uploadAvatar.isPending || !saved}
+              label={
+                uploadAvatar.isPending
+                  ? 'Uploading…'
+                  : uploadAvatar.isSuccess
+                    ? 'Choose another'
+                    : 'Choose a photo'
+              }
+              variant="secondary"
+              disabled={uploadAvatar.isPending || (!saved && !uploadAvatar.isSuccess)}
               onClick={() => fileInputRef.current?.click()}
             />
           </div>
-          {!saved ? (
-            <p className="mt-2 text-xs text-ink-subtle">
-              Available once your profile is saved.
-            </p>
-          ) : null}
+
           <input
             ref={fileInputRef}
             type="file"
@@ -154,43 +202,38 @@ export default function OnboardingDone() {
           <ErrorText message={uploadAvatar.error?.message} />
         </Card>
 
-        {needsHandle && !saved ? (
-          <Field
-            label="Pick a handle"
-            value={draft.handle}
-            onChangeText={(value) => draft.set({ handle: value.replace(/\s/g, '') })}
-            error={handleError}
-            hint="How buddies find and invite you"
-            placeholder="e.g. alex_h"
-            autoCapitalize="none"
-            autoComplete="username"
-          />
+        {/*
+          The save is silent when it works, so it only ever speaks up to say it
+          failed — with the retry beside it, because there is no other way off
+          this screen.
+        */}
+        {!saved && !needsHandle && updateMe.isError ? (
+          <Card className="border-danger">
+            <p className="text-sm text-ink">Your answers didn&rsquo;t save.</p>
+            <ErrorText message={updateMe.error?.message} />
+            <div className="mt-2">
+              <Button label="Try again" variant="secondary" onClick={save} loading={saving} />
+            </div>
+          </Card>
         ) : null}
 
-        <ErrorText message={updateMe.error?.message} />
-
-        <div className="mt-2">
-          {saved ? (
-            <Button
-              label={
-                draft.inviteToken
-                  ? 'Go to the group'
-                  : uploadAvatar.isSuccess
-                    ? 'Find a buddy'
-                    : 'Skip for now'
-              }
-              onClick={enter}
-              loading={acceptInvite.isPending}
-              disabled={uploadAvatar.isPending || acceptInvite.isPending}
-            />
-          ) : (
-            <Button
-              label="Finish"
-              onClick={finish}
-              loading={updateMe.isPending}
-              disabled={updateMe.isPending || !canFinish}
-            />
-          )}
+        <div className="mt-1 flex flex-col gap-2">
+          <Button
+            label={draft.inviteToken ? 'Go to the group' : "Let's start"}
+            onClick={enter}
+            loading={acceptInvite.isPending}
+            disabled={!saved || uploadAvatar.isPending || acceptInvite.isPending}
+          />
+          {/*
+            Skipping the photo is the same action as finishing with one, so it
+            is the same button — named for where it goes, not for what it
+            declines. The line below is what makes the choice visible.
+          */}
+          {!uploadAvatar.isSuccess ? (
+            <p className="text-center text-xs text-ink-subtle">
+              You can add a photo later from your profile.
+            </p>
+          ) : null}
         </div>
       </div>
     </Screen>

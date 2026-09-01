@@ -107,7 +107,15 @@ export interface Me extends StudentFields {
   timezone: string;
   goalKey: string | null;
   goalKey2: string | null;
+  /**
+   * Every goal, in pick order. The server falls back to the indexed pair for an
+   * account that predates the list, so this is always the complete answer and
+   * `goalKey`/`goalKey2` are only the two the directory matches on.
+   */
+  goalKeys: string[];
   goalText: string | null;
+  /** What `custom` means, when it is one of the interests. */
+  interestText: string | null;
   occupationKey: string | null;
   occupationText: string | null;
   isOpenBuddy: boolean;

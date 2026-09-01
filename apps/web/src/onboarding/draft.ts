@@ -31,11 +31,13 @@ interface DraftValues {
   country: string | null;
   topics: string[];
   interests: string[];
+  /** What `custom` means, when `Other` is one of the interests. */
+  interestText: string;
   bio: string;
   /**
-   * The picked goals, in the order they were chosen, capped at MAX_GOALS. An
-   * ordered array rather than two fields because the first pick is the primary
-   * goal and deselecting it should promote the second, which a pair of
+   * The picked goals, in the order they were chosen, and no longer capped. An
+   * ordered array rather than numbered fields because the first pick is the
+   * primary goal and deselecting it should promote the second, which a set of
    * independent slots makes awkward.
    */
   goalKeys: string[];
@@ -73,6 +75,7 @@ const initial: DraftValues = {
   country: null,
   topics: [],
   interests: [],
+  interestText: '',
   bio: '',
   goalKeys: [],
   goalText: '',
@@ -151,10 +154,12 @@ export function draftToPatch(draft: DraftValues): Record<string, unknown> {
     displayName: optional(draft.displayName),
     ...(draft.handle.trim() ? { handle: draft.handle.trim().toLowerCase() } : {}),
     timezone: draft.timezone,
-    goalKey: draft.goalKeys[0] ?? null,
-    // Explicitly null rather than omitted, so clearing the second goal on a
-    // later edit actually clears it instead of leaving the old value stored.
-    goalKey2: draft.goalKeys[1] ?? null,
+    /**
+     * The whole list. The server derives `goalKey` and `goalKey2` from its
+     * first two entries, so sending those as well would be two sources for one
+     * answer — and the picker is no longer capped at two.
+     */
+    goalKeys: draft.goalKeys,
     goalText: optional(draft.goalText),
     ...(draft.educationLevel ? { educationLevel: draft.educationLevel } : {}),
     institution: optional(draft.institution),
@@ -165,6 +170,7 @@ export function draftToPatch(draft: DraftValues): Record<string, unknown> {
     bio: optional(draft.bio),
     topics: draft.topics,
     interests: draft.interests,
+    ...(draft.interests.includes('custom') ? { interestText: optional(draft.interestText) } : {}),
     isOpenBuddy: draft.isOpenBuddy,
     // The buddy profile only exists for users open to requests (§2.1).
     ...(draft.isOpenBuddy && {

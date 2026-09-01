@@ -20,8 +20,12 @@ interface MultiChipsProps {
   label: string;
   /** Multi-select: the chosen keys, in the order they were picked. */
   selected: readonly string[];
-  /** How many may be picked at once. Chips beyond the cap go disabled. */
-  max: number;
+  /**
+   * How many may be picked at once. Chips beyond the cap go disabled.
+   * Omit it for an uncapped question — goals are one, since how many things
+   * someone is working toward is not ours to decide.
+   */
+  max?: number;
   onChange: (keys: string[]) => void;
   onSelect?: never;
 }
@@ -31,16 +35,20 @@ interface MultiChipsProps {
  * packages/shared, so this component never hardcodes a list.
  *
  * Single- and multi-select are one component because they are the same control
- * with a different arity, and the goal screen is the only caller that needs the
- * second form. The two prop shapes are a discriminated union rather than a
- * `multiple` boolean so a caller cannot pass a `string[]` with an `onSelect`
- * that takes a `string`, which the boolean version could not prevent.
+ * with a different arity. The two prop shapes are a discriminated union rather
+ * than a `multiple` boolean so a caller cannot pass a `string[]` with an
+ * `onSelect` that takes a `string`, which the boolean version could not
+ * prevent.
+ *
+ * The discriminant is the handler, not `max`: an uncapped multi-select is a
+ * real question (goals), and keying arity off a cap would have made "no limit"
+ * unexpressible.
  */
 export function Chips(props: SingleChipsProps | MultiChipsProps) {
   const { options, label } = props;
-  const multi = props.max !== undefined;
+  const multi = props.onChange !== undefined;
   const chosen = multi ? (props.selected as readonly string[]) : [];
-  const atCap = multi && chosen.length >= props.max!;
+  const atCap = multi && props.max !== undefined && chosen.length >= props.max;
 
   const isActive = (key: string) =>
     multi ? chosen.includes(key) : key === (props.selected as string | null);
@@ -54,7 +62,9 @@ export function Chips(props: SingleChipsProps | MultiChipsProps) {
     // works even when every remaining chip is disabled.
     const next = chosen.includes(key)
       ? chosen.filter((k) => k !== key)
-      : [...chosen, key].slice(0, props.max!);
+      : props.max === undefined
+        ? [...chosen, key]
+        : [...chosen, key].slice(0, props.max);
     props.onChange!(next);
   };
 

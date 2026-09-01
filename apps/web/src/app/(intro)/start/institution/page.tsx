@@ -22,7 +22,6 @@ export default function InstitutionStep() {
   return (
     <QuestionScreen
       title="Where do you study?"
-      subtitle="Type it however you say it. We match people at the same place even when they spell it differently."
       canContinue={institution.trim().length > 0}
       skipLabel="Skip for now"
     >

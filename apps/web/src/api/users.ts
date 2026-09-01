@@ -18,6 +18,8 @@ export interface StudentFields {
   bio: string | null;
   topics: string[];
   interests: string[];
+  /** The word behind a `custom` interest, so `Other` never renders as "Other". */
+  interestText: string | null;
 }
 
 export interface PublicProfile extends StudentFields {

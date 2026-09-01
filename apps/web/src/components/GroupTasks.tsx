@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { MAX_PROOF_TEXT, MAX_TASK_TITLE } from '@buddy/shared';
 
@@ -29,8 +29,9 @@ import { Field } from './Field';
 import { RatingPicker } from './RatingPicker';
 import { ReportSheet } from './ReportSheet';
 import { Spinner } from './Spinner';
-import { TaskClock, formatEstimate } from './TaskClock';
-import { StatusPill, TaskRow } from './TaskRow';
+import { formatEstimate } from './TaskClock';
+import { TaskRing } from './TaskRing';
+import { StatusPill } from './TaskRow';
 
 /**
  * The group's tasks, one member at a time (§2.4).
@@ -40,18 +41,23 @@ import { StatusPill, TaskRow } from './TaskRow';
  * group it was already stored against — and made "whose tasks am I looking at?"
  * a question the screen could not answer. Here the member strip *is* the answer.
  *
- * The section at the top is what Today's cross-group review queue became. It is
- * per-group now because the reviewer is, too: with a Buddy named, the person who
- * reviews is a property of the group rather than whoever arrives first.
+ * The strip is also the group's member list. There was a second card below the
+ * tasks that listed the same people again, in a screen already made of stacked
+ * boxes; the avatars were always the better list, because they are the control
+ * as well as the roster. Inviting hangs off the end of it for the same reason —
+ * "add a person" belongs among the people.
  */
 export function GroupTasks({
   group,
   members,
   viewerId,
+  onInvite,
 }: {
   group: GroupDetail;
   members: GroupMember[];
   viewerId: string;
+  /** Opens the invite sheet. The strip's last chip is the way in. */
+  onInvite: () => void;
 }) {
   const tasks = useGroupTasks(group.id);
   const [selectedId, setSelectedId] = useState(viewerId);
@@ -75,91 +81,193 @@ export function GroupTasks({
   );
 
   return (
-    <>
+    <div className="flex flex-col gap-4">
+      {/*
+        The member strip. A row of avatars rather than a dropdown: in a group of
+        three or four, seeing everyone at once is the point — you are choosing a
+        person, not filtering a list. Each carries how much that person still
+        has open today, so the strip answers "how is everyone doing?" before
+        anything is tapped.
+      */}
+      <div
+        role="tablist"
+        aria-label="Whose tasks to show"
+        className="-mx-5 flex flex-row gap-2 overflow-x-auto px-5 pb-1"
+      >
+        {members.map((member) => {
+          const active = member.id === selected?.id;
+          const open = all.filter(
+            (task) =>
+              task.userId === member.id &&
+              task.dueDate === today &&
+              task.status !== 'approved',
+          ).length;
+          const busy = all.some((task) => task.userId === member.id && isRunning(task));
+
+          return (
+            <button
+              key={member.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSelectedId(member.id)}
+              className={`flex w-20 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-2xl border px-2 py-2 transition-colors ${
+                active
+                  ? 'border-brand bg-brand-muted'
+                  : 'border-transparent hover:border-surface-border'
+              }`}
+            >
+              <span className="relative">
+                <Avatar avatarKey={member.avatarKey} displayName={member.displayName} size={44} />
+                {/* A running clock is the one thing worth seeing from here. */}
+                {busy ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-0.5 -top-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-surface bg-brand"
+                  />
+                ) : null}
+              </span>
+              <span
+                className={`max-w-16 truncate text-xs ${active ? 'font-semibold text-ink' : 'text-ink-muted'}`}
+              >
+                {member.id === viewerId ? 'You' : member.displayName.split(' ')[0]}
+              </span>
+              <span className="text-[10px] text-ink-subtle">{open ? `${open} open` : 'clear'}</span>
+            </button>
+          );
+        })}
+
+        {/* Inviting is part of the roster, not a section of its own. */}
+        <button
+          type="button"
+          onClick={onInvite}
+          className="flex w-20 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-2xl border border-transparent px-2 py-2 transition-colors hover:border-surface-border"
+        >
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-surface-border text-xl leading-none text-ink-subtle">
+            +
+          </span>
+          <span className="text-xs text-ink-muted">Invite</span>
+        </button>
+      </div>
+
       {waitingOnMe.length > 0 ? (
-        <Card className="border-warning">
-          <p className="mb-2 text-sm font-semibold text-ink-muted">
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-warning">
             Waiting on you · {waitingOnMe.length}
-          </p>
-          <div className="flex flex-col gap-3">
+          </h2>
+          <div className="flex flex-col gap-2">
             {waitingOnMe.map((task) => (
               <ReviewTask key={task.id} task={task} />
             ))}
           </div>
-        </Card>
+        </section>
       ) : null}
 
-      <Card>
-        <p className="mb-3 text-sm font-semibold text-ink-muted">Tasks</p>
-
-        {/*
-          The member toggle. A row of avatars rather than a dropdown: in a group
-          of three or four, seeing everyone at once is the point — you are
-          choosing a person, not filtering a list.
-        */}
-        <div
-          role="tablist"
-          aria-label="Whose tasks to show"
-          className="mb-4 flex flex-row gap-2 overflow-x-auto pb-1"
-        >
-          {members.map((member) => {
-            const active = member.id === selected?.id;
-            const pending = all.filter(
-              (task) => task.userId === member.id && task.dueDate === today,
-            ).length;
-            return (
-              <button
-                key={member.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setSelectedId(member.id)}
-                className={`flex shrink-0 cursor-pointer flex-col items-center gap-1 rounded-2xl border px-3 py-2 transition-colors ${
-                  active
-                    ? 'border-brand bg-surface-muted'
-                    : 'border-transparent hover:border-surface-border'
-                }`}
-              >
-                <Avatar avatarKey={member.avatarKey} displayName={member.displayName} size={40} />
-                <span
-                  className={`max-w-16 truncate text-xs ${active ? 'font-semibold text-ink' : 'text-ink-muted'}`}
-                >
-                  {member.id === viewerId ? 'You' : member.displayName.split(' ')[0]}
-                </span>
-                <span className="text-[10px] text-ink-subtle">{pending} today</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {viewingSelf ? <AddTask groupId={group.id} /> : null}
-
+      <section className="flex flex-col gap-2">
         {forSelected.length === 0 ? (
-          <p className="text-sm text-ink-subtle">
+          <p className="px-1 py-2 text-sm text-ink-subtle">
             {viewingSelf
               ? "Nothing planned yet. Write down what you'll finish today."
               : `${selected?.displayName ?? 'They'} hasn't planned anything yet.`}
           </p>
         ) : (
-          <div className="mt-3 flex flex-col gap-3">
-            {forSelected.map((task) =>
-              viewingSelf ? (
-                <MyTask key={task.id} task={task} />
-              ) : canReview(group, members, task, viewerId) && task.status === 'done' ? (
-                <ReviewTask key={task.id} task={task} />
-              ) : (
-                <TheirTask key={task.id} task={task} />
-              ),
-            )}
-          </div>
+          forSelected.map((task) =>
+            viewingSelf ? (
+              <MyTask key={task.id} task={task} />
+            ) : canReview(group, members, task, viewerId) && task.status === 'done' ? (
+              <ReviewTask key={task.id} task={task} />
+            ) : (
+              <TheirTask key={task.id} task={task} />
+            ),
+          )
         )}
-      </Card>
-    </>
+
+        {viewingSelf ? <AddTask groupId={group.id} /> : null}
+      </section>
+    </div>
   );
 }
 
+/**
+ * The shell every task is drawn in: something on the left that says what state
+ * it is in, the title, and whatever the viewer can do about it underneath.
+ *
+ * One shell for all three cases — mine, theirs, and mine-to-review — because
+ * they are the same object seen from different sides, and a screen that draws
+ * them three ways makes the reader work out that they are the same thing.
+ */
+function TaskShell({
+  leading,
+  title,
+  meta,
+  trailing,
+  accent,
+  children,
+}: {
+  leading: ReactNode;
+  title: string;
+  meta?: ReactNode;
+  trailing?: ReactNode;
+  /** Border colour, for a task that wants the eye — running, or awaiting you. */
+  accent?: 'brand' | 'warning' | null;
+  children?: ReactNode;
+}) {
+  const border =
+    accent === 'brand'
+      ? 'border-brand'
+      : accent === 'warning'
+        ? 'border-warning'
+        : 'border-surface-border';
+
+  return (
+    <div className={`flex flex-col rounded-2xl border bg-surface p-3 ${border}`}>
+      <div className="flex flex-row items-center gap-3">
+        {leading}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="truncate text-base font-medium text-ink">{title}</p>
+          {meta ? <div className="flex flex-row items-center gap-2 text-xs">{meta}</div> : null}
+        </div>
+        {trailing}
+      </div>
+      {children ? <div className="mt-3 flex flex-col gap-2">{children}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * The dot that stands in for the ring on a task that is not running. Same
+ * footprint as the ring, so a list does not reflow when a clock starts.
+ */
+function StatusDot({ task }: { task: Task }) {
+  const tone =
+    task.status === 'approved'
+      ? 'border-success text-success'
+      : task.status === 'done'
+        ? 'border-brand text-brand'
+        : task.status === 'missed'
+          ? 'border-danger text-danger'
+          : task.status === 'proof_requested'
+            ? 'border-warning text-warning'
+            : 'border-surface-border text-ink-subtle';
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-full border-2 ${tone}`}
+    >
+      {task.estimatedMinutes !== null ? (
+        <span className="text-xs font-semibold">{formatEstimate(task.estimatedMinutes)}</span>
+      ) : (
+        <span className="text-lg leading-none">·</span>
+      )}
+    </span>
+  );
+}
+
+/** Adding a task: a row shaped like a task, which opens into the form. */
 function AddTask({ groupId }: { groupId: string }) {
   const createTask = useCreateTask();
+  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [minutes, setMinutes] = useState<number>(30);
 
@@ -175,25 +283,67 @@ function AddTask({ groupId }: { groupId: string }) {
         dueDate: localToday(),
         estimatedMinutes: minutes,
       },
-      { onSuccess: () => setTitle('') },
+      {
+        onSuccess: () => {
+          setTitle('');
+          // Left open: planning a day is usually more than one task, and
+          // reopening the form for each is a tap that buys nothing.
+        },
+      },
     );
   };
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex cursor-pointer flex-row items-center gap-3 rounded-2xl border border-dashed border-surface-border bg-surface/50 p-3 text-left transition-colors hover:border-brand hover:bg-surface"
+      >
+        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-surface-border text-2xl leading-none text-ink-subtle">
+          +
+        </span>
+        <span className="flex flex-col">
+          <span className="text-base font-medium text-ink">Add a task</span>
+          <span className="text-xs text-ink-subtle">Something you&rsquo;ll finish today</span>
+        </span>
+      </button>
+    );
+  }
+
   return (
-    <div className="mb-2 flex flex-col gap-3 rounded-2xl border border-surface-border bg-surface-muted p-3">
+    <div className="flex flex-col gap-3 rounded-2xl border border-brand bg-surface p-3">
       <Field
-        label="Add a task for today"
+        label="What will you finish today?"
         value={title}
         onChangeText={setTitle}
         maxLength={MAX_TASK_TITLE}
         placeholder="Read 20 pages of the textbook"
         onSubmit={submit}
+        autoFocus
       />
 
       <DurationInput minutes={minutes} onChange={setMinutes} error={timeError} />
 
       <ErrorText message={createTask.error?.message} />
-      <Button label="Add task" disabled={!canAdd} loading={createTask.isPending} onClick={submit} />
+      <div className="flex flex-row gap-2">
+        <Button
+          className="flex-1"
+          label="Add task"
+          disabled={!canAdd}
+          loading={createTask.isPending}
+          onClick={submit}
+        />
+        <Button
+          label="Done adding"
+          variant="ghost"
+          className="w-auto"
+          onClick={() => {
+            setOpen(false);
+            setTitle('');
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -218,48 +368,98 @@ function MyTask({ task }: { task: Task }) {
    * missed, still has to be closable without starting a clock first.
    */
   const canStart = !running && task.estimatedMinutes !== null;
+  const open = task.status === 'planned' || task.status === 'missed';
 
   return (
-    <TaskRow task={task}>
-      {task.estimatedMinutes !== null && !running ? (
-        <p className="text-xs text-ink-subtle">Planned for {formatEstimate(task.estimatedMinutes)}</p>
-      ) : null}
-
-      {running && task.startedAt && task.estimatedMinutes !== null ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-brand bg-surface-muted p-3">
-          <div className="flex flex-row items-center justify-between">
-            <span className="text-sm font-semibold text-ink">In progress</span>
-            <TaskClock startedAt={task.startedAt} estimatedMinutes={task.estimatedMinutes} />
-          </div>
+    <TaskShell
+      accent={running ? 'brand' : null}
+      leading={
+        running && task.startedAt && task.estimatedMinutes !== null ? (
+          <TaskRing startedAt={task.startedAt} estimatedMinutes={task.estimatedMinutes} />
+        ) : (
+          <StatusDot task={task} />
+        )
+      }
+      title={task.title}
+      meta={
+        running ? (
+          <span className="font-semibold text-brand">In progress</span>
+        ) : (
+          <StatusPill status={task.status} />
+        )
+      }
+      trailing={
+        task.status === 'planned' && !running ? (
+          <button
+            type="button"
+            aria-label={`Delete ${task.title}`}
+            disabled={deleteTask.isPending}
+            onClick={() => deleteTask.mutate(task.id)}
+            className="cursor-pointer rounded-full px-2 py-1 text-lg leading-none text-ink-subtle transition-colors hover:text-danger disabled:cursor-not-allowed"
+          >
+            ×
+          </button>
+        ) : null
+      }
+    >
+      {running ? (
+        <>
           <p className="text-xs text-ink-muted">
             Group chat is closed to you until this task ends. Finishing costs nothing; dropping it
             costs 10 points.
           </p>
-          {confirmingAbandon ? (
-            <div className="flex flex-row gap-2">
+          <div className="flex flex-row gap-2">
+            <Button
+              className="flex-1"
+              label={expanded ? 'Submit as done' : 'Done'}
+              loading={markDone.isPending}
+              onClick={() => {
+                if (!expanded) {
+                  setExpanded(true);
+                  return;
+                }
+                markDone.mutate({
+                  id: task.id,
+                  ...(proof.trim() ? { proofText: proof.trim() } : {}),
+                });
+              }}
+            />
+            {confirmingAbandon ? (
               <Button
                 label="Yes, drop it (−10)"
                 variant="danger"
+                className="w-auto"
                 loading={abandon.isPending}
                 onClick={() =>
                   abandon.mutate(task.id, { onSuccess: () => setConfirmingAbandon(false) })
                 }
               />
+            ) : (
               <Button
-                label="Keep going"
+                label="Drop"
                 variant="ghost"
-                onClick={() => setConfirmingAbandon(false)}
+                className="w-auto"
+                onClick={() => setConfirmingAbandon(true)}
               />
-            </div>
-          ) : (
-            <Button label="Drop this task" variant="ghost" onClick={() => setConfirmingAbandon(true)} />
-          )}
-          <ErrorText message={abandon.error?.message} />
-        </div>
+            )}
+          </div>
+          {expanded ? (
+            <Field
+              label="What did you do? (optional)"
+              value={proof}
+              onChangeText={setProof}
+              maxLength={MAX_PROOF_TEXT}
+              multiline
+              rows={3}
+              placeholder="Chapters 1-2, notes written up"
+            />
+          ) : null}
+          <ErrorText message={abandon.error?.message ?? markDone.error?.message} />
+        </>
       ) : null}
 
-      {task.status === 'planned' || task.status === 'missed' ? (
-        <div className="flex flex-col gap-2">
+      {open && !running ? (
+        <>
           {expanded ? (
             <Field
               label="What did you do? (optional)"
@@ -299,21 +499,12 @@ function MyTask({ task }: { task: Task }) {
                 });
               }}
             />
-            {task.status === 'planned' && !running ? (
-              <Button
-                label="Delete"
-                variant="ghost"
-                className="w-auto"
-                disabled={deleteTask.isPending}
-                onClick={() => deleteTask.mutate(task.id)}
-              />
-            ) : null}
           </div>
-        </div>
+        </>
       ) : null}
 
       {task.status === 'proof_requested' ? (
-        <div className="flex flex-col gap-2">
+        <>
           <p className="text-sm text-warning">
             Your buddy asked for a bit more detail before approving.
           </p>
@@ -333,38 +524,39 @@ function MyTask({ task }: { task: Task }) {
             loading={submitProof.isPending}
             onClick={() => submitProof.mutate({ id: task.id, proofText: proof.trim() })}
           />
-        </div>
+        </>
       ) : null}
 
       {task.status === 'done' ? (
         <p className="text-sm text-ink-muted">Waiting for a review.</p>
       ) : null}
-    </TaskRow>
+    </TaskShell>
   );
 }
 
 /** Someone else's task, when the viewer is not the one who reviews it. */
 function TheirTask({ task }: { task: Task }) {
   const running = isRunning(task);
+
   return (
-    <div className="flex flex-row items-start gap-2 rounded-2xl border border-surface-border bg-surface p-3">
-      <div className="flex flex-1 flex-col gap-1">
-        <p
-          className={`text-base ${task.status === 'approved' ? 'text-ink-muted line-through' : 'text-ink'}`}
-        >
-          {task.title}
-        </p>
-        {running && task.startedAt && task.estimatedMinutes !== null ? (
-          <div className="flex flex-row items-center gap-2">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-brand" aria-hidden="true" />
-            <TaskClock startedAt={task.startedAt} estimatedMinutes={task.estimatedMinutes} />
-          </div>
-        ) : task.estimatedMinutes !== null ? (
-          <p className="text-xs text-ink-subtle">{formatEstimate(task.estimatedMinutes)}</p>
-        ) : null}
-      </div>
-      <StatusPill status={task.status} />
-    </div>
+    <TaskShell
+      accent={running ? 'brand' : null}
+      leading={
+        running && task.startedAt && task.estimatedMinutes !== null ? (
+          <TaskRing startedAt={task.startedAt} estimatedMinutes={task.estimatedMinutes} />
+        ) : (
+          <StatusDot task={task} />
+        )
+      }
+      title={task.title}
+      meta={
+        running ? (
+          <span className="font-semibold text-brand">In progress</span>
+        ) : (
+          <StatusPill status={task.status} />
+        )
+      }
+    />
   );
 }
 
@@ -380,20 +572,32 @@ function ReviewTask({ task }: { task: Task }) {
 
   if (review.isSuccess && award) {
     return (
-      <Card className="border-success">
+      <div className="flex flex-col rounded-2xl border border-success bg-surface p-3">
         <p className="text-base font-semibold text-ink">Reviewed · {task.title}</p>
         <p className="mt-1 text-sm text-ink-muted">
           {task.ownerDisplayName} earned {award.credits + award.dailyBonus} points
           {award.dailyBonus > 0 ? ' (day complete)' : ''} · {award.streak} day streak
         </p>
-      </Card>
+      </div>
     );
   }
 
   return (
-    <TaskRow task={task} showOwner>
+    <TaskShell
+      accent="warning"
+      leading={<StatusDot task={task} />}
+      title={task.title}
+      meta={<span className="text-ink-muted">{task.ownerDisplayName}</span>}
+    >
+      {task.proofText ? (
+        <div className="flex flex-col rounded-xl bg-surface-muted p-3">
+          <p className="text-xs font-semibold text-ink-muted">Proof</p>
+          <p className="text-sm text-ink">{task.proofText}</p>
+        </div>
+      ) : null}
+
       {mode === 'idle' ? (
-        <div className="flex flex-col gap-2">
+        <>
           <ErrorText message={review.error?.message} />
           <div className="flex flex-row gap-2">
             <Button label="Approve" className="flex-1" onClick={() => setMode('approving')} />
@@ -427,9 +631,9 @@ function ReviewTask({ task }: { task: Task }) {
             targetLabel={task.title}
             onClose={() => setReporting(false)}
           />
-        </div>
+        </>
       ) : (
-        <div className="flex flex-col gap-3">
+        <>
           <RatingPicker value={rating} onChange={setRating} />
           <Field
             label="Comment (optional)"
@@ -456,8 +660,8 @@ function ReviewTask({ task }: { task: Task }) {
             />
             <Button label="Back" variant="ghost" className="w-auto" onClick={() => setMode('idle')} />
           </div>
-        </div>
+        </>
       )}
-    </TaskRow>
+    </TaskShell>
   );
 }

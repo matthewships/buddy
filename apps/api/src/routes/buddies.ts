@@ -227,6 +227,7 @@ export const buddyRoutes = new Hono<AppEnv>()
         majorText: users.majorText,
         country: users.country,
         city: users.city,
+        interestText: users.interestText,
         lastSeenAt: users.lastSeenAt,
         headline: buddyProfiles.headline,
         totalCredits: userStats.totalCredits,
@@ -286,6 +287,7 @@ export const buddyRoutes = new Hono<AppEnv>()
         city: row.city,
         topics: splitTags(row.topics),
         interests: splitTags(row.interests),
+        interestText: row.interestText,
         headline: row.headline,
         activity: activityLabel(row.lastSeenAt),
         stats: {
