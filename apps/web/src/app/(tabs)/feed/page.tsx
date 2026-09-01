@@ -82,6 +82,7 @@ export default function Feed() {
 }
 
 function Composer() {
+  const me = useMe();
   const upload = usePostImageUpload();
   const createPost = useCreatePost();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,11 +135,50 @@ function Composer() {
         </div>
       ) : (
         <>
-          <Button
-            label={upload.isPending ? 'Uploading…' : 'Post a photo'}
-            disabled={upload.isPending}
-            onClick={() => fileInputRef.current?.click()}
-          />
+          {/*
+            A prompt, not a call to action. Posting is something you do when you
+            have something to show, so the composer should sit quietly in the
+            list looking like the thing it makes — a row with your face on it —
+            rather than shouting from a full-width button. The picture icon is
+            what says a photo is involved; the words no longer have to.
+          */}
+          <div className="flex flex-row items-center gap-3">
+            <Avatar
+              avatarKey={me.data?.avatarKey ?? null}
+              displayName={me.data?.displayName ?? ''}
+              size={40}
+            />
+            <button
+              type="button"
+              disabled={upload.isPending}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1 cursor-pointer rounded-full border border-surface-border bg-surface-muted px-4 py-2.5 text-left text-sm text-ink-subtle transition-colors hover:border-brand disabled:cursor-not-allowed"
+            >
+              {upload.isPending ? 'Uploading…' : 'Post to feed'}
+            </button>
+            <button
+              type="button"
+              aria-label="Add a photo"
+              title="Add a photo"
+              disabled={upload.isPending}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+              >
+                <rect x="3" y="4" width="14" height="14" rx="2.5" />
+                <circle cx="8" cy="9" r="1.4" />
+                <path d="M3.6 15.5 7.5 12l3.4 3M19 14v6m3-3h-6" />
+              </svg>
+            </button>
+          </div>
           <ErrorText message={upload.error?.message} />
         </>
       )}
