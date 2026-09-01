@@ -6,6 +6,7 @@ import {
   GROUP_INVITE_TTL_MS,
   INVITE_LINK_MAX_USES,
   createGroupSchema,
+  groupLeaderboardQuerySchema,
   inviteToGroupSchema,
   setGroupBuddySchema,
 } from '@buddy/shared';
@@ -19,6 +20,7 @@ import { enforceRateLimit } from '../lib/rate-limit.js';
 import { newInviteToken } from '../lib/tokens.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
+import { groupLeaderboard } from '../services/leaderboard.js';
 import { enqueuePush } from '../services/push.js';
 
 /**
@@ -149,6 +151,27 @@ export const groupRoutes = new Hono<AppEnv>()
       },
       members,
     });
+  })
+
+  /**
+   * This group's standings (§2.5).
+   *
+   * The global board answers "where am I among everyone", which for a new
+   * account is a hundred strangers and a number with nothing to compare it to.
+   * This answers the question the product is actually about: how the people who
+   * agreed to check each other's work are doing, side by side.
+   *
+   * Membership-gated like every other group read, and computed live rather than
+   * snapshotted — see services/leaderboard.ts for why this one skips the cache.
+   */
+  .get('/:id/leaderboard', zValidator('query', groupLeaderboardQuerySchema), async (c) => {
+    const groupId = c.req.param('id');
+    const { scope } = c.req.valid('query');
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, currentUserId(c));
+
+    return c.json({ scope, entries: await groupLeaderboard(client, groupId, scope) });
   })
 
   /**

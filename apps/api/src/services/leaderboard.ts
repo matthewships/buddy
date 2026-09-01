@@ -3,7 +3,7 @@ import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { MAX_PAGE_SIZE, type LeaderboardScope } from '@buddy/shared';
 
 import type { Db } from '../db/client.js';
-import { userStats, users } from '../db/schema.js';
+import { groupMembers, userStats, users } from '../db/schema.js';
 import { isoWeekKey } from '../lib/time.js';
 
 /**
@@ -172,6 +172,87 @@ export async function myRank(
     );
 
   return { rank: Number(ahead?.count ?? 0) + 1, credits };
+}
+
+/**
+ * One group's standings, computed live.
+ *
+ * No KV snapshot, unlike the global board: a group is a handful of rows, the
+ * query is bounded by its membership, and a stale group board is far more
+ * noticeable than a stale global one — you know these people, and you know
+ * whether the task you just got approved has landed.
+ *
+ * Two deliberate differences from the global board:
+ *
+ * **Everybody appears, including on zero.** The global board filters to
+ * `credits > 0` because listing thousands of empty rows is noise. Here the
+ * empty row is the point — a group of four should show four people, and the
+ * member who has not started yet is exactly who the list is talking to.
+ *
+ * **Equal credits share a rank.** With a hundred strangers an arbitrary
+ * tie-break is invisible. With three people on nothing, telling one of them
+ * they are third is a fabrication about people who can see each other.
+ */
+export async function groupLeaderboard(
+  db: Db,
+  groupId: string,
+  scope: LeaderboardScope,
+): Promise<LeaderboardEntry[]> {
+  const weekKey = isoWeekKey();
+
+  /**
+   * Credits as this board counts them, as one SQL expression so the ordering
+   * and the displayed number are the same value.
+   *
+   * Two things collapse into it. `COALESCE` covers the missing stats row of a
+   * member who has never been approved, and the weekly `CASE` applies the same
+   * staleness rule the global board applies in its WHERE: a weekly figure
+   * carrying a past week's key belongs to that week, not this one. Zeroing that
+   * in JavaScript after the query would have ordered the list by a number it
+   * then refused to show.
+   */
+  const credits =
+    scope === 'weekly'
+      ? sql<number>`CASE WHEN ${userStats.weekKey} = ${weekKey} THEN COALESCE(${userStats.weeklyCredits}, 0) ELSE 0 END`
+      : sql<number>`COALESCE(${userStats.totalCredits}, 0)`;
+
+  const rows = await db
+    .select({
+      userId: users.id,
+      handle: users.handle,
+      displayName: users.displayName,
+      avatarKey: users.avatarKey,
+      credits,
+      currentStreak: sql<number>`COALESCE(${userStats.currentStreak}, 0)`,
+    })
+    .from(groupMembers)
+    .innerJoin(users, eq(users.id, groupMembers.userId))
+    // Left, because a member who has never had a task approved has no stats row
+    // at all, and dropping them would quietly shrink the group.
+    .leftJoin(userStats, eq(userStats.userId, users.id))
+    .where(and(eq(groupMembers.groupId, groupId), isNull(users.deletedAt)))
+    .orderBy(desc(credits), desc(userStats.currentStreak), groupMembers.joinedAt);
+
+  let rank = 0;
+  let previous: number | null = null;
+
+  return rows.map((row, index) => {
+    const earned = Number(row.credits);
+    if (earned !== previous) {
+      rank = index + 1;
+      previous = earned;
+    }
+
+    return {
+      rank,
+      userId: row.userId,
+      handle: row.handle,
+      displayName: row.displayName,
+      avatarKey: row.avatarKey,
+      credits: earned,
+      currentStreak: Number(row.currentStreak),
+    };
+  });
 }
 
 export { MAX_PAGE_SIZE };

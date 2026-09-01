@@ -531,6 +531,18 @@ export const leaderboardQuerySchema = paginationSchema.extend({
   scope: z.enum(LEADERBOARD_SCOPES).default('weekly'),
 });
 
+/**
+ * One group's standings. Not the paginated schema: a group is small enough to
+ * return whole, and a cursor over four rows is ceremony.
+ *
+ * All-time by default, unlike the global board. A group's week is emptier than
+ * the whole product's — on a Monday morning every member reads zero, which says
+ * nothing about a group that has been going for a month.
+ */
+export const groupLeaderboardQuerySchema = z.object({
+  scope: z.enum(LEADERBOARD_SCOPES).default('alltime'),
+});
+
 export const createReportSchema = z.object({
   targetType: z.enum(REPORT_TARGETS),
   targetId: ulidSchema,

@@ -6,9 +6,11 @@ import { useState } from 'react';
 import { handleSchema } from '@buddy/shared';
 
 import { useMe } from '@/api/auth';
+import type { LeaderboardScope } from '@/api/board';
 import {
   useCreateInviteLink,
   useGroup,
+  useGroupStandings,
   useInviteToGroup,
   useLeaveGroup,
   useSetGroupBuddy,
@@ -47,6 +49,7 @@ export default function GroupDetailPage() {
   const group = useGroup(id);
   const [inviting, setInviting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [standingsOpen, setStandingsOpen] = useState(false);
 
   if (group.isPending || me.isPending) {
     return (
@@ -95,6 +98,17 @@ export default function GroupDetailPage() {
             }
           />
           <IconButton
+            label="Group standings"
+            onClick={() => setStandingsOpen(true)}
+            glyph={
+              // Three bars of unequal height. A trophy would promise a winner;
+              // this is a comparison, and most weeks nobody has won anything.
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <path d="M5 20V13M12 20V5M19 20v-9" strokeLinecap="round" />
+              </svg>
+            }
+          />
+          <IconButton
             label="Group settings"
             onClick={() => setSettingsOpen(true)}
             glyph={
@@ -133,6 +147,13 @@ export default function GroupDetailPage() {
         groupName={info.name}
       />
 
+      <StandingsSheet
+        open={standingsOpen}
+        onClose={() => setStandingsOpen(false)}
+        groupId={id}
+        viewerId={viewerId}
+      />
+
       <SettingsSheet
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -164,6 +185,132 @@ function IconButton({
       className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand"
     >
       <span className="h-5 w-5">{glyph}</span>
+    </button>
+  );
+}
+
+/**
+ * How this group is doing, side by side.
+ *
+ * A group board rather than the global one, because the global one answers a
+ * question nobody in a two-person group is asking: being 4,312th among
+ * strangers says nothing, and being ahead of the person who checks your work
+ * says quite a lot.
+ *
+ * Fetched only while open. It is a panel most people will open occasionally,
+ * and paying for it on every visit to the group would be a request per member
+ * per page view for a number nobody asked to see.
+ */
+function StandingsSheet({
+  open,
+  onClose,
+  groupId,
+  viewerId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  groupId: string;
+  viewerId: string;
+}) {
+  // All time first, for the same reason the Board tab defaults to it: a week's
+  // figures read as zero for everyone on a Monday.
+  const [scope, setScope] = useState<LeaderboardScope>('alltime');
+  const standings = useGroupStandings(groupId, scope, open);
+  const entries = standings.data?.entries ?? [];
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Group standings" placement="side">
+      <div className="flex flex-row items-center justify-between">
+        <h2 className="text-lg font-bold text-ink">Standings</h2>
+        <Button label="Close" variant="ghost" className="w-auto" onClick={onClose} />
+      </div>
+
+      <div role="tablist" aria-label="Range" className="flex flex-row gap-2">
+        <ScopeTab
+          label="All time"
+          active={scope === 'alltime'}
+          onClick={() => setScope('alltime')}
+        />
+        <ScopeTab label="This week" active={scope === 'weekly'} onClick={() => setScope('weekly')} />
+      </div>
+
+      {standings.isPending ? (
+        <div className="flex items-center justify-center py-8 text-ink-subtle">
+          <Spinner />
+        </div>
+      ) : standings.isError ? (
+        <p className="py-4 text-sm text-danger">Couldn&apos;t load the standings.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-surface-border">
+          {entries.map((entry) => (
+            <li
+              key={entry.userId}
+              className={`flex flex-row items-center gap-3 py-3 ${
+                entry.userId === viewerId ? 'font-semibold' : ''
+              }`}
+            >
+              <span className="w-6 shrink-0 text-sm tabular-nums text-ink-subtle">
+                {entry.rank}
+              </span>
+              <Avatar
+                avatarKey={entry.avatarKey}
+                displayName={entry.displayName}
+                size={36}
+              />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-base text-ink">
+                  {entry.displayName}
+                  {entry.userId === viewerId ? ' (you)' : ''}
+                </span>
+                <span className="text-xs text-ink-subtle">
+                  {entry.currentStreak > 0 ? `${entry.currentStreak}-day streak` : 'No streak'}
+                </span>
+              </div>
+              <span className="shrink-0 text-base font-semibold tabular-nums text-ink">
+                {entry.credits.toLocaleString()}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/*
+        Said plainly rather than left to be inferred from a row of zeros: on a
+        board where everybody is on nothing, "nobody is ahead" is the truth and
+        "you are joint first" is not.
+      */}
+      {!standings.isPending && entries.every((entry) => entry.credits === 0) ? (
+        <p className="text-sm text-ink-muted">
+          Nobody has earned credits {scope === 'weekly' ? 'this week' : 'yet'}. The first approved
+          task starts it.
+        </p>
+      ) : null}
+    </Sheet>
+  );
+}
+
+function ScopeTab({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`cursor-pointer rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
+        active
+          ? 'border-brand bg-brand text-brand-fg'
+          : 'border-surface-border bg-surface text-ink-muted hover:border-brand hover:text-brand'
+      }`}
+    >
+      {label}
     </button>
   );
 }

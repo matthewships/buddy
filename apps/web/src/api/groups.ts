@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, unwrap } from './client';
+import type { LeaderboardEntry, LeaderboardScope } from './board';
 
 export interface GroupSummary {
   id: string;
@@ -48,6 +49,7 @@ export const groupKeys = {
   all: ['groups'] as const,
   detail: (id: string) => ['groups', id] as const,
   invites: ['invites'] as const,
+  standings: (id: string, scope: LeaderboardScope) => ['groups', id, 'standings', scope] as const,
 };
 
 export function useGroups() {
@@ -64,6 +66,24 @@ export function useGroup(id: string) {
     queryFn: async () =>
       unwrap<{ group: GroupDetail; members: GroupMember[] }>(
         await api.api.groups[':id'].$get({ param: { id } }),
+      ),
+  });
+}
+
+/**
+ * This group's standings.
+ *
+ * Computed live on the server rather than snapshotted, so unlike the global
+ * board there is no five-minute floor to respect here — a member who was
+ * approved a minute ago should have moved by the time anyone looks.
+ */
+export function useGroupStandings(id: string, scope: LeaderboardScope, enabled = true) {
+  return useQuery({
+    queryKey: groupKeys.standings(id, scope),
+    enabled: enabled && id.length > 0,
+    queryFn: async () =>
+      unwrap<{ scope: LeaderboardScope; entries: LeaderboardEntry[] }>(
+        await api.api.groups[':id'].leaderboard.$get({ param: { id }, query: { scope } }),
       ),
   });
 }
