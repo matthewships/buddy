@@ -16,6 +16,7 @@ import {
   type FeedPost,
 } from '@/api/posts';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { timeAgo } from '@/lib/time-ago';
 import {
   Avatar,
   Button,
@@ -376,9 +377,7 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
           >
             <path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.4-4.2A7.5 7.5 0 1 1 20 11.5Z" />
           </svg>
-          <span>
-            {post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}
-          </span>
+          <span>{post.replyCount === 0 ? 'Reply' : post.replyCount}</span>
         </button>
 
         <div className="flex flex-1 flex-row justify-end gap-3">
@@ -402,6 +401,40 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
         )}
         </div>
       </div>
+
+      {/*
+        The last couple of replies, under the post, the way every feed people
+        already use shows them. The count on its own said a conversation
+        existed without letting anyone overhear it, and a conversation nobody
+        can see is one nobody joins.
+      */}
+      {post.replyPreview.length > 0 ? (
+        <div className="mt-3 flex flex-col gap-1.5 border-t border-surface-border pt-3">
+          {post.replyCount > post.replyPreview.length ? (
+            <button
+              type="button"
+              onClick={() => setRepliesOpen(true)}
+              className="cursor-pointer self-start text-xs font-semibold text-ink-subtle hover:text-ink"
+            >
+              View all {post.replyCount} replies
+            </button>
+          ) : null}
+          {post.replyPreview.map((reply) => (
+            <button
+              key={reply.id}
+              type="button"
+              onClick={() => setRepliesOpen(true)}
+              className="cursor-pointer text-left text-sm leading-snug text-ink"
+            >
+              <span className="font-semibold">{reply.author.handle}</span>{' '}
+              <span className="text-ink-muted">{reply.body}</span>{' '}
+              <span className="whitespace-nowrap text-xs text-ink-subtle">
+                {timeAgo(reply.createdAt)}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <RepliesSheet
         post={post}
@@ -439,6 +472,7 @@ function RepliesSheet({
 }) {
   const replies = useReplies(post.id, open);
   const createReply = useCreateReply(post.id);
+  const me = useMe().data;
   const [body, setBody] = useState('');
 
   const send = () => {
@@ -468,40 +502,69 @@ function RepliesSheet({
       ) : (
         <div className="flex flex-col gap-3">
           {list.map((reply) => (
-            <div key={reply.id} className="flex flex-row items-start gap-3">
+            <div key={reply.id} className="flex flex-row items-start gap-2.5">
               <Avatar
                 avatarKey={reply.author.avatarKey}
                 displayName={reply.author.displayName}
                 size={32}
               />
-              <div className="flex min-w-0 flex-1 flex-col rounded-2xl bg-surface-muted px-3 py-2">
-                <p className="text-sm font-semibold text-ink">
-                  {reply.author.displayName}{' '}
-                  <span className="font-normal text-ink-subtle">@{reply.author.handle}</span>
+              {/*
+                The handle alone, with the time beside it. The bubble used to
+                carry the display name *and* the handle on its own line above
+                every message, which is two names for one person and a wasted
+                line in a list of one-sentence replies.
+              */}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <p className="text-sm leading-snug text-ink">
+                  <span className="font-semibold">{reply.author.handle}</span>{' '}
+                  <span className="text-ink-muted">{reply.body}</span>
                 </p>
-                <p className="text-sm text-ink">{reply.body}</p>
+                <span className="mt-0.5 text-xs text-ink-subtle">
+                  {timeAgo(reply.createdAt)}
+                </span>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="mt-2 flex flex-col gap-2 border-t border-surface-border pt-4">
-        <Field
-          label="Say something"
-          value={body}
-          onChangeText={setBody}
-          maxLength={MAX_REPLY_TEXT}
-          placeholder="Nice one"
-          onSubmit={send}
-        />
+      {/*
+        One row, stuck to the bottom: your face, a box, and send.
+        It was a labelled field stacked above a full-width button — about a
+        hundred pixels of form for one short sentence, with the label repeating
+        what the placeholder already said, and it scrolled away with the thread
+        so a long one had to be scrolled past before you could answer it.
+      */}
+      <div className="sticky bottom-0 -mx-5 mt-2 flex flex-col gap-1 border-t border-surface-border bg-surface px-5 pb-1 pt-3">
+        <div className="flex flex-row items-center gap-2">
+          <Avatar avatarKey={me?.avatarKey ?? null} displayName={me?.displayName ?? 'You'} size={32} />
+          <input
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                send();
+              }
+            }}
+            maxLength={MAX_REPLY_TEXT}
+            placeholder="Say something"
+            aria-label="Write a reply"
+            className="min-w-0 flex-1 rounded-full border border-surface-border bg-surface-muted px-4 py-2 text-sm text-ink placeholder:text-ink-subtle focus:border-brand focus:outline-none"
+          />
+          <button
+            type="button"
+            aria-label="Send reply"
+            disabled={body.trim().length === 0 || createReply.isPending}
+            onClick={send}
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-brand text-brand-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="currentColor">
+              <path d="M3.4 20.4 21 12 3.4 3.6 3 10.2l12 1.8-12 1.8z" />
+            </svg>
+          </button>
+        </div>
         <ErrorText message={createReply.error?.message ?? replies.error?.message} />
-        <Button
-          label="Reply"
-          disabled={body.trim().length === 0 || createReply.isPending}
-          loading={createReply.isPending}
-          onClick={send}
-        />
       </div>
     </Sheet>
   );

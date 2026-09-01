@@ -11,6 +11,7 @@ export { Field } from './Field';
 export { AppFrame, Screen } from './Frame';
 export { GroupTasks } from './GroupTasks';
 export { RatingPicker } from './RatingPicker';
+export { NotificationBell } from './NotificationBell';
 export { RefreshButton } from './RefreshButton';
 export { ReportSheet } from './ReportSheet';
 export { RequestBanner } from './RequestBanner';

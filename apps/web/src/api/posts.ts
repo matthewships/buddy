@@ -20,6 +20,12 @@ export interface FeedPost {
   author: PostAuthor;
   reactions: { reaction: ReactionKey; count: number; mine: boolean }[];
   replyCount: number;
+  /**
+   * The last couple of replies, oldest-first, so the feed can show a
+   * conversation rather than a number. The full list still comes from
+   * `useReplies` when the sheet opens.
+   */
+  replyPreview: PostReply[];
   mine: boolean;
 }
 

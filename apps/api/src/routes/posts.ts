@@ -118,17 +118,36 @@ export const postRoutes = new Hono<AppEnv>()
     }
 
     /**
-     * Reply counts for the page, grouped in one query for the same reason the
-     * reaction counts are: a page of twenty posts should not be twenty-one
-     * round trips.
+     * The page's replies, in one query for the same reason the reaction counts
+     * are: a page of twenty posts should not be twenty-one round trips.
+     *
+     * This used to select `count(*)` alone, which was enough when a reply could
+     * only be read by opening a sheet. It is not enough now the feed shows the
+     * last couple under each post — a conversation nobody can see is a
+     * conversation nobody joins, and every feed people already use puts the
+     * most recent comments right there under the picture.
+     *
+     * Rows rather than a window function, and the count derived from them:
+     * replies are capped per post and short (see the endpoint below), so the
+     * page's whole set is small and bounded, and grouping in JS keeps this on
+     * the query builder every other read here uses.
      *
      * It joins users and skips deleted accounts because the replies endpoint
      * does — a bubble reading "3 replies" over a sheet showing two would be a
      * bug you could only find by counting.
      */
-    const replyCounts = page.length
+    const replyRows = page.length
       ? await client
-          .select({ postId: postReplies.postId, count: sql<number>`count(*)` })
+          .select({
+            postId: postReplies.postId,
+            id: postReplies.id,
+            body: postReplies.body,
+            createdAt: postReplies.createdAt,
+            authorId: users.id,
+            authorHandle: users.handle,
+            authorName: users.displayName,
+            authorAvatarKey: users.avatarKey,
+          })
           .from(postReplies)
           .innerJoin(users, eq(users.id, postReplies.userId))
           .where(
@@ -140,10 +159,15 @@ export const postRoutes = new Hono<AppEnv>()
               )})`,
             ),
           )
-          .groupBy(postReplies.postId)
+          .orderBy(postReplies.createdAt)
       : [];
 
-    const repliesByPost = new Map(replyCounts.map((row) => [row.postId, Number(row.count)]));
+    const repliesByPost = new Map<string, typeof replyRows>();
+    for (const row of replyRows) {
+      const bucket = repliesByPost.get(row.postId);
+      if (bucket) bucket.push(row);
+      else repliesByPost.set(row.postId, [row]);
+    }
 
     return c.json({
       posts: page.map((row) => ({
@@ -158,7 +182,23 @@ export const postRoutes = new Hono<AppEnv>()
           avatarKey: row.authorAvatarKey,
         },
         reactions: byPost.get(row.id) ?? [],
-        replyCount: repliesByPost.get(row.id) ?? 0,
+        replyCount: (repliesByPost.get(row.id) ?? []).length,
+        /**
+         * The last two, still oldest-first. Two because that is what fits under
+         * a post without turning the feed into a thread — the rest are one tap
+         * away, which is the bargain every established feed strikes.
+         */
+        replyPreview: (repliesByPost.get(row.id) ?? []).slice(-2).map((reply) => ({
+          id: reply.id,
+          body: reply.body,
+          createdAt: reply.createdAt,
+          author: {
+            id: reply.authorId,
+            handle: reply.authorHandle,
+            displayName: reply.authorName,
+            avatarKey: reply.authorAvatarKey,
+          },
+        })),
         mine: row.authorId === viewerId,
       })),
       nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,

@@ -21,6 +21,7 @@ interface FeedPost {
   imageKey: string | null;
   caption: string | null;
   replyCount: number;
+  replyPreview: { id: string; body: string; author: { handle: string } }[];
 }
 
 async function feed(session: Session): Promise<FeedPost[]> {
@@ -157,5 +158,75 @@ describe('replies', () => {
     const author = await poster('rep-none@example.com', 'repnone');
     const res = await get('/api/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/replies', author.accessToken);
     expect(res.status).toBe(404);
+  });
+});
+
+
+/**
+ * The feed carries the last couple of replies as well as the count, so a post
+ * can show its conversation instead of a number. The count on its own said one
+ * existed without letting anybody overhear it.
+ */
+describe('the replies a post carries into the feed', () => {
+  /** The feed is global, so a post has to be found rather than assumed first. */
+  async function postInFeed(session: Session, id: string): Promise<FeedPost> {
+    const found = (await feed(session)).find((p) => p.id === id);
+    expect(found).toBeDefined();
+    return found!;
+  }
+
+  async function makePost(session: Session, caption: string): Promise<string> {
+    const created = await post('/api/posts', { caption }, session.accessToken);
+    expect(created.status).toBe(201);
+    return ((await created.json()) as { id: string }).id;
+  }
+
+  it('is empty on a post nobody has answered', async () => {
+    const author = await poster('preempty@example.com', 'preempty');
+    const id = await makePost(author, 'Quiet one');
+
+    const feedPost = await postInFeed(author, id);
+
+    expect(feedPost.replyCount).toBe(0);
+    expect(feedPost.replyPreview).toEqual([]);
+  });
+
+  it('carries the whole conversation while it is short', async () => {
+    const author = await poster('preshort@example.com', 'preshort');
+    const id = await makePost(author, 'Done it');
+    await post(`/api/posts/${id}/replies`, { body: 'Nice' }, author.accessToken);
+
+    const feedPost = await postInFeed(author, id);
+
+    expect(feedPost.replyCount).toBe(1);
+    expect(feedPost.replyPreview.map((r) => r.body)).toEqual(['Nice']);
+  });
+
+  it('keeps only the last two, still oldest-first, once there are more', async () => {
+    const author = await poster('prelong@example.com', 'prelong');
+    const id = await makePost(author, 'Busy one');
+
+    for (const body of ['first', 'second', 'third', 'fourth']) {
+      await post(`/api/posts/${id}/replies`, { body }, author.accessToken);
+    }
+
+    const feedPost = await postInFeed(author, id);
+
+    // The count is still the truth about how many there are...
+    expect(feedPost.replyCount).toBe(4);
+    // ...while the preview is the tail of the conversation, in reading order.
+    expect(feedPost.replyPreview.map((r) => r.body)).toEqual(['third', 'fourth']);
+  });
+
+  it('agrees with the full list the sheet fetches', async () => {
+    const author = await poster('preagree@example.com', 'preagree');
+    const id = await makePost(author, 'Check');
+    await post(`/api/posts/${id}/replies`, { body: 'only one' }, author.accessToken);
+
+    const feedPost = await postInFeed(author, id);
+    const full = await repliesOn(author, id);
+
+    expect(feedPost.replyCount).toBe(full.length);
+    expect(feedPost.replyPreview.at(-1)!.id).toBe(full.at(-1)!.id);
   });
 });
