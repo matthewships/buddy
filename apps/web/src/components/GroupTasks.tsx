@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
-import { MAX_PROOF_TEXT, MAX_TASK_TITLE } from '@buddy/shared';
+import { MAX_PROOF_TEXT, MAX_TASK_MINUTES, MAX_TASK_TITLE } from '@buddy/shared';
 
 import type { GroupDetail, GroupMember } from '@/api/groups';
 import {
   isRunning,
   localToday,
+  localTomorrow,
   useAbandonTask,
   useCreateTask,
   useDeleteTask,
@@ -16,8 +17,10 @@ import {
   useReviewTask,
   useStartTask,
   useSubmitProof,
+  useUpdateTask,
   type Task,
 } from '@/api/tasks';
+import { serverNow } from '@/hooks/useCountdown';
 import { canReview } from '@/lib/review-rights';
 
 import { Avatar } from './Avatar';
@@ -28,6 +31,7 @@ import { ErrorText } from './ErrorText';
 import { Field } from './Field';
 import { RatingPicker } from './RatingPicker';
 import { ReportSheet } from './ReportSheet';
+import { Sheet } from './Sheet';
 import { Spinner } from './Spinner';
 import { formatEstimate } from './TaskClock';
 import { TaskRing } from './TaskRing';
@@ -349,18 +353,83 @@ function AddTask({ groupId }: { groupId: string }) {
 }
 
 /** One of the viewer's own tasks, with the actions its state allows. */
+/**
+ * Whether a running task has passed its estimate, ticking so the moment it does
+ * is visible without a refresh.
+ *
+ * Its own interval rather than a value lifted out of `TaskRing`: the ring is a
+ * presentational component with a clock inside it, and threading state upward
+ * from it would make every row re-render every second to answer a question that
+ * changes once. This stops ticking the moment it has its answer, and there is at
+ * most one running task per person by rule.
+ */
+function useOverrun(task: Task): boolean {
+  const target =
+    task.startedAt && task.estimatedMinutes !== null
+      ? Date.parse(task.startedAt) + task.estimatedMinutes * 60_000
+      : null;
+
+  const [over, setOver] = useState(() => (target === null ? false : serverNow() >= target));
+
+  useEffect(() => {
+    if (target === null) {
+      setOver(false);
+      return;
+    }
+    if (serverNow() >= target) {
+      setOver(true);
+      return;
+    }
+    setOver(false);
+    const timer = setInterval(() => {
+      if (serverNow() >= target) setOver(true);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [target]);
+
+  return over;
+}
+
+/** How much a "give it more time" button adds, in minutes. */
+const TIME_BUMPS = [10, 30] as const;
+
+/**
+ * One of the viewer's own tasks.
+ *
+ * The actions are a function of the state, and there are five states worth
+ * distinguishing. The two the app used to handle badly are the interesting
+ * ones:
+ *
+ * **Overrun** — the clock has passed the estimate and the task is still open.
+ * Nothing happens to it, which is right, but the only offers were Done and
+ * Drop(−10), so someone who simply needed another twenty minutes had to either
+ * lie or pay. Now the estimate can be extended in place, which is the honest
+ * answer to "this is taking longer than I thought".
+ *
+ * **Missed** — the day ended. The state is not a verdict and is not terminal,
+ * so this reads as an invitation rather than a scolding: the button says "You
+ * can do this", and taking it revives the task onto today. Giving it more time
+ * first and shelving it until tomorrow are both a tap away, because the reason
+ * a task got missed is usually one of those two.
+ */
 function MyTask({ task }: { task: Task }) {
   const markDone = useMarkDone();
   const submitProof = useSubmitProof();
   const deleteTask = useDeleteTask();
+  const updateTask = useUpdateTask();
   const start = useStartTask();
   const abandon = useAbandonTask();
 
   const [proof, setProof] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [confirmingAbandon, setConfirmingAbandon] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   const running = isRunning(task);
+  const overrun = useOverrun(running ? task : { ...task, startedAt: null });
+  const missed = task.status === 'missed';
+  const open = task.status === 'planned' || missed;
+
   /**
    * Starting needs an estimate — there is nothing to count down without one —
    * so a task the mobile app created cannot offer it. Finishing is always on
@@ -368,11 +437,40 @@ function MyTask({ task }: { task: Task }) {
    * missed, still has to be closable without starting a clock first.
    */
   const canStart = !running && task.estimatedMinutes !== null;
-  const open = task.status === 'planned' || task.status === 'missed';
+  const minutes = task.estimatedMinutes ?? 0;
+  // The server caps the estimate, so a bump that would exceed it is not offered
+  // rather than sent and rejected.
+  const canAddTime = task.estimatedMinutes !== null && minutes < MAX_TASK_MINUTES;
+
+  const addTime = (delta: number) =>
+    updateTask.mutate({
+      id: task.id,
+      estimatedMinutes: Math.min(MAX_TASK_MINUTES, minutes + delta),
+    });
+
+  const finish = () => {
+    if (!expanded) {
+      setExpanded(true);
+      return;
+    }
+    markDone.mutate({ id: task.id, ...(proof.trim() ? { proofText: proof.trim() } : {}) });
+  };
+
+  const proofField = expanded ? (
+    <Field
+      label="What did you do? (optional)"
+      value={proof}
+      onChangeText={setProof}
+      maxLength={MAX_PROOF_TEXT}
+      multiline
+      rows={3}
+      placeholder="Chapters 1-2, notes written up"
+    />
+  ) : null;
 
   return (
     <TaskShell
-      accent={running ? 'brand' : null}
+      accent={overrun ? 'warning' : running ? 'brand' : missed ? 'warning' : null}
       leading={
         running && task.startedAt && task.estimatedMinutes !== null ? (
           <TaskRing startedAt={task.startedAt} estimatedMinutes={task.estimatedMinutes} />
@@ -383,21 +481,25 @@ function MyTask({ task }: { task: Task }) {
       title={task.title}
       meta={
         running ? (
-          <span className="font-semibold text-brand">In progress</span>
+          <span className={`font-semibold ${overrun ? 'text-warning' : 'text-brand'}`}>
+            {overrun ? 'Running over' : 'In progress'}
+          </span>
         ) : (
           <StatusPill status={task.status} />
         )
       }
       trailing={
-        task.status === 'planned' && !running ? (
+        // Not while it is running: "not today" and "delete" are both answers to
+        // a task you have not committed to yet, and offering them mid-clock
+        // would be a third way out of a run that is supposed to have two.
+        open && !running ? (
           <button
             type="button"
-            aria-label={`Delete ${task.title}`}
-            disabled={deleteTask.isPending}
-            onClick={() => deleteTask.mutate(task.id)}
-            className="cursor-pointer rounded-full px-2 py-1 text-lg leading-none text-ink-subtle transition-colors hover:text-danger disabled:cursor-not-allowed"
+            aria-label={`Options for ${task.title}`}
+            onClick={() => setOptionsOpen(true)}
+            className="cursor-pointer rounded-full px-2 py-1 text-lg leading-none text-ink-subtle transition-colors hover:text-ink"
           >
-            ×
+            ⋯
           </button>
         ) : null
       }
@@ -405,24 +507,34 @@ function MyTask({ task }: { task: Task }) {
       {running ? (
         <>
           <p className="text-xs text-ink-muted">
-            Group chat is closed to you until this task ends. Finishing costs nothing; dropping it
-            costs 10 points.
+            {overrun
+              ? 'Past your estimate — which happens. Finish it, or give yourself more time.'
+              : 'Group chat is closed to you until this task ends. Finishing costs nothing; dropping it costs 10 points.'}
           </p>
+
+          {/* Surfaced inline only while overrunning: that is the minute someone
+              needs it, and before then it is one more button to read past. */}
+          {overrun && canAddTime ? (
+            <div className="flex flex-row flex-wrap gap-2">
+              {TIME_BUMPS.map((delta) => (
+                <Button
+                  key={delta}
+                  label={`+${delta} min`}
+                  variant="secondary"
+                  className="w-auto"
+                  disabled={updateTask.isPending}
+                  onClick={() => addTime(delta)}
+                />
+              ))}
+            </div>
+          ) : null}
+
           <div className="flex flex-row gap-2">
             <Button
               className="flex-1"
               label={expanded ? 'Submit as done' : 'Done'}
               loading={markDone.isPending}
-              onClick={() => {
-                if (!expanded) {
-                  setExpanded(true);
-                  return;
-                }
-                markDone.mutate({
-                  id: task.id,
-                  ...(proof.trim() ? { proofText: proof.trim() } : {}),
-                });
-              }}
+              onClick={finish}
             />
             {confirmingAbandon ? (
               <Button
@@ -443,40 +555,31 @@ function MyTask({ task }: { task: Task }) {
               />
             )}
           </div>
-          {expanded ? (
-            <Field
-              label="What did you do? (optional)"
-              value={proof}
-              onChangeText={setProof}
-              maxLength={MAX_PROOF_TEXT}
-              multiline
-              rows={3}
-              placeholder="Chapters 1-2, notes written up"
-            />
-          ) : null}
-          <ErrorText message={abandon.error?.message ?? markDone.error?.message} />
+          {proofField}
+          <ErrorText
+            message={
+              abandon.error?.message ?? markDone.error?.message ?? updateTask.error?.message
+            }
+          />
         </>
       ) : null}
 
       {open && !running ? (
         <>
-          {expanded ? (
-            <Field
-              label="What did you do? (optional)"
-              value={proof}
-              onChangeText={setProof}
-              maxLength={MAX_PROOF_TEXT}
-              multiline
-              rows={3}
-              placeholder="Chapters 1-2, notes written up"
-            />
+          {missed ? (
+            <p className="text-sm text-ink-muted">
+              This one got away. Pick it back up and it moves to today.
+            </p>
           ) : null}
+          {proofField}
           <ErrorText message={markDone.error?.message ?? start.error?.message} />
           <div className="flex flex-row gap-2">
             {canStart ? (
               <Button
                 className="flex-1"
-                label="Start"
+                // The missed state is not a scolding. Same action, different
+                // thing to say about it.
+                label={missed ? 'You can do this' : 'Start'}
                 loading={start.isPending}
                 onClick={() => start.mutate(task.id)}
               />
@@ -488,20 +591,28 @@ function MyTask({ task }: { task: Task }) {
               variant={canStart ? 'secondary' : 'primary'}
               label={expanded ? 'Submit as done' : 'Done'}
               loading={markDone.isPending}
-              onClick={() => {
-                if (!expanded) {
-                  setExpanded(true);
-                  return;
-                }
-                markDone.mutate({
-                  id: task.id,
-                  ...(proof.trim() ? { proofText: proof.trim() } : {}),
-                });
-              }}
+              onClick={finish}
             />
           </div>
         </>
       ) : null}
+
+      <TaskOptions
+        open={optionsOpen}
+        onClose={() => setOptionsOpen(false)}
+        task={task}
+        canAddTime={canAddTime}
+        busy={updateTask.isPending || deleteTask.isPending}
+        error={updateTask.error?.message ?? deleteTask.error?.message}
+        onAddTime={addTime}
+        onNotToday={() =>
+          updateTask.mutate(
+            { id: task.id, dueDate: localTomorrow() },
+            { onSuccess: () => setOptionsOpen(false) },
+          )
+        }
+        onDelete={() => deleteTask.mutate(task.id)}
+      />
 
       {task.status === 'proof_requested' ? (
         <>
@@ -531,6 +642,115 @@ function MyTask({ task }: { task: Task }) {
         <p className="text-sm text-ink-muted">Waiting for a review.</p>
       ) : null}
     </TaskShell>
+  );
+}
+
+/**
+ * The things you do to a task that are not "work on it now": give it more time,
+ * shelve it until tomorrow, or admit it was never going to happen.
+ *
+ * In a sheet rather than on the row because they are all occasional, and a row
+ * carrying six buttons makes the two that matter harder to find. "Not today"
+ * moves the task to tomorrow rather than deleting it — the usual reason a task
+ * goes unstarted is the day, not the task — and costs nothing, because no clock
+ * was ever started and so no commitment was broken. That is the whole
+ * difference between it and Drop.
+ */
+function TaskOptions({
+  open,
+  onClose,
+  task,
+  canAddTime,
+  busy,
+  error,
+  onAddTime,
+  onNotToday,
+  onDelete,
+}: {
+  open: boolean;
+  onClose: () => void;
+  task: Task;
+  canAddTime: boolean;
+  busy: boolean;
+  error?: string;
+  onAddTime: (delta: number) => void;
+  onNotToday: () => void;
+  onDelete: () => void;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  return (
+    <Sheet open={open} onClose={onClose} title={task.title}>
+      <div className="flex flex-col gap-1">
+        <h2 className="text-lg font-bold text-ink">{task.title}</h2>
+        {task.estimatedMinutes !== null ? (
+          <p className="text-sm text-ink-muted">
+            Planned for {formatEstimate(task.estimatedMinutes)}
+          </p>
+        ) : null}
+      </div>
+
+      {canAddTime ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+            Give it more time
+          </p>
+          <div className="flex flex-row gap-2">
+            {TIME_BUMPS.map((delta) => (
+              <Button
+                key={delta}
+                className="flex-1"
+                label={`+${delta} min`}
+                variant="secondary"
+                disabled={busy}
+                onClick={() => onAddTime(delta)}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-2 border-t border-surface-border pt-4">
+        <Button
+          label="Not today — move to tomorrow"
+          variant="secondary"
+          disabled={busy}
+          onClick={onNotToday}
+        />
+        <p className="text-xs text-ink-subtle">
+          It keeps its title and its time, and costs nothing — no clock was running.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-surface-border pt-4">
+        {confirmingDelete ? (
+          <div className="flex flex-row gap-2">
+            <Button
+              className="flex-1"
+              label="Yes, delete it"
+              variant="danger"
+              disabled={busy}
+              onClick={onDelete}
+            />
+            <Button
+              className="flex-1"
+              label="Keep it"
+              variant="ghost"
+              onClick={() => setConfirmingDelete(false)}
+            />
+          </div>
+        ) : (
+          <Button
+            label="Delete this task"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => setConfirmingDelete(true)}
+          />
+        )}
+      </div>
+
+      <ErrorText message={error} />
+    </Sheet>
   );
 }
 

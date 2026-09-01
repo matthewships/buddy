@@ -30,10 +30,16 @@ import { assertMember } from './groups.js';
  *
  * ```
  * planned ──done──▶ done ──approve(rating)──▶ approved
- *    │                │
- *    │                └──request_proof──▶ proof_requested ──proof──▶ done
- *    └── local midnight passes (hourly cron) ──▶ missed
+ *    │  ▲             │
+ *    │  │             └──request_proof──▶ proof_requested ──proof──▶ done
+ *    └──┼── local midnight passes (hourly cron) ──▶ missed
+ *       └── start, or a move to a day that has not passed ───┘
  * ```
+ *
+ * **Missed is not terminal.** A day ending is not a verdict on the task, so
+ * picking it back up — starting it, or moving it to tomorrow — returns it to
+ * `planned`. Both paths also move its due date forward, because the rollover
+ * runs hourly and would otherwise re-miss a task somebody is working on.
  *
  * **Reviewer rule (§2.4 decision):** any other member of the group may review,
  * and the first review is final. That is enforced by a guarded UPDATE that
@@ -216,13 +222,30 @@ export const taskRoutes = new Hono<AppEnv>()
     const task = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
     if (!task) throw notFound('No such task');
     if (task.userId !== userId) throw forbidden('That task is not yours');
-    if (task.status !== 'planned') {
+    /**
+     * A missed task is editable too. It is the state where editing matters most
+     * — "give it more time", "not today, tomorrow" — and refusing the edit left
+     * the owner with a dead row and no way to revive it but to retype it.
+     */
+    if (task.status !== 'planned' && task.status !== 'missed') {
       throw conflict('That task is already under review — you can update the proof instead');
     }
 
     if (patch.dueDate && patch.dueDate < (await ownerToday(client, userId))) {
       throw badRequest("That day has already passed — plan for today or later");
     }
+
+    /**
+     * Moving a missed task to a day that has not passed makes it a plan again —
+     * that is what "not today, tomorrow" means, and the date check above has
+     * already refused anything earlier than today.
+     *
+     * Changing only the estimate does *not* revive it: the task would go back to
+     * `planned` still sitting on a day that has passed, and the next rollover
+     * would mark it missed again. Giving a missed task more time is preparation
+     * for restarting it, not the restart itself.
+     */
+    const revived = task.status === 'missed' && patch.dueDate !== undefined;
 
     await client
       .update(tasks)
@@ -233,8 +256,9 @@ export const taskRoutes = new Hono<AppEnv>()
         ...(patch.estimatedMinutes !== undefined && {
           estimatedMinutes: patch.estimatedMinutes ?? null,
         }),
+        ...(revived && { status: 'planned' as const }),
       })
-      .where(and(eq(tasks.id, id), eq(tasks.status, 'planned')));
+      .where(and(eq(tasks.id, id), inArray(tasks.status, ['planned', 'missed'])));
 
     const row = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
     return c.json({ task: row });
@@ -336,7 +360,22 @@ export const taskRoutes = new Hono<AppEnv>()
     if (task.status === 'approved' || task.status === 'done') {
       throw conflict('That task is already finished');
     }
-    if (task.startedAt !== null) return c.json({ task });
+
+    /**
+     * Already running, so this is a double tap: nothing to do, and restarting
+     * would quietly reset a clock the owner is being held to.
+     *
+     * Keyed on actually-running rather than on `started_at` alone. A missed task
+     * can carry a stale clock — the rollover clears it, but a task started
+     * *while* missed was left with one by an earlier version of this handler —
+     * and treating that as running made the task permanently unstartable: the
+     * write was skipped, the client read the status as not-running, and Start
+     * did nothing forever. Reading both columns is also what heals those rows,
+     * since the fresh timestamp below overwrites the stale one.
+     */
+    const alreadyRunning =
+      task.startedAt !== null && (task.status === 'planned' || task.status === 'proof_requested');
+    if (alreadyRunning) return c.json({ task });
 
     const running = await client.query.tasks.findFirst({
       where: and(
@@ -350,8 +389,22 @@ export const taskRoutes = new Hono<AppEnv>()
       throw conflict(`Finish or drop "${running.title}" first — one task at a time`);
     }
 
+    /**
+     * Starting a missed task is how someone picks it back up, so it stops being
+     * missed — and moves to today, which is not bookkeeping: the rollover marks
+     * any planned task whose day has passed as missed, and it runs hourly. A
+     * revived task left on yesterday's date would be marked missed again within
+     * the hour, killing the clock under someone who is working.
+     */
     const startedAt = nowIso();
-    await client.update(tasks).set({ startedAt }).where(eq(tasks.id, id));
+    const revive =
+      task.status === 'missed'
+        ? { status: 'planned' as const, dueDate: await ownerToday(client, userId) }
+        : {};
+    await client
+      .update(tasks)
+      .set({ startedAt, ...revive })
+      .where(eq(tasks.id, id));
 
     // Best-effort: greys the composer immediately rather than on the next send.
     // Correctness does not depend on it — the room reads the truth per message.

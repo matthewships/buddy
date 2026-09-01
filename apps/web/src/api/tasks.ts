@@ -52,9 +52,25 @@ export const taskKeys = {
 
 /** The local calendar day, which is the unit a task is planned for (§2.4). */
 export function localToday(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate(),
+  return localDay(new Date());
+}
+
+/** Tomorrow, locally — where "Not today" puts a task. */
+export function localTomorrow(): string {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return localDay(date);
+}
+
+/**
+ * A `Date` as the API's local-date string. Built from the local getters rather
+ * than `toISOString()`, which would hand back the UTC day — an evening in
+ * Toronto is already tomorrow in UTC, and a task planned then would be dated a
+ * day ahead of the day its owner is living in.
+ */
+function localDay(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
   ).padStart(2, '0')}`;
 }
 
@@ -128,10 +144,26 @@ export function useCreateTask() {
   });
 }
 
+/**
+ * Editing a task: renaming it, giving it more time, or moving it to another day.
+ *
+ * The API accepts these on a `missed` task as well as a planned one, and moving
+ * a missed task to a day that has not passed is what makes it a plan again —
+ * which is what "Not today" does.
+ */
 export function useUpdateTask() {
   const invalidate = useTaskInvalidation();
   return useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; title?: string; notes?: string | null }) =>
+    mutationFn: async ({
+      id,
+      ...patch
+    }: {
+      id: string;
+      title?: string;
+      notes?: string | null;
+      dueDate?: string;
+      estimatedMinutes?: number;
+    }) =>
       unwrap<{ task: Task }>(
         await api.api.tasks[':id'].$patch({ param: { id }, json: patch as never }),
       ),
