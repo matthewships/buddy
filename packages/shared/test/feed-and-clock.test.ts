@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ABANDON_PENALTY,
+  MAX_REPLY_TEXT,
   MAX_TASK_MINUTES,
   MIN_TASK_MINUTES,
   REACTIONS,
@@ -11,6 +12,7 @@ import {
 } from '../src/index';
 import {
   createPostSchema,
+  createReplySchema,
   createTaskSchema,
   inviteTokenSchema,
   reactToPostSchema,
@@ -87,10 +89,47 @@ describe('setGroupBuddySchema', () => {
   });
 });
 
-describe('post schemas', () => {
-  it('requires an image, and caps the caption', () => {
+describe('a post is words, a photo, or both', () => {
+  it('accepts a photo alone', () => {
     expect(createPostSchema.safeParse({ imageKey: 'posts/u/1' }).success).toBe(true);
-    expect(createPostSchema.safeParse({ caption: 'no photo' }).success).toBe(false);
+  });
+
+  it('accepts words alone — the Feed is not only for people with a camera', () => {
+    expect(createPostSchema.safeParse({ caption: 'Finished chapter four' }).success).toBe(true);
+  });
+
+  it('accepts both', () => {
+    expect(
+      createPostSchema.safeParse({ imageKey: 'posts/u/1', caption: 'Four hours' }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a post that is neither', () => {
+    expect(createPostSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('refuses a caption of whitespace, which is not words', () => {
+    expect(createPostSchema.safeParse({ caption: '   ' }).success).toBe(false);
+  });
+});
+
+describe('createReplySchema', () => {
+  it('needs something in it', () => {
+    expect(createReplySchema.safeParse({ body: '' }).success).toBe(false);
+    expect(createReplySchema.safeParse({ body: '  ' }).success).toBe(false);
+  });
+
+  it('trims and caps', () => {
+    expect(createReplySchema.parse({ body: '  Nice one  ' }).body).toBe('Nice one');
+    expect(createReplySchema.safeParse({ body: 'x'.repeat(MAX_REPLY_TEXT) }).success).toBe(true);
+    expect(createReplySchema.safeParse({ body: 'x'.repeat(MAX_REPLY_TEXT + 1) }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('post schemas', () => {
+  it('caps the caption', () => {
     expect(
       createPostSchema.safeParse({ imageKey: 'posts/u/1', caption: 'x'.repeat(400) }).success,
     ).toBe(false);

@@ -81,10 +81,19 @@ export function ProfileView({
   profile,
   banner,
   actions,
+  onChangePhoto,
+  changingPhoto = false,
 }: {
   profile: PublicProfile;
   banner?: ReactNode;
   actions?: ReactNode;
+  /**
+   * Makes the avatar the way to change the photo, with a camera badge on it.
+   * Only the owner's own screen passes this — without it a stranger's profile
+   * would grow a badge offering to change a photo that is not theirs.
+   */
+  onChangePhoto?: () => void;
+  changingPhoto?: boolean;
 }) {
   const goal = profile.goalText?.trim() || label(GOALS, profile.goalKey);
   const goal2 = label(GOALS, profile.goalKey2);
@@ -111,7 +120,42 @@ export function ProfileView({
   return (
     <>
       <div className="flex flex-col items-center gap-2 pt-2 text-center">
-        <Avatar avatarKey={profile.avatarKey} displayName={profile.displayName} size={104} />
+        {onChangePhoto ? (
+          /*
+            The photo is its own control rather than a "Change photo" button
+            sitting under the profile. Tapping the picture to change the picture
+            is what every app this one sits next to does, and it takes a button
+            off a screen that had two before it said anything about the person.
+          */
+          <button
+            type="button"
+            onClick={onChangePhoto}
+            disabled={changingPhoto}
+            aria-label={changingPhoto ? 'Uploading your photo' : 'Change your photo'}
+            className="relative cursor-pointer rounded-full transition-opacity hover:opacity-80 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Avatar avatarKey={profile.avatarKey} displayName={profile.displayName} size={104} />
+            <span
+              aria-hidden="true"
+              className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-surface bg-brand text-brand-fg"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.9}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <path d="M4 8h3l1.5-2h7L17 8h3v11H4z" />
+                <circle cx="12" cy="13" r="3.2" />
+              </svg>
+            </span>
+          </button>
+        ) : (
+          <Avatar avatarKey={profile.avatarKey} displayName={profile.displayName} size={104} />
+        )}
         <div className="flex flex-col">
           <h1 className="text-2xl font-bold text-ink">{profile.displayName}</h1>
           <p className="text-sm text-ink-subtle">@{profile.handle}</p>

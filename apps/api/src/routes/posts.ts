@@ -3,16 +3,23 @@ import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, createPostSchema, reactToPostSchema } from '@buddy/shared';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  createPostSchema,
+  createReplySchema,
+  reactToPostSchema,
+} from '@buddy/shared';
 
 import { db } from '../db/client.js';
-import { postReactions, posts, users } from '../db/schema.js';
+import { postReactions, postReplies, posts, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
 import { enforceRateLimit } from '../lib/rate-limit.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
+import { enqueuePush } from '../services/push.js';
 
 /**
  * The Feed (§2.7).
@@ -27,6 +34,21 @@ import { currentUserId, requireAuth } from '../middleware/auth.js';
  * order. OFFSET would skip or repeat posts as new ones land at the top, which on
  * a feed is constantly.
  */
+
+/**
+ * The stored image key as clients see it.
+ *
+ * `posts.image_key` is NOT NULL and a text-only post stores `''` — see the
+ * column comment in db/schema.ts for why that constraint cannot be dropped
+ * without risking every reaction in the database. This is the one place the
+ * sentinel is translated, so nothing above the route layer knows about it.
+ */
+function imageKeyOf(stored: string): string | null {
+  return stored === '' ? null : stored;
+}
+
+/** Replies are a short flat list, so the whole list is one response. */
+const MAX_REPLIES_RETURNED = 200;
 
 const feedQuerySchema = z.object({
   cursor: z.string().max(64).optional(),
@@ -95,10 +117,38 @@ export const postRoutes = new Hono<AppEnv>()
       byPost.set(row.postId, list);
     }
 
+    /**
+     * Reply counts for the page, grouped in one query for the same reason the
+     * reaction counts are: a page of twenty posts should not be twenty-one
+     * round trips.
+     *
+     * It joins users and skips deleted accounts because the replies endpoint
+     * does — a bubble reading "3 replies" over a sheet showing two would be a
+     * bug you could only find by counting.
+     */
+    const replyCounts = page.length
+      ? await client
+          .select({ postId: postReplies.postId, count: sql<number>`count(*)` })
+          .from(postReplies)
+          .innerJoin(users, eq(users.id, postReplies.userId))
+          .where(
+            and(
+              isNull(users.deletedAt),
+              sql`${postReplies.postId} IN (${sql.join(
+                page.map((row) => sql`${row.id}`),
+                sql`, `,
+              )})`,
+            ),
+          )
+          .groupBy(postReplies.postId)
+      : [];
+
+    const repliesByPost = new Map(replyCounts.map((row) => [row.postId, Number(row.count)]));
+
     return c.json({
       posts: page.map((row) => ({
         id: row.id,
-        imageKey: row.imageKey,
+        imageKey: imageKeyOf(row.imageKey),
         caption: row.caption,
         createdAt: row.createdAt,
         author: {
@@ -108,6 +158,7 @@ export const postRoutes = new Hono<AppEnv>()
           avatarKey: row.authorAvatarKey,
         },
         reactions: byPost.get(row.id) ?? [],
+        replyCount: repliesByPost.get(row.id) ?? 0,
         mine: row.authorId === viewerId,
       })),
       nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
@@ -120,17 +171,92 @@ export const postRoutes = new Hono<AppEnv>()
     await enforceRateLimit(c.env.CACHE, 'post', userId);
 
     // The key is client-supplied, so re-check ownership rather than trusting it
-    // — the same rule the avatar upload applies.
-    if (!imageKey.startsWith(`posts/${userId}/`)) {
+    // — the same rule the avatar upload applies. Only when there is one: the
+    // schema already guarantees a post carries a photo or words.
+    if (imageKey && !imageKey.startsWith(`posts/${userId}/`)) {
       throw badRequest('That upload key is not yours');
     }
 
     const id = newId();
     await db(c.env.DB)
       .insert(posts)
-      .values({ id, userId, imageKey, caption: caption ?? null });
+      // `''` is the no-photo sentinel; see `imageKeyOf`.
+      .values({ id, userId, imageKey: imageKey ?? '', caption: caption ?? null });
 
-    return c.json({ id, imageKey, caption: caption ?? null }, 201);
+    return c.json({ id, imageKey: imageKey ?? null, caption: caption ?? null }, 201);
+  })
+
+  /**
+   * The replies on one post, oldest first — which is the order they were said
+   * in, and the only order a flat list of five wants.
+   *
+   * Capped rather than paged: replies are short and few, and a cursor on a list
+   * that is almost always under ten is machinery with nothing to do.
+   */
+  .get('/:id/replies', async (c) => {
+    const postId = c.req.param('id');
+    const client = db(c.env.DB);
+
+    const post = await client.query.posts.findFirst({ where: eq(posts.id, postId) });
+    if (!post || post.deletedAt !== null) throw notFound('No such post');
+
+    const rows = await client
+      .select({
+        id: postReplies.id,
+        body: postReplies.body,
+        createdAt: postReplies.createdAt,
+        authorId: users.id,
+        authorHandle: users.handle,
+        authorName: users.displayName,
+        authorAvatarKey: users.avatarKey,
+      })
+      .from(postReplies)
+      .innerJoin(users, eq(users.id, postReplies.userId))
+      // A deleted account's replies go with it, the same as its posts.
+      .where(and(eq(postReplies.postId, postId), isNull(users.deletedAt)))
+      .orderBy(postReplies.createdAt)
+      .limit(MAX_REPLIES_RETURNED);
+
+    return c.json({
+      replies: rows.map((row) => ({
+        id: row.id,
+        body: row.body,
+        createdAt: row.createdAt,
+        author: {
+          id: row.authorId,
+          handle: row.authorHandle,
+          displayName: row.authorName,
+          avatarKey: row.authorAvatarKey,
+        },
+      })),
+    });
+  })
+
+  .post('/:id/replies', zValidator('json', createReplySchema), async (c) => {
+    const postId = c.req.param('id');
+    const { body } = c.req.valid('json');
+    const userId = currentUserId(c);
+    await enforceRateLimit(c.env.CACHE, 'reply', userId);
+
+    const client = db(c.env.DB);
+    const post = await client.query.posts.findFirst({ where: eq(posts.id, postId) });
+    if (!post || post.deletedAt !== null) throw notFound('No such post');
+
+    const id = newId();
+    await client.insert(postReplies).values({ id, postId, userId, body });
+
+    // Somebody replying to you is worth knowing about; replying to yourself is
+    // not. One recipient, so this is not the group broadcast the tasks use.
+    if (post.userId !== userId) {
+      await enqueuePush(c.env, {
+        userIds: [post.userId],
+        title: 'Someone replied to your post',
+        body,
+        data: { type: 'post_reply', postId, url: '/feed' },
+      });
+    }
+
+    return c.json({ id, body, createdAt: nowIso() }, 201);
   })
 
   /**
@@ -176,7 +302,9 @@ export const postRoutes = new Hono<AppEnv>()
     if (post.userId !== userId) throw forbidden('That post is not yours');
 
     await client.update(posts).set({ deletedAt: nowIso() }).where(eq(posts.id, postId));
-    c.executionCtx.waitUntil(c.env.STORAGE.delete(post.imageKey));
+    // Only when there is one: a text-only post's key is the `''` sentinel, and
+    // asking R2 to delete an empty key is a round trip that can only fail.
+    if (post.imageKey) c.executionCtx.waitUntil(c.env.STORAGE.delete(post.imageKey));
 
     return c.json({ ok: true as const });
   });

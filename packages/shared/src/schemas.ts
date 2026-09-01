@@ -30,6 +30,7 @@ import {
   MAX_INVITE_TOKEN,
   MAX_PAGE_SIZE,
   MAX_POST_CAPTION,
+  MAX_REPLY_TEXT,
   MAX_PROOF_TEXT,
   MAX_PUSH_ENDPOINT,
   MAX_PUSH_KEY,
@@ -423,9 +424,30 @@ export const inviteTokenSchema = z
  * Feed (§2.7)
  * ------------------------------------------------------------------ */
 
-export const createPostSchema = z.object({
-  imageKey: z.string().min(1).max(200),
-  caption: z.string().trim().max(MAX_POST_CAPTION).optional(),
+/**
+ * A post is a photo, a few words, or both — but not nothing.
+ *
+ * The photo used to be required, which made the Feed a place you could only
+ * reach with a camera. Plenty of what people want to say about a day ("finally
+ * finished chapter four") has no picture, and refusing it turned those into
+ * nothing at all.
+ *
+ * The refine is what keeps a post from being empty, and it tests the *trimmed*
+ * caption: a post of three spaces is not a post.
+ */
+export const createPostSchema = z
+  .object({
+    imageKey: z.string().min(1).max(200).optional(),
+    caption: z.string().trim().max(MAX_POST_CAPTION).optional(),
+  })
+  .refine((v) => Boolean(v.imageKey) || (v.caption?.length ?? 0) > 0, {
+    message: 'Write something or add a photo',
+    path: ['caption'],
+  });
+
+/** A reply on a post (§2.7). Text only: a reply is a sentence, not a post. */
+export const createReplySchema = z.object({
+  body: z.string().trim().min(1).max(MAX_REPLY_TEXT),
 });
 
 /**

@@ -1,18 +1,36 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ReactionKey } from '@buddy/shared';
 
 import { api, unwrap } from './client';
 
+export interface PostAuthor {
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarKey: string | null;
+}
+
 export interface FeedPost {
   id: string;
-  imageKey: string;
+  /** Null on a post that is only words. */
+  imageKey: string | null;
   caption: string | null;
   createdAt: string;
-  author: { id: string; handle: string; displayName: string; avatarKey: string | null };
+  author: PostAuthor;
   reactions: { reaction: ReactionKey; count: number; mine: boolean }[];
+  replyCount: number;
   mine: boolean;
 }
+
+export interface PostReply {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: PostAuthor;
+}
+
+export const repliesKey = (postId: string) => ['posts', postId, 'replies'] as const;
 
 export const feedKey = ['posts'] as const;
 
@@ -30,12 +48,40 @@ export function useFeed() {
   });
 }
 
+/** A post is a photo, a caption, or both — the API refuses neither-nor. */
 export function useCreatePost() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { imageKey: string; caption?: string }) =>
-      unwrap<{ id: string }>(await api.api.posts.$post({ json: input })),
+    mutationFn: async (input: { imageKey?: string; caption?: string }) =>
+      unwrap<{ id: string }>(await api.api.posts.$post({ json: input as never })),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: feedKey }),
+  });
+}
+
+/** The replies on one post, oldest first. Fetched only once a sheet opens. */
+export function useReplies(postId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: repliesKey(postId),
+    enabled: enabled && postId.length > 0,
+    queryFn: async () =>
+      unwrap<{ replies: PostReply[] }>(
+        await api.api.posts[':id'].replies.$get({ param: { id: postId } }),
+      ),
+  });
+}
+
+export function useCreateReply(postId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: string) =>
+      unwrap<{ id: string }>(
+        await api.api.posts[':id'].replies.$post({ param: { id: postId }, json: { body } }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: repliesKey(postId) });
+      // The count lives on the post, so the feed has to hear about it too.
+      void queryClient.invalidateQueries({ queryKey: feedKey });
+    },
   });
 }
 

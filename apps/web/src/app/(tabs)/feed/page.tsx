@@ -2,11 +2,19 @@
 
 import { useRef, useState } from 'react';
 
-import { MAX_POST_CAPTION, REACTIONS, type ReactionKey } from '@buddy/shared';
+import { MAX_POST_CAPTION, MAX_REPLY_TEXT, REACTIONS, type ReactionKey } from '@buddy/shared';
 
 import { useMe } from '@/api/auth';
 import { usePostImageUpload } from '@/api/avatar';
-import { useCreatePost, useDeletePost, useFeed, useReactToPost, type FeedPost } from '@/api/posts';
+import {
+  useCreatePost,
+  useCreateReply,
+  useDeletePost,
+  useFeed,
+  useReactToPost,
+  useReplies,
+  type FeedPost,
+} from '@/api/posts';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import {
   Avatar,
@@ -17,6 +25,7 @@ import {
   RefreshButton,
   ReportSheet,
   Screen,
+  Sheet,
   Spinner,
   avatarUrl,
 } from '@/components';
@@ -87,6 +96,7 @@ function Composer() {
   const createPost = useCreatePost();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [open, setOpen] = useState(false);
   const [imageKey, setImageKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
@@ -96,113 +106,183 @@ function Composer() {
     if (preview) URL.revokeObjectURL(preview);
     setPreview(null);
     setCaption('');
+    setOpen(false);
   };
+
+  const dropPhoto = () => {
+    setImageKey(null);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(null);
+  };
+
+  /**
+   * A post needs words or a photo — the API refuses neither, and a caption of
+   * spaces is not words. A photo still uploading is not one yet either: the key
+   * arrives when the upload lands.
+   */
+  const canPost = (caption.trim().length > 0 || imageKey !== null) && !upload.isPending;
+
+  const submit = () => {
+    if (!canPost) return;
+    createPost.mutate(
+      {
+        ...(imageKey ? { imageKey } : {}),
+        ...(caption.trim() ? { caption: caption.trim() } : {}),
+      },
+      { onSuccess: reset },
+    );
+  };
+
+  const pickPhoto = () => fileInputRef.current?.click();
+
+  const photoInput = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      accept="image/*"
+      className="hidden"
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        // Reset so choosing the same file twice fires change again.
+        event.target.value = '';
+        if (!file) return;
+        setOpen(true);
+        // Shown from the local file immediately: the upload takes a moment and
+        // a blank card while it runs reads as a failure.
+        setPreview(URL.createObjectURL(file));
+        upload.mutate(file, {
+          onSuccess: (result) => setImageKey(result.key),
+          onError: dropPhoto,
+        });
+      }}
+    />
+  );
+
+  /*
+    Closed, the composer is a prompt rather than a call to action: posting is
+    something you do when you have something to show, so it sits quietly in the
+    list looking like the thing it makes. The picture icon opens the same form
+    with the file dialog already up — one tap either way, and the words are no
+    longer the only way in.
+  */
+  if (!open) {
+    return (
+      <Card>
+        <div className="flex flex-row items-center gap-3">
+          <Avatar
+            avatarKey={me.data?.avatarKey ?? null}
+            displayName={me.data?.displayName ?? ''}
+            size={40}
+          />
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="flex-1 cursor-pointer rounded-full border border-surface-border bg-surface-muted px-4 py-2.5 text-left text-sm text-ink-subtle transition-colors hover:border-brand"
+          >
+            Post to feed
+          </button>
+          <button
+            type="button"
+            aria-label="Add a photo"
+            title="Add a photo"
+            onClick={pickPhoto}
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand"
+          >
+            <PhotoIcon />
+          </button>
+        </div>
+        <ErrorText message={upload.error?.message} />
+        {photoInput}
+      </Card>
+    );
+  }
 
   return (
     <Card>
-      {preview ? (
-        <div className="flex flex-col gap-3">
-          <img
-            src={preview}
-            alt="The photo you are about to post"
-            className="max-h-80 w-full rounded-xl object-cover"
-          />
-          <Field
-            label="Say something (optional)"
-            value={caption}
-            onChangeText={setCaption}
-            maxLength={MAX_POST_CAPTION}
-            hint={`${caption.length}/${MAX_POST_CAPTION}`}
-            placeholder="Four hours, one chapter, no phone."
-          />
-          <ErrorText message={createPost.error?.message} />
-          <div className="flex flex-row gap-2">
-            <Button
-              className="flex-1"
-              label="Post"
-              disabled={!imageKey || createPost.isPending}
-              loading={createPost.isPending}
-              onClick={() =>
-                imageKey &&
-                createPost.mutate(
-                  { imageKey, ...(caption.trim() ? { caption: caption.trim() } : {}) },
-                  { onSuccess: reset },
-                )
-              }
-            />
-            <Button label="Cancel" variant="ghost" className="w-auto" onClick={reset} />
-          </div>
-        </div>
-      ) : (
-        <>
-          {/*
-            A prompt, not a call to action. Posting is something you do when you
-            have something to show, so the composer should sit quietly in the
-            list looking like the thing it makes — a row with your face on it —
-            rather than shouting from a full-width button. The picture icon is
-            what says a photo is involved; the words no longer have to.
-          */}
-          <div className="flex flex-row items-center gap-3">
-            <Avatar
-              avatarKey={me.data?.avatarKey ?? null}
-              displayName={me.data?.displayName ?? ''}
-              size={40}
-            />
-            <button
-              type="button"
-              disabled={upload.isPending}
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-1 cursor-pointer rounded-full border border-surface-border bg-surface-muted px-4 py-2.5 text-left text-sm text-ink-subtle transition-colors hover:border-brand disabled:cursor-not-allowed"
-            >
-              {upload.isPending ? 'Uploading…' : 'Post to feed'}
-            </button>
-            <button
-              type="button"
-              aria-label="Add a photo"
-              title="Add a photo"
-              disabled={upload.isPending}
-              onClick={() => fileInputRef.current?.click()}
-              className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.8}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-5 w-5"
-              >
-                <rect x="3" y="4" width="14" height="14" rx="2.5" />
-                <circle cx="8" cy="9" r="1.4" />
-                <path d="M3.6 15.5 7.5 12l3.4 3M19 14v6m3-3h-6" />
-              </svg>
-            </button>
-          </div>
-          <ErrorText message={upload.error?.message} />
-        </>
-      )}
+      <div className="flex flex-col gap-3">
+        <Field
+          label="Post to feed"
+          value={caption}
+          onChangeText={setCaption}
+          maxLength={MAX_POST_CAPTION}
+          hint={`${caption.length}/${MAX_POST_CAPTION}`}
+          placeholder="Four hours, one chapter, no phone."
+          multiline
+          rows={3}
+          autoFocus
+        />
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          // Reset so choosing the same file twice fires change again.
-          event.target.value = '';
-          if (!file) return;
-          // Shown from the local file immediately: the upload takes a moment and
-          // a blank card while it runs reads as a failure.
-          setPreview(URL.createObjectURL(file));
-          upload.mutate(file, {
-            onSuccess: (result) => setImageKey(result.key),
-            onError: reset,
-          });
-        }}
-      />
+        {preview ? (
+          <div className="relative">
+            <img
+              src={preview}
+              alt="The photo you are about to post"
+              className="max-h-80 w-full rounded-xl object-cover"
+            />
+            {upload.isPending ? (
+              <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/30 text-sm font-semibold text-white">
+                Uploading…
+              </span>
+            ) : (
+              <button
+                type="button"
+                aria-label="Remove this photo"
+                onClick={dropPhoto}
+                className="absolute right-2 top-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/60 text-lg leading-none text-white"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        <ErrorText message={upload.error?.message ?? createPost.error?.message} />
+
+        <div className="flex flex-row items-center gap-2">
+          {/* The photo is optional now, so it is an icon beside Post rather than
+              the thing standing between someone and posting at all. */}
+          <button
+            type="button"
+            aria-label={preview ? 'Replace the photo' : 'Add a photo'}
+            title={preview ? 'Replace the photo' : 'Add a photo'}
+            onClick={pickPhoto}
+            disabled={upload.isPending}
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <PhotoIcon />
+          </button>
+          <Button
+            className="flex-1"
+            label="Post"
+            disabled={!canPost || createPost.isPending}
+            loading={createPost.isPending}
+            onClick={submit}
+          />
+          <Button label="Cancel" variant="ghost" className="w-auto" onClick={reset} />
+        </div>
+      </div>
+
+      {photoInput}
     </Card>
+  );
+}
+
+/** A picture with a plus — "a photo can go here", in one glyph. */
+function PhotoIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+    >
+      <rect x="3" y="4" width="14" height="14" rx="2.5" />
+      <circle cx="8" cy="9" r="1.4" />
+      <path d="M3.6 15.5 7.5 12l3.4 3M19 14v6m3-3h-6" />
+    </svg>
   );
 }
 
@@ -210,6 +290,7 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
   const react = useReactToPost();
   const remove = useDeletePost();
   const [reporting, setReporting] = useState(false);
+  const [repliesOpen, setRepliesOpen] = useState(false);
 
   return (
     <Card>
@@ -227,17 +308,24 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
         </div>
       </div>
 
-      <img
-        src={avatarUrl(post.imageKey) ?? ''}
-        alt={post.caption ?? `A photo from ${post.author.displayName}`}
-        loading="lazy"
-        // crossOrigin for the same reason avatars carry it: the media route is a
-        // different origin in development, and without it the image is opaque.
-        crossOrigin="anonymous"
-        className="w-full rounded-xl object-cover"
-      />
+      {/* A post may be words alone, so the photo is conditional — and when it is
+          the only content, the caption below it is what is missing instead. */}
+      {post.imageKey ? (
+        <img
+          src={avatarUrl(post.imageKey) ?? ''}
+          alt={post.caption ?? `A photo from ${post.author.displayName}`}
+          loading="lazy"
+          // crossOrigin for the same reason avatars carry it: the media route is
+          // a different origin in development, and without it the image is
+          // opaque.
+          crossOrigin="anonymous"
+          className="w-full rounded-xl object-cover"
+        />
+      ) : null}
 
-      {post.caption ? <p className="mt-3 text-base text-ink">{post.caption}</p> : null}
+      {post.caption ? (
+        <p className={`text-base text-ink ${post.imageKey ? 'mt-3' : ''}`}>{post.caption}</p>
+      ) : null}
 
       <div className="mt-3 flex flex-row flex-wrap gap-2">
         {REACTIONS.map((option) => {
@@ -266,7 +354,34 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
         })}
       </div>
 
-      <div className="mt-3 flex flex-row justify-end gap-3">
+      <div className="mt-3 flex flex-row items-center gap-3">
+        {/*
+          Replies sit with the reactions, not under them: they are the other
+          half of the same gesture. The count is on the button because the
+          number is the reason to press it.
+        */}
+        <button
+          type="button"
+          onClick={() => setRepliesOpen(true)}
+          className="flex cursor-pointer flex-row items-center gap-1.5 rounded-full border border-surface-border bg-surface px-3 py-1.5 text-sm text-ink-muted transition-colors hover:border-brand hover:text-brand"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            strokeLinejoin="round"
+            className="h-4 w-4"
+            aria-hidden="true"
+          >
+            <path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.4-4.2A7.5 7.5 0 1 1 20 11.5Z" />
+          </svg>
+          <span>
+            {post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}
+          </span>
+        </button>
+
+        <div className="flex flex-1 flex-row justify-end gap-3">
         {post.author.id === viewerId ? (
           <button
             type="button"
@@ -285,7 +400,14 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
             Report
           </button>
         )}
+        </div>
       </div>
+
+      <RepliesSheet
+        post={post}
+        open={repliesOpen}
+        onClose={() => setRepliesOpen(false)}
+      />
 
       <ReportSheet
         visible={reporting}
@@ -295,5 +417,92 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
         onClose={() => setReporting(false)}
       />
     </Card>
+  );
+}
+
+/**
+ * Every reply on one post, and the box to add another.
+ *
+ * A sheet rather than an inline thread. On a phone-shaped column, expanding
+ * five replies under a post pushes the next post off the screen, and the Feed's
+ * job is to be scrollable. It also means the list is only fetched for the post
+ * somebody actually opened.
+ */
+function RepliesSheet({
+  post,
+  open,
+  onClose,
+}: {
+  post: FeedPost;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const replies = useReplies(post.id, open);
+  const createReply = useCreateReply(post.id);
+  const [body, setBody] = useState('');
+
+  const send = () => {
+    if (body.trim().length === 0 || createReply.isPending) return;
+    createReply.mutate(body.trim(), { onSuccess: () => setBody('') });
+  };
+
+  const list = replies.data?.replies ?? [];
+
+  return (
+    <Sheet open={open} onClose={onClose} title={`Replies to ${post.author.displayName}'s post`}>
+      <div className="flex flex-row items-center justify-between">
+        <h2 className="text-lg font-bold text-ink">
+          {list.length === 1 ? '1 reply' : `${list.length} replies`}
+        </h2>
+        <Button label="Close" variant="ghost" className="w-auto" onClick={onClose} />
+      </div>
+
+      {replies.isPending && open ? (
+        <div className="flex items-center justify-center py-6 text-ink-subtle">
+          <Spinner />
+        </div>
+      ) : list.length === 0 ? (
+        <p className="py-2 text-sm text-ink-subtle">
+          Nothing yet. Be the one who says something.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {list.map((reply) => (
+            <div key={reply.id} className="flex flex-row items-start gap-3">
+              <Avatar
+                avatarKey={reply.author.avatarKey}
+                displayName={reply.author.displayName}
+                size={32}
+              />
+              <div className="flex min-w-0 flex-1 flex-col rounded-2xl bg-surface-muted px-3 py-2">
+                <p className="text-sm font-semibold text-ink">
+                  {reply.author.displayName}{' '}
+                  <span className="font-normal text-ink-subtle">@{reply.author.handle}</span>
+                </p>
+                <p className="text-sm text-ink">{reply.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-col gap-2 border-t border-surface-border pt-4">
+        <Field
+          label="Say something"
+          value={body}
+          onChangeText={setBody}
+          maxLength={MAX_REPLY_TEXT}
+          placeholder="Nice one"
+          onSubmit={send}
+        />
+        <ErrorText message={createReply.error?.message ?? replies.error?.message} />
+        <Button
+          label="Reply"
+          disabled={body.trim().length === 0 || createReply.isPending}
+          loading={createReply.isPending}
+          onClick={send}
+        />
+      </div>
+    </Sheet>
   );
 }

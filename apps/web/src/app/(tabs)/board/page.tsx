@@ -7,7 +7,9 @@ import { useLeaderboard, type LeaderboardScope } from '@/api/board';
 import { Avatar, Card, RefreshButton, Screen, Spinner } from '@/components';
 
 export default function Board() {
-  const [scope, setScope] = useState<LeaderboardScope>('weekly');
+  // All time by default: a week's board is nearly empty on a Monday, and a
+  // leaderboard that reads as empty says the product is empty.
+  const [scope, setScope] = useState<LeaderboardScope>('alltime');
   const board = useLeaderboard(scope);
   const me = useMe();
 
@@ -21,15 +23,16 @@ export default function Board() {
       </div>
 
       <div role="tablist" aria-label="Leaderboard range" className="flex flex-row gap-2">
-        <ScopeTab
-          label="This week"
-          active={scope === 'weekly'}
-          onClick={() => setScope('weekly')}
-        />
+        {/* Default first, so the tabs read in the order they are used. */}
         <ScopeTab
           label="All time"
           active={scope === 'alltime'}
           onClick={() => setScope('alltime')}
+        />
+        <ScopeTab
+          label="This week"
+          active={scope === 'weekly'}
+          onClick={() => setScope('weekly')}
         />
       </div>
 

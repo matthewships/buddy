@@ -67,6 +67,9 @@ export const RATE_LIMITS = {
   buddyRequest: { limit: 20, windowMs: 60 * 60 * 1000 },
   report: { limit: 10, windowMs: 60 * 60 * 1000 },
   post: { limit: 20, windowMs: 60 * 60 * 1000 },
+  // Looser than posting: replying is the cheap, chatty half of the Feed, and a
+  // bucket sized for posts would cut someone off mid-thread on a busy morning.
+  reply: { limit: 60, windowMs: 60 * 60 * 1000 },
   inviteLink: { limit: 20, windowMs: 60 * 60 * 1000 },
 } as const;
 
@@ -120,6 +123,13 @@ export const MAX_TASK_MINUTES = 12 * 60;
 
 /** Feed posts (§2.7). */
 export const MAX_POST_CAPTION = 300;
+
+/**
+ * A reply on a post. Shorter than a caption: a reply is somebody being pleased
+ * for you, and the Feed is deliberately not a place to hold a conversation —
+ * that is what the group chat is for.
+ */
+export const MAX_REPLY_TEXT = 200;
 export const MAX_POST_BYTES = 5 * 1024 * 1024;
 
 /**

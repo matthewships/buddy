@@ -638,6 +638,21 @@ export const posts = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * The photo, or `''` for a post that is only words.
+     *
+     * The empty string is a sentinel, and a deliberate one. A post is now a
+     * photo, a caption, or both, so this column wants to be nullable — but
+     * dropping NOT NULL in SQLite means rebuilding the table, and `posts` is
+     * the parent of `post_reactions` with ON DELETE CASCADE. The DROP TABLE a
+     * rebuild performs fires that cascade, and the `PRAGMA foreign_keys=OFF`
+     * drizzle emits is a no-op inside the transaction D1 wraps each migration
+     * in — so the rebuild would take every reaction in the database with it.
+     * That is the same hazard 0003 and 0004 were hand-written to avoid.
+     *
+     * So the column keeps its constraint and the API maps `''` to `null` on the
+     * way out, in one helper, so that no caller ever sees the sentinel.
+     */
     imageKey: text('image_key').notNull(),
     caption: text('caption'),
     createdAt: text('created_at').notNull().default(now),
@@ -648,6 +663,33 @@ export const posts = sqliteTable(
     // by creation without a second column.
     index('posts_live_idx').on(t.deletedAt, t.id),
     index('posts_user_idx').on(t.userId),
+  ],
+);
+
+/**
+ * Replies on a post (§2.7).
+ *
+ * Its own table rather than a thread on the post, because a flat list per post
+ * — oldest first, no replies to replies — is all the Feed wants. The Feed is
+ * where people say "nice one"; holding an actual conversation is what the group
+ * chat is for, and a nesting model would invite one.
+ */
+export const postReplies = sqliteTable(
+  'post_replies',
+  {
+    id: text('id').primaryKey(),
+    postId: text('post_id')
+      .notNull()
+      .references(() => posts.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    body: text('body').notNull(),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    // "The replies on this post, oldest first" — the only read there is.
+    index('post_replies_post_idx').on(t.postId, t.createdAt),
   ],
 );
 

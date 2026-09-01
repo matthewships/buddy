@@ -50,6 +50,13 @@
       "when": 1788232749431,
       "tag": "0006_goal_list_and_other_hobby",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788238154572,
+      "tag": "0007_post_replies",
+      "breakpoints": true
     }
   ]
 }

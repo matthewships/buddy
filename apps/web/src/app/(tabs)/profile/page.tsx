@@ -83,24 +83,45 @@ export default function Profile() {
 
   return (
     <Screen>
+      {/*
+        Editing lives in the corner, not under the profile. Two full-width
+        buttons — "Edit profile" and "Change photo" — were the first thing the
+        screen said about a person, above their own name, and neither is
+        something anyone opens this screen to do.
+      */}
+      <div className="flex flex-row items-center justify-end">
+        <button
+          type="button"
+          aria-label="Edit your profile"
+          title="Edit profile"
+          onClick={() => router.push('/profile/edit')}
+          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5"
+          >
+            <path d="M4 20h4l10-10a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5z" />
+          </svg>
+        </button>
+      </div>
+
       <ProfileView
         profile={stats.data}
+        onChangePhoto={() => fileInputRef.current?.click()}
+        changingPhoto={uploadAvatar.isPending}
         banner={
           <div className="flex flex-col gap-3">
-            <div className="flex flex-row gap-2">
-              <Button label="Edit profile" onClick={() => router.push('/profile/edit')} />
-              <Button
-                label={uploadAvatar.isPending ? 'Uploading…' : 'Change photo'}
-                variant="ghost"
-                disabled={uploadAvatar.isPending}
-                onClick={() => fileInputRef.current?.click()}
-              />
-            </div>
             {/*
               The mobile screen calls expo-image-picker, which opens the OS
               picker directly. The web equivalent is a hidden file input driven
-              by a real button, so it stays keyboard-reachable and the browser
-              still applies its own file dialog.
+              by the avatar itself, so it stays keyboard-reachable and the
+              browser still applies its own file dialog.
             */}
             <input
               ref={fileInputRef}
