@@ -109,24 +109,26 @@ describe('student profile columns', () => {
   });
 
   /**
-   * The values that the pre-0009 CHECK constraints would have rejected outright
-   * with a SQLITE_CONSTRAINT error. This is the test that says the widening
-   * actually reached the database rather than only the TypeScript enums.
+   * `geography` is not in `FROZEN_MAJOR_KEYS`, so this exact write would have
+   * failed with SQLITE_CONSTRAINT before 0009. It is the test that says the
+   * widening reached the database rather than only the TypeScript enums — and
+   * that the level, which now lives in `education_level_v2`, still round-trips
+   * alongside it.
    */
-  it('stores a level and subject that the frozen CHECKs forbid', async () => {
+  it('stores a subject the frozen CHECK forbids', async () => {
     const me = await signUp('sp-widened@example.com');
     const res = await patch(
       '/api/me',
-      { handle: 'spwide', educationLevel: 'middle_school', majorKey: 'geography' },
+      { handle: 'spwide', educationLevel: 'high_school', majorKey: 'geography' },
       me.accessToken,
     );
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body.educationLevel).toBe('middle_school');
+    expect(body.educationLevel).toBe('high_school');
     expect(body.majorKey).toBe('geography');
-    // Middle school still has to derive a legacy occupation the old CHECK
-    // allows, or the same write would fail one column later.
+    // The legacy occupation is derived from the level and still has to satisfy
+    // its own CHECK, or the same write fails one column later.
     expect(body.occupationKey).toBe('student_high_school');
   });
 

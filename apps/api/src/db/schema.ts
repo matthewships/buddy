@@ -42,15 +42,15 @@ import {
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
 
 /**
- * A CHECK constraint generated from a shared enum, so the database and
- * `packages/shared` cannot drift. `nullable` allows the column to be unset
- * while still constraining any value that is present.
- */
-/**
  * The education levels and majors as `0000_init` wrote them into the two CHECK
- * constraints on `users`. Copies, deliberately: `EDUCATION_LEVEL_KEYS` and
- * `MAJOR_KEYS` have grown since and will grow again, while what is written into
- * the database cannot change. See migration 0009.
+ * constraints on `users`.
+ *
+ * Copies rather than the shared lists, deliberately. `MAJOR_KEYS` has already
+ * grown past this, and `EDUCATION_LEVEL_KEYS` is expected to — while what is
+ * written into the database cannot change without the table rebuild that
+ * migration 0009 documents as fatal here. Generating these from the shared
+ * enums would make drizzle-kit see a changed constraint and reach for exactly
+ * that rebuild, which is the accident this spelling prevents.
  */
 const FROZEN_LEVEL_KEYS = [
   'high_school',
@@ -99,6 +99,11 @@ const FROZEN_MAJOR_KEYS = [
   'custom',
 ] as const;
 
+/**
+ * A CHECK constraint generated from a shared enum, so the database and
+ * `packages/shared` cannot drift. `nullable` allows the column to be unset
+ * while still constraining any value that is present.
+ */
 const enumCheck = (
   name: string,
   column: string,
@@ -149,12 +154,17 @@ export const users = sqliteTable(
     /* Student profile (§2.1). All nullable: users who onboarded before these
        existed have none of them, and there is nothing to backfill them with. */
     /**
-     * Frozen 2026-09-02. `education_level` carries a CHECK listing the seven
-     * levels that existed before `middle_school`, and SQLite cannot widen a
-     * CHECK in place — only by rebuilding the table, which 0003 established is
-     * unsafe here and which a test in 0009's commit proved destroys the child
-     * rows. So the column is left where it is, still holding what it held, and
-     * the product reads `educationLevel` below. Nothing writes this again.
+     * Frozen 2026-09-02. It carries a CHECK over the seven levels, and SQLite
+     * cannot widen a CHECK in place — only by rebuilding the table, which 0003
+     * established is unsafe here and which a test in 0009's commit proved
+     * destroys the child rows.
+     *
+     * The level that prompted 0009, `middle_school`, was removed the same day
+     * once the age floor landed at 16 (§2.8), so this column's list and the
+     * shared one currently agree. The split is kept anyway, and deliberately:
+     * the list is expected to move on signup data, and while the product reads
+     * the unchecked column below, moving it costs nothing. Nothing writes this
+     * one again.
      */
     educationLevelLegacy: text('education_level'),
     /** The live column. Deliberately unchecked — see the note on the indexes. */

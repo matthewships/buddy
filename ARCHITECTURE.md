@@ -224,8 +224,8 @@ anyone else's history, so there is nothing lost by removing it.
 
 ## 2.8 Age, and who this is for — added 2026-09-02
 
-**`middle_school` is now the youngest level offered**, which makes this worth
-writing down rather than leaving implied.
+**Buddy is for people aged 16 and over**, and this is the section that says what
+that does and does not buy.
 
 **The floor is 16, and it is enforced.** `MIN_AGE_YEARS` in
 `packages/shared/src/age.ts` is the single place it lives; `dateOfBirthSchema`
@@ -262,11 +262,19 @@ have a null date of birth and are left alone: an unanswered age is not a young
 one, and there is nothing honest to backfill. And `apps/mobile` does not ask the
 question yet, so the gate binds the web signup only.
 
-**Note the tension with `middle_school`.** The level was added the same day the
-floor was set at 16, and middle school is ordinarily 11–14. Almost nobody who
-can pass the gate is in it. The two are consistent only for an unusual case, and
-the honest options are to drop the level, lower the floor, or accept that the
-option is effectively dead.
+**`middle_school` was added and removed the same day.** It went in before the
+floor was chosen; middle school is ordinarily 11–14, so once the floor landed at
+16 the option could only have been picked by somebody answering it wrongly, and
+a question nobody can answer truthfully is what `level-fit.ts` exists to
+prevent. **Decided 2026-09-02:** the floor is 16, high school is the youngest
+level, and the level list gets revisited on signup data rather than on a guess.
+
+Nothing about that decision is expensive to reverse. `education_level_v2`
+(migration 0009) carries no CHECK, which was originally to let `middle_school`
+in and is now what makes any future change to the list an edit to
+`EDUCATION_LEVELS` and nothing else — no migration, no rebuild. The column stays
+for that reason even though the shared list and the frozen CHECK currently
+agree.
 
 ---
 

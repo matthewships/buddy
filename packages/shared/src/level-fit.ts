@@ -28,16 +28,12 @@ import { MAJORS, type MajorKey } from './majors';
  * It will not always do, and the school subjects are the case where it did not.
  * A high-school student needs Geography, Religious Studies and Drama, and no
  * amount of hiding produces a row the list never had — those were added to
- * `majors.ts` and paid for with the rebuild in migration 0009. What is here
+ * `majors.ts` and paid for with the new column in migration 0009. What is here
  * stays a view.
  */
 
 /** Goals that do not apply at a level. Everything unlisted is offered. */
 const GOALS_EXCLUDED: Record<EducationLevelKey, readonly GoalKey[]> = {
-  // Everything high school excludes, plus the SAT and job hunting: a
-  // thirteen-year-old is not sitting the one or doing the other, and offering
-  // them is the "question you cannot answer" this file exists to prevent.
-  middle_school: ['thesis', 'university_project', 'sat', 'job_hunting'],
   // No thesis, and no university coursework, before university.
   high_school: ['thesis', 'university_project'],
   // Foundation and college students are applying onward, so the tests stay.
@@ -53,9 +49,9 @@ const GOALS_EXCLUDED: Record<EducationLevelKey, readonly GoalKey[]> = {
 };
 
 /**
- * Degree subjects that are not school subjects. Only the two school levels are
- * narrowed — every other level is choosing or has chosen a real field, so the
- * full list is the right one.
+ * Degree subjects that are not school subjects. Only high school is narrowed —
+ * every other level is choosing or has chosen a real field, so the full list is
+ * the right one.
  *
  * Note what is *not* here: `geography`, `religious_studies`, `drama`,
  * `sports_science` and `art` are school subjects and degree subjects both, so
@@ -115,13 +111,10 @@ export function goalsForLevel(
   return excluded ? narrow(GOALS, excluded, keep) : GOALS;
 }
 
-/** The two levels that are at school rather than choosing or doing a degree. */
-const AT_SCHOOL: readonly string[] = ['middle_school', 'high_school'];
-
 /** The subjects to offer at a level. See {@link goalsForLevel} for `keep`. */
 export function majorsForLevel(
   level: string | null | undefined,
   keep: readonly string[] = [],
 ): readonly { key: MajorKey; label: string }[] {
-  return level && AT_SCHOOL.includes(level) ? narrow(MAJORS, SCHOOL_EXCLUDED, keep) : MAJORS;
+  return level === 'high_school' ? narrow(MAJORS, SCHOOL_EXCLUDED, keep) : MAJORS;
 }
