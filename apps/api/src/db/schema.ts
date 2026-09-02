@@ -11,12 +11,10 @@ import {
 
 import {
   CREDIT_REASONS,
-  EDUCATION_LEVEL_KEYS,
   EMAIL_CODE_PURPOSES,
   GOAL_KEYS,
   GROUP_KINDS,
   GROUP_ROLES,
-  MAJOR_KEYS,
   OCCUPATION_KEYS,
   PLATFORMS,
   REPORT_STATUSES,
@@ -48,6 +46,59 @@ const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
  * `packages/shared` cannot drift. `nullable` allows the column to be unset
  * while still constraining any value that is present.
  */
+/**
+ * The education levels and majors as `0000_init` wrote them into the two CHECK
+ * constraints on `users`. Copies, deliberately: `EDUCATION_LEVEL_KEYS` and
+ * `MAJOR_KEYS` have grown since and will grow again, while what is written into
+ * the database cannot change. See migration 0009.
+ */
+const FROZEN_LEVEL_KEYS = [
+  'high_school',
+  'foundation',
+  'undergraduate',
+  'masters',
+  'phd',
+  'postdoc',
+  'recent_graduate',
+] as const;
+
+const FROZEN_MAJOR_KEYS = [
+  'computer_science',
+  'software_engineering',
+  'data_science',
+  'engineering',
+  'mathematics',
+  'physics',
+  'chemistry',
+  'biology',
+  'medicine',
+  'nursing',
+  'pharmacy',
+  'psychology',
+  'economics',
+  'business',
+  'finance',
+  'marketing',
+  'law',
+  'politics',
+  'sociology',
+  'education',
+  'history',
+  'philosophy',
+  'languages',
+  'literature',
+  'architecture',
+  'design',
+  'art',
+  'music',
+  'media',
+  'environment',
+  'agriculture',
+  'sports_science',
+  'undecided',
+  'custom',
+] as const;
+
 const enumCheck = (
   name: string,
   column: string,
@@ -97,7 +148,17 @@ export const users = sqliteTable(
     occupationText: text('occupation_text'),
     /* Student profile (§2.1). All nullable: users who onboarded before these
        existed have none of them, and there is nothing to backfill them with. */
-    educationLevel: text('education_level'),
+    /**
+     * Frozen 2026-09-02. `education_level` carries a CHECK listing the seven
+     * levels that existed before `middle_school`, and SQLite cannot widen a
+     * CHECK in place — only by rebuilding the table, which 0003 established is
+     * unsafe here and which a test in 0009's commit proved destroys the child
+     * rows. So the column is left where it is, still holding what it held, and
+     * the product reads `educationLevel` below. Nothing writes this again.
+     */
+    educationLevelLegacy: text('education_level'),
+    /** The live column. Deliberately unchecked — see the note on the indexes. */
+    educationLevel: text('education_level_v2'),
     institution: text('institution'),
     /**
      * `institution` folded by `normaliseInstitution()`. Stored rather than
@@ -107,7 +168,10 @@ export const users = sqliteTable(
     institutionNormalised: text('institution_normalised'),
     /** What `custom` means, when it is one of the user's interests. */
     interestText: text('interest_text'),
-    majorKey: text('major_key'),
+    /** Frozen 2026-09-02, exactly as `education_level` above. */
+    majorKeyLegacy: text('major_key'),
+    /** The live column. Deliberately unchecked — see the note on the indexes. */
+    majorKey: text('major_key_v2'),
     majorText: text('major_text'),
     /** ISO 3166-1 alpha-2. */
     country: text('country'),
@@ -145,18 +209,29 @@ export const users = sqliteTable(
     index('users_goal_idx').on(t.goalKey),
     index('users_goal_2_idx').on(t.goalKey2),
     index('users_occupation_idx').on(t.occupationKey),
-    // The student filters on the directory.
-    index('users_level_idx').on(t.educationLevel),
-    index('users_major_idx').on(t.majorKey),
+    // The student filters on the directory. Both point at the live columns; the
+    // frozen ones keep their original indexes, which cost nothing and would
+    // need a rebuild to drop.
+    index('users_level_v2_idx').on(t.educationLevel),
+    index('users_major_v2_idx').on(t.majorKey),
     index('users_country_idx').on(t.country),
     index('users_institution_idx').on(t.institutionNormalised),
     enumCheck('users_goal_key_check', 'goal_key', GOAL_KEYS, { nullable: true }),
     enumCheck('users_goal_key_2_check', 'goal_key_2', GOAL_KEYS, { nullable: true }),
     enumCheck('users_occupation_key_check', 'occupation_key', OCCUPATION_KEYS, { nullable: true }),
-    enumCheck('users_education_level_check', 'education_level', EDUCATION_LEVEL_KEYS, {
+    /**
+     * These two describe the *frozen* columns, so they are spelled out rather
+     * than generated from the shared enums. Generating them would silently
+     * render the widened lists, drizzle-kit would see a changed constraint, and
+     * it would reach for the table rebuild that must never run on this table.
+     * The live `education_level_v2` and `major_key_v2` carry no CHECK at all:
+     * following 0006's `goal_keys`, membership is enforced by Zod at the edge,
+     * which is the only gate that can be widened without a rebuild.
+     */
+    enumCheck('users_education_level_check', 'education_level', FROZEN_LEVEL_KEYS, {
       nullable: true,
     }),
-    enumCheck('users_major_key_check', 'major_key', MAJOR_KEYS, { nullable: true }),
+    enumCheck('users_major_key_check', 'major_key', FROZEN_MAJOR_KEYS, { nullable: true }),
     /**
      * Country is checked for *shape*, not membership. The other enums are
      * short, app-defined lists; ISO 3166 is ~200 codes, and a CHECK that long

@@ -64,6 +64,13 @@
       "when": 1788299257372,
       "tag": "0008_user_status",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788316776254,
+      "tag": "0009_widen_level_and_major",
+      "breakpoints": true
     }
   ]
 }

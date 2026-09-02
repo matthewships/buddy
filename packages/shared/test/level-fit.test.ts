@@ -6,6 +6,7 @@ import {
   MAJORS,
   goalsForLevel,
   majorsForLevel,
+  occupationForLevel,
 } from '../src/index';
 
 const keys = (list: readonly { key: string }[]) => list.map((option) => option.key);
@@ -98,8 +99,24 @@ describe('majorsForLevel', () => {
     }
   });
 
-  it('leaves every other level the full list', () => {
-    for (const level of EDUCATION_LEVEL_KEYS.filter((key) => key !== 'high_school')) {
+  it('narrows middle school exactly as it narrows high school', () => {
+    expect(keys(majorsForLevel('middle_school'))).toEqual(keys(majorsForLevel('high_school')));
+  });
+
+  it('offers the school subjects at both school levels', () => {
+    // The three that were missing outright until 2026-09-02: narrowing a list
+    // cannot produce a row it never had.
+    for (const level of ['middle_school', 'high_school'] as const) {
+      const offered = keys(majorsForLevel(level));
+      for (const subject of ['geography', 'religious_studies', 'drama']) {
+        expect(offered).toContain(subject);
+      }
+    }
+  });
+
+  it('leaves every level past school the full list', () => {
+    const atSchool: string[] = ['middle_school', 'high_school'];
+    for (const level of EDUCATION_LEVEL_KEYS.filter((key) => !atSchool.includes(key))) {
       expect(keys(majorsForLevel(level))).toEqual(keys(MAJORS));
     }
     expect(keys(majorsForLevel(null))).toEqual(keys(MAJORS));
@@ -114,5 +131,26 @@ describe('majorsForLevel', () => {
     for (const level of EDUCATION_LEVEL_KEYS) {
       expect(keys(MAJORS)).toEqual(expect.arrayContaining(keys(majorsForLevel(level))));
     }
+  });
+});
+
+describe('middle school', () => {
+  it('is the youngest level and comes first', () => {
+    expect(EDUCATION_LEVEL_KEYS[0]).toBe('middle_school');
+  });
+
+  it('is not offered the SAT, a thesis, university work or a job hunt', () => {
+    const offered = goalsForLevel('middle_school').map((goal) => goal.key);
+    for (const goal of ['sat', 'thesis', 'university_project', 'job_hunting']) {
+      expect(offered).not.toContain(goal);
+    }
+    // But the things a thirteen-year-old plausibly is doing stay.
+    for (const goal of ['final_exam', 'language', 'reading', 'coding', 'custom']) {
+      expect(offered).toContain(goal);
+    }
+  });
+
+  it('maps to the closest occupation the legacy CHECK already allows', () => {
+    expect(occupationForLevel('middle_school')).toBe('student_high_school');
   });
 });

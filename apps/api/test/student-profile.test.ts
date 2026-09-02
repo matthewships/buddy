@@ -108,6 +108,37 @@ describe('student profile columns', () => {
     expect(body.interests).toEqual(['running']);
   });
 
+  /**
+   * The values that the pre-0009 CHECK constraints would have rejected outright
+   * with a SQLITE_CONSTRAINT error. This is the test that says the widening
+   * actually reached the database rather than only the TypeScript enums.
+   */
+  it('stores a level and subject that the frozen CHECKs forbid', async () => {
+    const me = await signUp('sp-widened@example.com');
+    const res = await patch(
+      '/api/me',
+      { handle: 'spwide', educationLevel: 'middle_school', majorKey: 'geography' },
+      me.accessToken,
+    );
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.educationLevel).toBe('middle_school');
+    expect(body.majorKey).toBe('geography');
+    // Middle school still has to derive a legacy occupation the old CHECK
+    // allows, or the same write would fail one column later.
+    expect(body.occupationKey).toBe('student_high_school');
+  });
+
+  it('accepts the other subjects added for school students', async () => {
+    const me = await signUp('sp-school@example.com');
+    for (const majorKey of ['religious_studies', 'drama']) {
+      const res = await patch('/api/me', { majorKey }, me.accessToken);
+      expect(res.status).toBe(200);
+      expect((await res.json() as Record<string, unknown>).majorKey).toBe(majorKey);
+    }
+  });
+
   it('rejects a level or country the database does not know', async () => {
     const me = await student('sp-bad@example.com', 'spbad');
     expect((await patch('/api/me', { educationLevel: 'kindergarten' }, me.accessToken)).status).toBe(

@@ -11,8 +11,16 @@ import type { OccupationKey } from './occupations';
  *
  * "Level of study" rather than "grade" or "year": grade reads as US school only,
  * and year collides with the year *number* within a level.
+ *
+ * `middle_school` was added 2026-09-02 and is the youngest level offered. It is
+ * the one entry with a consequence outside this file: everything below it in
+ * the product — a directory that matches strangers, group chat, and photo
+ * proofs — was designed for people old enough to consent to it themselves.
+ * There is no date-of-birth field yet, so nothing here *enforces* an age; see
+ * ARCHITECTURE.md §2.8.
  */
 export const EDUCATION_LEVELS = [
+  { key: 'middle_school', label: 'Middle school' },
   { key: 'high_school', label: 'High school' },
   { key: 'foundation', label: 'Foundation / College' },
   { key: 'undergraduate', label: 'Undergraduate' },
@@ -42,6 +50,11 @@ export function educationLevelLabel(key: EducationLevelKey): string {
  * `student_grad` — the closest honest value in a list that predates this one.
  */
 export const OCCUPATION_FOR_LEVEL = {
+  // Middle school shares `student_high_school`, not because the two are the
+  // same but because `users.occupation_key` carries a CHECK that cannot be
+  // widened in place (see migration 0009) and this is the closest honest value
+  // already in it. The level column is what the product actually reads.
+  middle_school: 'student_high_school',
   high_school: 'student_high_school',
   foundation: 'student_undergrad',
   undergraduate: 'student_undergrad',

@@ -222,6 +222,47 @@ anyone else's history, so there is nothing lost by removing it.
 
 ---
 
+## 2.8 Age, and who this is for — added 2026-09-02
+
+**`middle_school` is now the youngest level offered**, which makes this worth
+writing down rather than leaving implied.
+
+**Nothing in the product enforces an age.** There is no date-of-birth column, no
+age field and no gate; `education_level` is a self-reported answer to a signup
+question and a thirteen-year-old and a thirty-year-old reach the same directory,
+the same group chat and the same photo proofs. The level list is the only place
+age appears at all, and it is a label, not a control.
+
+That matters because of what sits under it. Buddy matches **strangers**, gives
+them **private chat**, accepts **user photos** (avatars, Feed posts, and since
+2026-09-02 proof images), and stores institution and country. That combination —
+adult-accessible stranger matching, private messaging, and images of minors — is
+the fact pattern every child-safety regime is written around.
+
+The shape of the obligations, without pretending this is legal advice:
+
+- **Under 13** is COPPA territory in the US: verifiable parental consent, which
+  is a different product rather than a configuration.
+- **13** is the floor in the US and UK. The EU sets its own between 13 and 16 per
+  member state, defaulting to 16 where a state has not lowered it, so 13 means
+  per-country consent logic.
+- **16** clears every EU member state's threshold without branching and matches
+  Australia's minimum-age regime, but does **not** clear the UK's Age
+  Appropriate Design Code or Ofcom's children's duties, which cover all
+  under-18s.
+
+**What exists today as mitigation** is a report path: `REPORT_TARGETS` covers
+tasks, messages, users and posts, and the proof photo carries its own flag icon
+with an "inappropriate or explicit" reason (§2.4). There is no scanning, no EXIF
+stripping and no automatic takedown; a reported image stays visible to its group
+until an admin acts.
+
+**Outstanding, and gating anything stronger:** a date-of-birth field and a floor
+to enforce with it. Until that exists, no age statement this product makes is
+checkable.
+
+---
+
 ## 3. System diagram
 
 ```
@@ -306,6 +347,31 @@ reports          id, reporter_id, target_type (task|message|user), target_id, re
                  status (open|actioned|dismissed), created_at, resolved_at
 ```
 IDs are ULIDs; timestamps ISO-8601 UTC. `last_seen_at` is bumped (at most once per minute) by any authenticated request and by the chat socket, and powers the "Active now" indicator.
+
+**Widening an enum column, and why it costs a new column (0009, 2026-09-02).**
+`users` carries CHECK constraints generated from the shared enums, and SQLite
+can only change a CHECK by rebuilding the table. 0003 warned that the rebuild is
+unsafe here; 0009's commit proved it, in workerd against real D1: `PRAGMA
+foreign_keys` reads `1`, and `DROP TABLE users` took a child row with it (1 → 0).
+`PRAGMA foreign_keys=OFF` is a no-op inside the transaction D1 wraps a migration
+in, and `defer_foreign_keys=ON` does not stop the cascade either — both tested.
+**Thirty** `ON DELETE CASCADE` foreign keys point at `users`, so rebuilding it is
+not a risk to weigh but a way to empty the database.
+
+So `middle_school`, `geography`, `religious_studies` and `drama` arrived as two
+new columns — `education_level_v2` and `major_key_v2` — backfilled from the
+originals, indexed in their place, and carrying **no CHECK**. That last part
+follows `goal_keys` in 0006: a constraint that can only be widened by rebuilding
+can never be widened, and Zod already rejects any key outside the shared enums at
+the edge. The frozen columns stay exactly as they were, still holding what they
+held; `schema.ts` spells their constraints out in `FROZEN_LEVEL_KEYS` and
+`FROZEN_MAJOR_KEYS` rather than generating them, so a future addition to the
+shared lists cannot silently make drizzle-kit reach for the rebuild again.
+
+Nothing outside `schema.ts` changed: Drizzle's `educationLevel` and `majorKey`
+fields simply point at the new columns, so all twenty-odd call sites — the
+directory's match score, its filters, `PATCH /me`, the buddy card — kept working
+untouched.
 
 ### 4.3 Auth flow
 ```
