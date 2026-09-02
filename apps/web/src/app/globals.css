@@ -44,3 +44,69 @@
     animation: none;
   }
 }
+
+/**
+ * Landing-page motion.
+ *
+ * All of it lives inside `prefers-reduced-motion: no-preference`, which is the
+ * important part and the opposite of the usual arrangement. The common pattern
+ * is to hide an element by default and reveal it with an animation, then switch
+ * the animation off for reduced motion — which leaves those users looking at an
+ * invisible page. Here the default is the finished state, and motion is added
+ * only when it has been asked for. Turn every one of these rules off and the
+ * page is complete.
+ *
+ * Kept in CSS rather than a client component on purpose: `/` is a server
+ * component whose whole reason for existing is that the first paint needs no
+ * JavaScript, and an animation library would cost more than the page.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes landing-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* On load: the hero, which is above the fold and never scrolled into view. */
+  .landing-rise {
+    animation: landing-rise 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  }
+
+  /**
+   * Scroll-driven, and only where the browser can do it natively. `view()`
+   * needs no scroll listener, no observer and no JavaScript at all; without
+   * `@supports` the elements below would sit at the animation's 0% keyframe —
+   * invisible — in every browser that does not implement it.
+   */
+  @supports (animation-timeline: view()) {
+    .landing-reveal {
+      animation: landing-rise 600ms linear both;
+      animation-timeline: view();
+      animation-range: entry 5% cover 22%;
+    }
+  }
+
+  /**
+   * The one looping animation, on the dot that marks a task whose clock is
+   * running. It is the only thing on the page that is *claiming* to be live, so
+   * it is the only thing that moves on its own.
+   */
+  @keyframes landing-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  .landing-pulse {
+    animation: landing-pulse 1.8s ease-in-out infinite;
+  }
+}

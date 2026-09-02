@@ -39,14 +39,19 @@ import { BUTTON_BASE, BUTTON_VARIANT, type ButtonVariant } from './buttonStyles'
  * would put the whole page behind ~630 KiB of JS and ship blank HTML until
  * hydration; as a server component the markup and every call to action are in
  * the response, and the links work before a single byte of script has run.
- * **Interactive, still without a byte of JavaScript.** The first version of this
- * page said "no carousel, no accordion" and gave the bundle as the reason. The
- * reason was right and the conclusion was too broad: `<details>` is an accordion
- * the browser already implements, and `<details name>` makes a set of them
- * mutually exclusive — so the features and the questions open and close, on a
- * server component, at no cost. What stays banned is the interactivity that
- * *would* cost something: no scroll-spy, no counters animating on scroll, no
- * carousel needing a slide index. The section nav is plain `#` anchors, which
+ * **Interactive and animated, still without a byte of JavaScript.** The first
+ * version said "no carousel, no accordion, no counters that animate on scroll"
+ * and gave the bundle as the reason. The reason was right and the conclusion
+ * was too broad. `<details name>` is an exclusive accordion the browser already
+ * implements, and `animation-timeline: view()` is a scroll-driven animation
+ * with no observer and no listener — so the features and questions open and
+ * close, and sections rise as they arrive, on a server component, at no cost.
+ * What stays banned is what would still need script: a scroll-spy nav, a
+ * counter that has to count, a carousel needing a slide index.
+ *
+ * The motion rules live in globals.css and are all inside
+ * `prefers-reduced-motion: no-preference`, so the page's default state is the
+ * finished one — delete every animation and nothing disappears. The section nav is plain `#` anchors, which
  * the browser has handled since before JavaScript.
  *
  * A consequence worth knowing: every panel's markup is in the response whether
@@ -188,22 +193,37 @@ function Hero() {
     <div className="bg-ink px-5 pb-14 pt-16 sm:pt-20">
       <div className="mx-auto grid w-full max-w-5xl gap-12 md:grid-cols-2 md:items-center md:gap-10">
         <div className="flex flex-col">
-          <p className="text-sm font-semibold uppercase tracking-widest text-brand-muted/70">
+          <p className="landing-rise text-sm font-semibold uppercase tracking-widest text-brand-muted/70">
             For students
           </p>
-          <h1 className="mt-3 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">
-            Say what you&rsquo;ll finish today.
+          {/*
+            Two promises, because the product is two things and leading with
+            only the second one undersold it. Finding somebody is the half most
+            people arrive needing; finishing the work is the half that makes
+            having found them worth anything.
+          */}
+          <h1
+            className="landing-rise mt-3 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]"
+            style={{ animationDelay: '80ms' }}
+          >
+            Find a study buddy.
             <br />
-            <span className="text-brand-muted">Have someone check.</span>
+            <span className="text-brand-muted">Actually finish today.</span>
           </h1>
-          <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-subtle">
-            Buddy puts you in a small group of students, and nothing you plan counts until one
-            of them says it does.
+          <p
+            className="landing-rise mt-5 max-w-md text-lg leading-relaxed text-ink-subtle"
+            style={{ animationDelay: '160ms' }}
+          >
+            Matched with students working toward the same thing as you — then nothing you plan
+            counts until one of them says it does.
           </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div
+            className="landing-rise mt-8 flex flex-col gap-3 sm:flex-row"
+            style={{ animationDelay: '240ms' }}
+          >
             <Link href={START} className={cta('primary')}>
-              Get started
+              Find my buddy
             </Link>
             <Link
               href="/login"
@@ -213,43 +233,17 @@ function Hero() {
             </Link>
           </div>
 
-          <p className="mt-5 text-sm text-ink-subtle">
+          <p
+            className="landing-rise mt-5 text-sm text-ink-subtle"
+            style={{ animationDelay: '320ms' }}
+          >
             In this browser. Nothing to install.
           </p>
         </div>
 
         <HeroMock />
       </div>
-
-      <FactStrip />
     </div>
-  );
-}
-
-/**
- * Where a competitor's hero puts "500+ universities · 3m+ students", this puts
- * four facts about the product. Buddy has no institutions to name and no users
- * to count yet, and a made-up number in this position is the single fastest way
- * to deserve nobody's trust. Every figure here is read from `@buddy/shared`,
- * which is the same rule the rest of the page follows.
- */
-function FactStrip() {
-  const facts = [
-    { value: String(BADGES.length), label: `badges, over ${BADGE_FAMILIES.length} ladders` },
-    { value: `${REQUEST_MINUTES} min`, label: 'to answer a buddy request, or it lapses' },
-    { value: String(EDUCATION_LEVELS.length), label: 'levels, from high school to postdoc' },
-    { value: '0', label: 'downloads — it runs in your browser' },
-  ];
-
-  return (
-    <dl className="mx-auto mt-16 grid w-full max-w-5xl grid-cols-2 gap-x-6 gap-y-8 border-t border-white/10 pt-10 lg:grid-cols-4">
-      {facts.map((fact) => (
-        <div key={fact.label} className="flex flex-col">
-          <dt className="text-3xl font-bold tracking-tight text-white sm:text-4xl">{fact.value}</dt>
-          <dd className="mt-1 text-sm leading-snug text-ink-subtle">{fact.label}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 
@@ -283,7 +277,8 @@ function HeroMock() {
   return (
     <div
       aria-hidden="true"
-      className="mx-auto w-full max-w-sm rounded-3xl border border-surface-border bg-surface p-4 shadow-2xl"
+      className="landing-rise mx-auto w-full max-w-sm rounded-3xl border border-surface-border bg-surface p-4 shadow-2xl"
+      style={{ animationDelay: '200ms' }}
     >
       <div className="flex flex-row items-baseline justify-between">
         <span className="text-base font-bold text-ink">📚 Finals week</span>
@@ -346,7 +341,9 @@ function MockTask({
 }) {
   const dot = {
     approved: 'bg-success',
-    running: 'bg-brand',
+    // The only thing on the page that moves by itself, because it is the only
+    // one claiming to be live. See `landing-pulse` in globals.css.
+    running: 'bg-brand landing-pulse',
     waiting: 'bg-warning',
   }[state];
 
@@ -369,31 +366,41 @@ function MockTask({
 }
 
 /**
- * The mechanic, in four steps. This is the section that has to do the work a
- * competitor's page does with logos and yield statistics: Buddy is new, it has
- * no universities to name and no numbers to quote, and inventing either would
- * be the fastest way to deserve none. What it does have is a loop that can be
- * explained in four lines, so it is explained in four lines.
+ * The mechanic, in five steps.
+ *
+ * It used to be four and started at "plan today", which quietly assumed the
+ * hard part was already solved. It is not: most people arrive with nobody to be
+ * accountable to, and the matching is half of what this product does. Finding
+ * somebody is step one.
+ *
+ * Each card reveals as it scrolls in, with the delay coming from its position
+ * so the row assembles left to right. `animation-timeline: view()` does that
+ * with no observer and no script — see globals.css.
  */
 function HowItWorks() {
   const steps = [
     {
       n: '1',
+      title: 'Find someone',
+      body: 'Matched on your goal first, then your campus, then your subject. Ask, and you know inside five minutes.',
+    },
+    {
+      n: '2',
       title: 'Plan today',
       body: 'Not this term. Today. It resets at your midnight, in your timezone.',
     },
     {
-      n: '2',
+      n: '3',
       title: 'Do it',
       body: 'Start the clock. While it runs, the group chat is closed to you.',
     },
     {
-      n: '3',
-      title: 'Someone checks',
-      body: `A groupmate approves it, rates it out of ${MAX_RATING}, or asks for proof.`,
+      n: '4',
+      title: 'They check',
+      body: `Your buddy approves it, rates it out of ${MAX_RATING}, or asks for proof.`,
     },
     {
-      n: '4',
+      n: '5',
       title: 'The streak',
       body: 'Every approved day extends it. Miss one and it is back to nothing.',
     },
@@ -401,12 +408,16 @@ function HowItWorks() {
 
   return (
     <Section id="how" className="bg-surface">
-      <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
-        Four steps, and the third one is the whole idea
+      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+        Someone to answer to, and something to answer for
       </h2>
-      <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-        {steps.map((step) => (
-          <div key={step.n} className="flex flex-col">
+      <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
+        {steps.map((step, index) => (
+          <div
+            key={step.n}
+            className="landing-reveal flex flex-col"
+            style={{ animationDelay: `${index * 60}ms` }}
+          >
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-muted text-sm font-bold text-brand">
               {step.n}
             </span>
@@ -487,7 +498,7 @@ function MockCard({ children }: { children: ReactNode }) {
 function Features() {
   return (
     <Section id="features" className="bg-surface-muted">
-      <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
         What you get
       </h2>
 
@@ -678,7 +689,7 @@ function WhoItIsFor() {
           <p className="text-sm font-semibold uppercase tracking-widest text-brand-muted/70">
             Who it is for
           </p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          <h2 className="landing-reveal mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
             Not only exam season
           </h2>
           <p className="mt-4 text-lg leading-relaxed text-ink-subtle">
@@ -747,7 +758,7 @@ function Details() {
 
   return (
     <Section id="details" className="bg-surface">
-      <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
         The details we argued about
       </h2>
       <div className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
@@ -797,7 +808,7 @@ function Questions() {
 
   return (
     <Section id="questions" className="bg-surface-muted">
-      <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
         Reasonable questions
       </h2>
 
