@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 
-import { api, unwrap } from './client';
+import { getAccessToken } from '@/auth/session';
+
+import { API_URL, api, unwrap } from './client';
 import { meQueryKey } from './auth';
 
 export type TaskStatus = 'planned' | 'done' | 'proof_requested' | 'approved' | 'missed';
@@ -185,11 +188,22 @@ export function useDeleteTask() {
 export function useMarkDone() {
   const invalidate = useTaskInvalidation();
   return useMutation({
-    mutationFn: async ({ id, proofText }: { id: string; proofText?: string }) =>
+    mutationFn: async ({
+      id,
+      proofText,
+      proofImageKey,
+    }: {
+      id: string;
+      proofText?: string;
+      proofImageKey?: string;
+    }) =>
       unwrap<{ task: Task }>(
         await api.api.tasks[':id'].done.$post({
           param: { id },
-          json: proofText ? { proofText } : {},
+          json: {
+            ...(proofText ? { proofText } : {}),
+            ...(proofImageKey ? { proofImageKey } : {}),
+          },
         }),
       ),
     onSuccess: invalidate,
@@ -199,9 +213,20 @@ export function useMarkDone() {
 export function useSubmitProof() {
   const invalidate = useTaskInvalidation();
   return useMutation({
-    mutationFn: async ({ id, proofText }: { id: string; proofText: string }) =>
+    mutationFn: async ({
+      id,
+      proofText,
+      proofImageKey,
+    }: {
+      id: string;
+      proofText: string;
+      proofImageKey?: string;
+    }) =>
       unwrap<{ task: Task }>(
-        await api.api.tasks[':id'].proof.$post({ param: { id }, json: { proofText } }),
+        await api.api.tasks[':id'].proof.$post({
+          param: { id },
+          json: { proofText, ...(proofImageKey ? { proofImageKey } : {}) },
+        }),
       ),
     onSuccess: invalidate,
   });
@@ -256,4 +281,64 @@ export function useAbandonTask() {
       ),
     onSuccess: invalidate,
   });
+}
+
+/**
+ * The proof photo, as a URL an `<img>` can use.
+ *
+ * **Why this is not just a `src`.** Every other image in the app is a plain
+ * `<img src>` at `/api/media/...`, which works because that route is
+ * unauthenticated. A proof is group-private and its route requires a bearer
+ * token — and a browser will not attach an `Authorization` header to an
+ * `<img>`. So the bytes are fetched here and handed to the tag as an object
+ * URL, which is also why the API can answer `private, no-store` without the
+ * image failing to display.
+ *
+ * `useEffect` rather than `useQuery`: an object URL is a resource with a
+ * lifetime, and the revoke has to happen when this unmounts or the task
+ * changes. A cache entry that outlives the component would leak one blob per
+ * proof viewed, for the session.
+ */
+export function useProofImage(taskId: string, enabled: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setUrl(null);
+      return;
+    }
+
+    let revoked = false;
+    let objectUrl: string | null = null;
+
+    void (async () => {
+      try {
+        const token = await getAccessToken();
+        const response = await fetch(`${API_URL}/api/tasks/${taskId}/proof-image`, {
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) return;
+
+        const blob = await response.blob();
+        // The effect may have been torn down while the bytes were in flight;
+        // creating the URL then would leak it with nothing left to revoke it.
+        if (revoked) return;
+
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      } catch {
+        // A proof that will not load is not worth an error screen over the
+        // review it is attached to. The reviewer still has the text and the
+        // "ask for proof" button.
+      }
+    })();
+
+    return () => {
+      revoked = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setUrl(null);
+    };
+  }, [taskId, enabled]);
+
+  return url;
 }

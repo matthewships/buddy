@@ -43,6 +43,18 @@ function postKeyFor(userId: string): string {
   return `posts/${userId}/${newId()}`;
 }
 
+/**
+ * Proof images live under their own prefix because they are the one kind of
+ * upload that is *not* world-readable to signed-in users. Avatars and Feed
+ * photos are served unauthenticated from `/api/media` on the reasoning that
+ * everyone can already see them; a proof is group-private, so it is served by
+ * `GET /api/tasks/:id/proof-image` behind a membership check instead, and the
+ * prefix is what keeps the two from being confused.
+ */
+function proofKeyFor(userId: string): string {
+  return `proofs/${userId}/${newId()}`;
+}
+
 export const meRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
 
@@ -330,6 +342,16 @@ export const meRoutes = new Hono<AppEnv>()
     return c.json({ key, uploadUrl: `/api/me/avatar/${encodeURIComponent(key)}` });
   })
 
+  /**
+   * And again for a proof photo (§2.4). Same two steps, same PUT handler; only
+   * the prefix differs, and the prefix is what decides who may later read it.
+   */
+  .post('/proof-image', async (c) => {
+    const userId = currentUserId(c);
+    const key = proofKeyFor(userId);
+    return c.json({ key, uploadUrl: `/api/me/avatar/${encodeURIComponent(key)}` });
+  })
+
   .put('/avatar/:key{.+}', async (c) => {
     const userId = currentUserId(c);
     const key = decodeURIComponent(c.req.param('key'));
@@ -339,7 +361,8 @@ export const meRoutes = new Hono<AppEnv>()
     // post images alike.
     const isAvatar = key.startsWith(`avatars/${userId}/`);
     const isPostImage = key.startsWith(`posts/${userId}/`);
-    if (!isAvatar && !isPostImage) {
+    const isProofImage = key.startsWith(`proofs/${userId}/`);
+    if (!isAvatar && !isPostImage && !isProofImage) {
       throw badRequest('That upload key is not yours');
     }
 
@@ -355,9 +378,10 @@ export const meRoutes = new Hono<AppEnv>()
 
     await c.env.STORAGE.put(key, body, { httpMetadata: { contentType } });
 
-    // A post image is referenced by the post the client creates next, not by a
-    // column here, so there is nothing to update or clean up.
-    if (isPostImage) return c.json({ avatarKey: null, key });
+    // A post or proof image is referenced by the row the client writes next —
+    // the post, or the task's `proof_image_key` — not by a column here, so
+    // there is nothing to update or clean up.
+    if (isPostImage || isProofImage) return c.json({ avatarKey: null, key });
 
     const client = db(c.env.DB);
     const previous = await client.query.users.findFirst({

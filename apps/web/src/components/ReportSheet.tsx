@@ -22,6 +22,9 @@ import { Sheet } from './Sheet';
 const REASONS = [
   'Task was not actually done',
   'Proof is fake or unrelated',
+  // Distinct from "fake or unrelated": that one disputes the work, this one is
+  // about the picture itself, and the two need different handling in the queue.
+  'Photo is inappropriate or explicit',
   'Abusive or harassing',
   'Spam',
   'Something else',

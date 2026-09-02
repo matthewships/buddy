@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useId, useState } from 'react';
 
 import {
   MAX_PROOF_TEXT,
@@ -26,7 +26,9 @@ import {
   useSubmitProof,
   useUpdateTask,
   type Task,
+  useProofImage,
 } from '@/api/tasks';
+import { useProofImageUpload } from '@/api/avatar';
 import { serverNow } from '@/hooks/useCountdown';
 import { canReview } from '@/lib/review-rights';
 
@@ -667,6 +669,7 @@ function MyTask({ task }: { task: Task }) {
   const abandon = useAbandonTask();
 
   const [proof, setProof] = useState('');
+  const [proofImageKey, setProofImageKey] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [confirmingAbandon, setConfirmingAbandon] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -699,19 +702,26 @@ function MyTask({ task }: { task: Task }) {
       setExpanded(true);
       return;
     }
-    markDone.mutate({ id: task.id, ...(proof.trim() ? { proofText: proof.trim() } : {}) });
+    markDone.mutate({
+      id: task.id,
+      ...(proof.trim() ? { proofText: proof.trim() } : {}),
+      ...(proofImageKey ? { proofImageKey } : {}),
+    });
   };
 
   const proofField = expanded ? (
-    <Field
-      label="What did you do? (optional)"
-      value={proof}
-      onChangeText={setProof}
-      maxLength={MAX_PROOF_TEXT}
-      multiline
-      rows={3}
-      placeholder="Chapters 1-2, notes written up"
-    />
+    <>
+      <Field
+        label="What did you do? (optional)"
+        value={proof}
+        onChangeText={setProof}
+        maxLength={MAX_PROOF_TEXT}
+        multiline
+        rows={3}
+        placeholder="Chapters 1-2, notes written up"
+      />
+      <ProofPhotoPicker imageKey={proofImageKey} onChange={setProofImageKey} />
+    </>
   ) : null;
 
   return (
@@ -885,12 +895,19 @@ function MyTask({ task }: { task: Task }) {
             rows={3}
             placeholder="What exactly did you finish?"
           />
+          <ProofPhotoPicker imageKey={proofImageKey} onChange={setProofImageKey} />
           <ErrorText message={submitProof.error?.message} />
           <Button
             label="Send proof"
-            disabled={proof.trim().length === 0 || submitProof.isPending}
+            disabled={(proof.trim().length === 0 && !proofImageKey) || submitProof.isPending}
             loading={submitProof.isPending}
-            onClick={() => submitProof.mutate({ id: task.id, proofText: proof.trim() })}
+            onClick={() =>
+              submitProof.mutate({
+                id: task.id,
+                proofText: proof.trim(),
+                ...(proofImageKey ? { proofImageKey } : {}),
+              })
+            }
           />
         </>
       ) : null}
@@ -1041,6 +1058,165 @@ function TheirTask({ task }: { task: Task }) {
   );
 }
 
+/**
+ * Attaching a photo to a proof (§2.4).
+ *
+ * The file is uploaded the moment it is chosen rather than held until the form
+ * is submitted, so the task write carries only a key. That keeps "mark done"
+ * one small JSON request instead of a multipart one, and means a slow upload
+ * blocks the button rather than silently delaying the finish.
+ *
+ * The preview is an object URL over the local `File`, not a fetch of what was
+ * just stored: the bytes are already here, and the stored copy is behind an
+ * authenticated route the owner has no reason to hit.
+ */
+function ProofPhotoPicker({
+  imageKey,
+  onChange,
+}: {
+  imageKey: string | null;
+  onChange: (key: string | null) => void;
+}) {
+  const upload = useProofImageUpload();
+  const [preview, setPreview] = useState<string | null>(null);
+  const inputId = useId();
+
+  // The object URL is a resource with a lifetime; revoke the previous one
+  // whenever it is replaced, and the last one when this unmounts.
+  useEffect(() => () => setPreview((url) => (url && URL.revokeObjectURL(url), null)), []);
+
+  const choose = (file: File | undefined) => {
+    if (!file) return;
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(file);
+    });
+    upload.mutate(file, {
+      onSuccess: ({ key }) => onChange(key),
+      onError: () =>
+        setPreview((old) => {
+          if (old) URL.revokeObjectURL(old);
+          return null;
+        }),
+    });
+  };
+
+  const clear = () => {
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
+    onChange(null);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        id={inputId}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          choose(event.target.files?.[0]);
+          // Clearing lets the same file be picked again after a removal.
+          event.target.value = '';
+        }}
+      />
+
+      {preview && imageKey ? (
+        <div className="flex flex-row items-center gap-3 rounded-xl border border-surface-border p-2">
+          {/* An object URL cannot go through next/image, which needs a
+              fetchable path — the same reason Avatar.tsx uses a plain tag. */}
+          <img
+            src={preview}
+            alt="The photo you attached"
+            className="h-16 w-16 rounded-lg object-cover"
+          />
+          <span className="flex-1 text-sm text-ink-muted">Photo attached</span>
+          <button
+            type="button"
+            onClick={clear}
+            className="cursor-pointer text-sm font-semibold text-ink-muted hover:text-danger"
+          >
+            Remove
+          </button>
+        </div>
+      ) : (
+        <label
+          htmlFor={inputId}
+          className="flex cursor-pointer flex-row items-center justify-center gap-2 rounded-xl border border-dashed border-surface-border py-3 text-sm font-semibold text-ink-muted transition-colors hover:border-brand hover:text-brand"
+        >
+          {upload.isPending ? 'Uploading…' : '📷 Add a photo (optional)'}
+        </label>
+      )}
+
+      <ErrorText message={upload.error?.message} />
+    </div>
+  );
+}
+
+/**
+ * The proof, as the reviewer sees it — and the one place a photo can be
+ * reported.
+ *
+ * The report control is an icon on the image rather than another line of text
+ * under the task. "Report this task" already exists below and means the work
+ * was not done; this means *this picture should not be here*, which is a
+ * different claim, needs to be reachable in one tap, and has to be obvious
+ * without reading anything. It opens the same sheet — one report path, with the
+ * reason carrying which of the two it was.
+ */
+function ProofView({
+  task,
+  onReport,
+}: {
+  task: Task;
+  onReport: () => void;
+}) {
+  const imageUrl = useProofImage(task.id, Boolean(task.proofImageKey));
+
+  if (!task.proofText && !task.proofImageKey) return null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl bg-surface-muted p-3">
+      <div className="flex flex-row items-start justify-between gap-2">
+        <p className="text-xs font-semibold text-ink-muted">Proof</p>
+        {task.proofImageKey ? (
+          <button
+            type="button"
+            aria-label="Report this photo as inappropriate"
+            title="Report this photo as inappropriate"
+            onClick={onReport}
+            className="-mt-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-subtle transition-colors hover:bg-surface hover:text-danger"
+          >
+            <span aria-hidden="true" className="text-base">
+              ⚑
+            </span>
+          </button>
+        ) : null}
+      </div>
+
+      {task.proofText ? <p className="text-sm text-ink">{task.proofText}</p> : null}
+
+      {task.proofImageKey ? (
+        imageUrl ? (
+          /* The bytes come from an authenticated fetch as an object URL,
+             which next/image cannot take. */
+          <img
+            src={imageUrl}
+            alt={`Proof photo for ${task.title}`}
+            className="max-h-72 w-full rounded-lg object-contain"
+          />
+        ) : (
+          <div className="flex h-24 items-center justify-center rounded-lg bg-surface text-xs text-ink-subtle">
+            Loading photo…
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 /** A task the viewer is the one to review (§2.4). */
 function ReviewTask({ task }: { task: Task }) {
   const review = useReviewTask();
@@ -1070,12 +1246,7 @@ function ReviewTask({ task }: { task: Task }) {
       title={task.title}
       meta={<span className="text-ink-muted">{task.ownerDisplayName}</span>}
     >
-      {task.proofText ? (
-        <div className="flex flex-col rounded-xl bg-surface-muted p-3">
-          <p className="text-xs font-semibold text-ink-muted">Proof</p>
-          <p className="text-sm text-ink">{task.proofText}</p>
-        </div>
-      ) : null}
+      <ProofView task={task} onReport={() => setReporting(true)} />
 
       {mode === 'idle' ? (
         <>

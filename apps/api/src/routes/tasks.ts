@@ -97,6 +97,18 @@ const taskColumns = {
   createdAt: tasks.createdAt,
 };
 
+/**
+ * A client-supplied proof key is not trusted, exactly as `posts.ts` does not
+ * trust a post's image key. The prefix is namespaced by user id, so this is
+ * what stops somebody attaching another person's upload — or an avatar — to
+ * their own task and having the group review a picture they never took.
+ */
+function assertOwnProofKey(key: string | undefined, userId: string): void {
+  if (key && !key.startsWith(`proofs/${userId}/`)) {
+    throw badRequest('That upload key is not yours');
+  }
+}
+
 export const taskRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
 
@@ -275,15 +287,68 @@ export const taskRoutes = new Hono<AppEnv>()
     if (task.status === 'approved') throw conflict('An approved task cannot be deleted');
 
     await client.delete(tasks).where(eq(tasks.id, id));
+    // Mirrors posts.ts: the row is the only reference to the object, so
+    // dropping the row without the object leaks it permanently.
+    if (task.proofImageKey) c.executionCtx.waitUntil(c.env.STORAGE.delete(task.proofImageKey));
     return c.json({ ok: true as const });
   })
 
-  /** Owner marks it done, optionally attaching the proof text (§2.4). */
+  /**
+   * The proof photo, for the people entitled to review it (§2.4).
+   *
+   * **Why this is not `/api/media/:key` like every other image.** That route is
+   * deliberately unauthenticated, on the reasoning that avatars and Feed photos
+   * are already visible to every signed-in user, so a bearer token would cost
+   * the CDN cache and buy no privacy. A proof is the opposite: it is a photo of
+   * somebody's desk, screen or handwriting, shown to one small group as
+   * evidence — and `media.ts` says in so many words that proof images "are
+   * group-private and will need a different, authenticated path". This is it.
+   *
+   * Membership is re-checked on every read rather than trusted from the task
+   * row: leaving a group has to stop the images resolving, and an unguessable
+   * key is not an access control.
+   *
+   * `private, no-store` for the same reason. `/api/media` caches for a year
+   * because its keys are world-readable; caching this one anywhere but the
+   * viewer's own memory would hand a shared proxy something group-private.
+   */
+  .get('/:id/proof-image', async (c) => {
+    const id = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    const task = await client.query.tasks.findFirst({
+      where: eq(tasks.id, id),
+      columns: { groupId: true, proofImageKey: true },
+    });
+    if (!task?.proofImageKey) throw notFound('No proof photo on that task');
+
+    const member = await client.query.groupMembers.findFirst({
+      where: and(eq(groupMembers.groupId, task.groupId), eq(groupMembers.userId, userId)),
+      columns: { userId: true },
+    });
+    // `notFound`, not `forbidden`: a stranger should not learn that a task with
+    // this id exists and has a photo on it.
+    if (!member) throw notFound('No proof photo on that task');
+
+    const object = await c.env.STORAGE.get(task.proofImageKey);
+    if (!object) throw notFound('No proof photo on that task');
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('etag', object.httpEtag);
+    headers.set('cache-control', 'private, no-store');
+    return new Response(object.body, { headers });
+  })
+
+  /** Owner marks it done, optionally attaching the proof text or photo (§2.4). */
   .post('/:id/done', zValidator('json', markTaskDoneSchema), async (c) => {
     const id = c.req.param('id');
     const { proofText, proofImageKey } = c.req.valid('json');
     const userId = currentUserId(c);
     const client = db(c.env.DB);
+
+    assertOwnProofKey(proofImageKey, userId);
 
     const task = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
     if (!task) throw notFound('No such task');
@@ -459,6 +524,16 @@ export const taskRoutes = new Hono<AppEnv>()
 
     if (!proofText?.trim() && !proofImageKey) {
       throw badRequest('Add a note or a photo explaining what you did');
+    }
+
+    assertOwnProofKey(proofImageKey, userId);
+
+    // Replacing the photo should not leave the old object paying rent forever,
+    // the same rule the avatar upload follows. Only when it is genuinely being
+    // replaced: `proofImageKey ?? task.proofImageKey` below keeps the existing
+    // one when this submission is text-only.
+    if (proofImageKey && task.proofImageKey && task.proofImageKey !== proofImageKey) {
+      c.executionCtx.waitUntil(c.env.STORAGE.delete(task.proofImageKey));
     }
 
     // Submitting proof returns the task to `done`, i.e. back in the queue.

@@ -172,3 +172,40 @@ export function usePostImageUpload() {
     },
   });
 }
+
+/**
+ * A proof photo (§2.4), through the same two-step protocol as a Feed photo and
+ * with the same bounding — a proof is a picture of a desk, a screen or a page,
+ * so it wants the whole frame rather than the avatar's centred square.
+ *
+ * What differs is only where the bytes end up: the key comes back under
+ * `proofs/`, which is the prefix the API refuses to serve from `/api/media` and
+ * serves instead from `GET /api/tasks/:id/proof-image`, behind a group
+ * membership check. Nothing here has to know that; it just has to send the key
+ * it was given to the task, not one it made up.
+ */
+export function useProofImageUpload() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<{ key: string }> => {
+      const { bytes, contentType } = await toBoundedJpeg(file);
+
+      const { key, uploadUrl } = await unwrap<{ key: string; uploadUrl: string }>(
+        await api.api.me['proof-image'].$post(),
+      );
+
+      const token = await getAccessToken();
+      const response = await fetch(`${API_URL}${uploadUrl}`, {
+        method: 'PUT',
+        headers: {
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          'content-type': contentType,
+        },
+        body: bytes,
+      });
+
+      await unwrap<{ key: string }>(response);
+      // The task carries the key; nothing here references it yet.
+      return { key };
+    },
+  });
+}
