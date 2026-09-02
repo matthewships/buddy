@@ -10,6 +10,13 @@
  * bar should read "done" by the time it appears.
  */
 export const SIGNUP_STEPS = [
+  /**
+   * First, and first for a reason (§2.8). It is the one question whose answer
+   * can end the signup, so asking it before the other eight means nobody types
+   * their institution, subject and goals into a form that was never going to
+   * accept them — and nothing about a person under the floor is collected.
+   */
+  { path: '/start/age', title: 'How old are you?' },
   { path: '/start/level', title: 'What are you studying?' },
   { path: '/start/institution', title: 'Where do you study?' },
   { path: '/start/major', title: 'What do you study?' },

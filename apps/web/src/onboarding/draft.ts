@@ -22,6 +22,13 @@ interface DraftValues {
   displayName: string;
   handle: string;
   timezone: string;
+  /**
+   * `YYYY-MM-DD`, asked first and never asked again (§2.8). Empty until
+   * answered; the question refuses to continue below the floor, so an empty
+   * one here means somebody who has not reached the screen rather than
+   * somebody who failed it.
+   */
+  dateOfBirth: string;
   /** Student profile (§2.1). */
   educationLevel: string | null;
   institution: string;
@@ -67,6 +74,7 @@ const initial: DraftValues = {
   handle: '',
   // Detected once, here, rather than asked for: the device already knows.
   timezone: 'UTC',
+  dateOfBirth: '',
   educationLevel: null,
   institution: '',
   city: '',
@@ -161,6 +169,7 @@ export function draftToPatch(draft: DraftValues): Record<string, unknown> {
      */
     goalKeys: draft.goalKeys,
     goalText: optional(draft.goalText),
+    ...(draft.dateOfBirth ? { dateOfBirth: draft.dateOfBirth } : {}),
     ...(draft.educationLevel ? { educationLevel: draft.educationLevel } : {}),
     institution: optional(draft.institution),
     city: optional(draft.city),

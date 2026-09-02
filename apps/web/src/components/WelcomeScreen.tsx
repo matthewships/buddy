@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { FIRST_STEP } from '@/onboarding/steps';
 
 import { linkButtonClass } from './buttonStyles';
 import { Screen } from './Frame';
@@ -40,7 +41,7 @@ export function WelcomeScreen() {
             create an account before they have seen what the product is for —
             the account comes last, once the answers are already theirs.
           */}
-          <Link href="/start/level" className={linkButtonClass('primary')}>
+          <Link href={FIRST_STEP} className={linkButtonClass('primary')}>
             Get started
           </Link>
           <Link href="/login" className={linkButtonClass('ghost')}>

@@ -254,6 +254,15 @@ export const meRoutes = new Hono<AppEnv>()
         institutionNormalised: patch.institution ? normaliseInstitution(patch.institution) : null,
       }),
       ...(patch.city !== undefined && { city: patch.city ?? null }),
+      /**
+       * Write-once (§2.8). Zod has already refused anything under
+       * `MIN_AGE_YEARS`, so the only thing left to enforce is that an answer
+       * cannot be *replaced* — otherwise the gate is a formality anybody
+       * clears once and then edits away. Changing a wrong one is a support
+       * job, deliberately.
+       */
+      ...(patch.dateOfBirth !== undefined &&
+        current.dateOfBirth === null && { dateOfBirth: patch.dateOfBirth }),
       ...(patch.majorKey !== undefined && { majorKey: patch.majorKey ?? null }),
       ...(patch.majorText !== undefined && { majorText: patch.majorText ?? null }),
       ...(patch.country !== undefined && { country: patch.country ?? null }),

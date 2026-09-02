@@ -173,6 +173,17 @@ export const users = sqliteTable(
     /** The live column. Deliberately unchecked — see the note on the indexes. */
     majorKey: text('major_key_v2'),
     majorText: text('major_text'),
+    /**
+     * `YYYY-MM-DD`, and the only field in this table that exists to refuse
+     * somebody rather than describe them (§2.8). Nullable, because every
+     * account created before 2026-09-02 predates the question and there is
+     * nothing to backfill it with — an unanswered age is not a young one.
+     *
+     * No CHECK. The floor is `MIN_AGE_YEARS`, which is a number that can move,
+     * and a constraint over it could only be widened by rebuilding this table
+     * — the thing migration 0009 exists to explain is impossible here.
+     */
+    dateOfBirth: text('date_of_birth'),
     /** ISO 3166-1 alpha-2. */
     country: text('country'),
     city: text('city'),

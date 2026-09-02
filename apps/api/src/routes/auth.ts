@@ -292,6 +292,13 @@ export function publicSelf(user: {
   occupationKey: string | null;
   occupationText: string | null;
   educationLevel: string | null;
+  /**
+   * The caller's own date of birth (§2.8). On `publicSelf` only — `users.ts`
+   * builds another person's profile field by field and this is not one of
+   * them. What the client needs it for is knowing whether the question has
+   * been answered, not showing it to anybody.
+   */
+  dateOfBirth: string | null;
   institution: string | null;
   majorKey: string | null;
   majorText: string | null;
@@ -323,6 +330,7 @@ export function publicSelf(user: {
     occupationKey: user.occupationKey,
     occupationText: user.occupationText,
     educationLevel: user.educationLevel,
+    dateOfBirth: user.dateOfBirth,
     institution: user.institution,
     majorKey: user.majorKey,
     majorText: user.majorText,

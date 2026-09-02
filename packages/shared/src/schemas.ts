@@ -47,6 +47,7 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
 } from './limits';
+import { MIN_AGE_YEARS, isOldEnough, isPlausibleBirthDate } from './age';
 import {
   EMAIL_CODE_PURPOSES,
   LEADERBOARD_SCOPES,
@@ -107,6 +108,27 @@ export const timezoneSchema = z
 export const localDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
+
+/**
+ * A date of birth, and the age floor (§2.8).
+ *
+ * Two messages rather than one, because they are two different mistakes. A date
+ * that is not a real day, or is in the future, is a typo and says so. A real
+ * date that is under the floor is not a typo, and the message has to be
+ * something a fifteen-year-old can read without being told they lied.
+ *
+ * Validated here rather than only in the client, because the client is a thing
+ * anybody can skip: this schema is what `PATCH /me` and registration both run,
+ * so it is the gate that actually holds.
+ */
+export const dateOfBirthSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
+  .refine((value) => isPlausibleBirthDate(value), 'That is not a date in the past')
+  .refine(
+    (value) => isOldEnough(value),
+    `You need to be at least ${MIN_AGE_YEARS} to use Buddy`,
+  );
 
 export const ulidSchema = z
   .string()
@@ -257,6 +279,12 @@ export const updateMeSchema = z
     handle: handleSchema.optional(),
     timezone: timezoneSchema.optional(),
     avatarKey: z.string().max(200).nullish(),
+    /**
+     * Set once, at signup. Deliberately not `.nullish()` like the rest of the
+     * profile: every other field here can be cleared, and an age gate that can
+     * be cleared is not a gate.
+     */
+    dateOfBirth: dateOfBirthSchema.optional(),
     isOpenBuddy: z.boolean().optional(),
     goalKey: z.enum(GOAL_KEYS).optional(),
     goalKey2: z.enum(GOAL_KEYS).nullish(),

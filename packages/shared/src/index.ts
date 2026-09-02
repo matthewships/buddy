@@ -7,6 +7,7 @@
  * package at runtime. Both consumers (Metro, and esbuild via wrangler) resolve
  * extensionless TypeScript, so this is the form that works for both.
  */
+export * from './age';
 export * from './badges';
 export * from './countries';
 export * from './credits';

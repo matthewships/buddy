@@ -19,7 +19,8 @@ export interface FieldProps {
   multiline?: boolean;
   rows?: number;
   maxLength?: number;
-  type?: 'text' | 'email' | 'password';
+  /** `date` renders the platform's own picker; see start/age/page.tsx. */
+  type?: 'text' | 'email' | 'password' | 'date';
   inputMode?: 'text' | 'email' | 'numeric';
   autoComplete?: string;
   autoCapitalize?: 'none' | 'sentences' | 'words';

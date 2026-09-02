@@ -1,0 +1,16 @@
+-- The age gate's one column (§2.8).
+--
+-- Generated, and safe as generated: a plain ADD COLUMN with no CHECK, so
+-- drizzle-kit had no table-level constraint to render and did not reach for the
+-- rebuild that 0009 documents as fatal on this table.
+--
+-- Nullable on purpose. Every account created before this migration answered no
+-- age question, and there is nothing to backfill them with — an unanswered age
+-- is not a young one, and writing a guess would be worse than the null. What
+-- that means in practice is that the floor binds new signups; existing accounts
+-- are unaffected until they are asked.
+--
+-- The floor itself is not here. It lives in `MIN_AGE_YEARS` in
+-- packages/shared/src/age.ts, because a number that may move must not be
+-- written into a constraint that cannot.
+ALTER TABLE `users` ADD `date_of_birth` text;

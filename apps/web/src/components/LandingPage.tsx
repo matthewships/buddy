@@ -1,4 +1,6 @@
 import Link from 'next/link';
+
+import { FIRST_STEP } from '@/onboarding/steps';
 import type { ReactNode } from 'react';
 
 import {
@@ -66,8 +68,13 @@ function cta(variant: ButtonVariant): string {
   return `${BUTTON_BASE} ${BUTTON_VARIANT[variant]} w-full cursor-pointer sm:w-auto`;
 }
 
-/** The signup questionnaire's first question — the front door for a visitor. */
-const START = '/start/level';
+/**
+ * The signup questionnaire's first question — the front door for a visitor.
+ * Read from `SIGNUP_STEPS` rather than written out, because which question
+ * comes first has already changed once: the age gate took the position from
+ * `/start/level` in §2.8, and a hardcoded link would have quietly skipped it.
+ */
+const START: string = FIRST_STEP;
 
 const REQUEST_MINUTES = BUDDY_REQUEST_TTL_MS / 60_000;
 

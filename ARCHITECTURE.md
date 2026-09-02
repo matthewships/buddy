@@ -227,39 +227,46 @@ anyone else's history, so there is nothing lost by removing it.
 **`middle_school` is now the youngest level offered**, which makes this worth
 writing down rather than leaving implied.
 
-**Nothing in the product enforces an age.** There is no date-of-birth column, no
-age field and no gate; `education_level` is a self-reported answer to a signup
-question and a thirteen-year-old and a thirty-year-old reach the same directory,
-the same group chat and the same photo proofs. The level list is the only place
-age appears at all, and it is a label, not a control.
+**The floor is 16, and it is enforced.** `MIN_AGE_YEARS` in
+`packages/shared/src/age.ts` is the single place it lives; `dateOfBirthSchema`
+reads it, so `PATCH /me` refuses an under-age date whether or not the client
+asked nicely. `users.date_of_birth` (0010, a plain ADD COLUMN) stores the answer,
+and `PATCH /me` writes it **only when the column is null** — an age gate that can
+be edited away afterwards is not a gate, and the profile editor patches the same
+route.
 
-That matters because of what sits under it. Buddy matches **strangers**, gives
-them **private chat**, accepts **user photos** (avatars, Feed posts, and since
-2026-09-02 proof images), and stores institution and country. That combination —
-adult-accessible stranger matching, private messaging, and images of minors — is
-the fact pattern every child-safety regime is written around.
+**Why 16 rather than the 13 the law floors at.** Thirteen is what US COPPA and UK
+GDPR set and what most consumer apps use. Buddy matches *strangers*, gives them
+private chat, and accepts photographs from them (§2.4). Sixteen clears every EU
+member state's Article 8 threshold without per-country consent logic and matches
+Australia's minimum-age regime. It does **not** clear the UK's Age Appropriate
+Design Code or Ofcom's children's duties, which cover everybody under eighteen:
+this is a floor, not an exemption.
 
-The shape of the obligations, without pretending this is legal advice:
+**The question is asked first**, before institution, subject or goals. It is the
+only question whose answer can end the signup, so asking it last would mean
+collecting eight answers from somebody about to be turned away — and collecting
+nothing at all from someone under the floor is the point. `FIRST_STEP` is read
+from `SIGNUP_STEPS` by the landing page and the welcome screen rather than
+written out, because this change moved it once already.
 
-- **Under 13** is COPPA territory in the US: verifiable parental consent, which
-  is a different product rather than a configuration.
-- **13** is the floor in the US and UK. The EU sets its own between 13 and 16 per
-  member state, defaulting to 16 where a state has not lowered it, so 13 means
-  per-country consent logic.
-- **16** clears every EU member state's threshold without branching and matches
-  Australia's minimum-age regime, but does **not** clear the UK's Age
-  Appropriate Design Code or Ofcom's children's duties, which cover all
-  under-18s.
+**What the gate is not.** It is self-reported, and nothing verifies it. A
+determined fifteen-year-old types a different year. That is why the floor is not
+printed above the empty input — a number shown before the field is an
+instruction for what to enter — and why this stops the careless case rather than
+the motivated one. Real assurance means identity or payment signals the product
+does not have.
 
-**What exists today as mitigation** is a report path: `REPORT_TARGETS` covers
-tasks, messages, users and posts, and the proof photo carries its own flag icon
-with an "inappropriate or explicit" reason (§2.4). There is no scanning, no EXIF
-stripping and no automatic takedown; a reported image stays visible to its group
-until an admin acts.
+**Two things it deliberately does not do.** Accounts created before 2026-09-02
+have a null date of birth and are left alone: an unanswered age is not a young
+one, and there is nothing honest to backfill. And `apps/mobile` does not ask the
+question yet, so the gate binds the web signup only.
 
-**Outstanding, and gating anything stronger:** a date-of-birth field and a floor
-to enforce with it. Until that exists, no age statement this product makes is
-checkable.
+**Note the tension with `middle_school`.** The level was added the same day the
+floor was set at 16, and middle school is ordinarily 11–14. Almost nobody who
+can pass the gate is in it. The two are consistent only for an unusual case, and
+the honest options are to drop the level, lower the floor, or accept that the
+option is effectively dead.
 
 ---
 
