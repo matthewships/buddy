@@ -726,6 +726,57 @@ two ticks therefore tile the states exactly rather than overlapping.
 
 ---
 
+## 5.7 The landing page — added 2026-09-02
+
+`/` is the only route outside the phone column, and the only one written for
+somebody who has never heard of Buddy. It was reshaped against the structure a
+mature product in this space uses — unibuddy.com was the reference — because
+that structure is well tested: a nav that lets you skip, a hero with a figure
+strip under it, four alternating product sections, a proof band, a closing call
+to action, a real footer. The skeleton transferred. The contents could not, and
+the gap between those two is the whole of this section.
+
+**What was taken.** Section anchors in the sticky bar (plain `#` links — the
+page stays a server component, so a burger menu below `md` would have meant
+shipping JS to open a list of four links, and the links are simply hidden
+there instead). A four-item strip under the hero. A fourth product section, on
+groups, chat and the daily status, which had been three lines in "the details
+we argued about" and is a third of what the product is. A question block. A
+multi-column footer.
+
+**What was not, and why.** The reference page's proof is a logo wall, seven
+named testimonials, three institutional yield figures and a "65% of students
+said…" statistic. Buddy has no customers, no institutions and no cohort to
+survey. Every one of those would have to be invented, and a landing page that
+opens with a fabricated number has told you what it is on the first screen. So:
+
+- The figure strip under the hero holds *product* facts, not adoption ones —
+  badge and ladder counts, the buddy-request window, the number of education
+  levels, and a zero for downloads.
+- The proof band is "Who it is for", built from `GOALS` and `EDUCATION_LEVELS`.
+  It answers the question a logo wall answers — *is this for someone like me* —
+  from the option lists signup actually offers.
+- There are no per-section "Learn more" links. They point at product pages this
+  app does not have.
+- The footer is three columns of routes that exist, not seven columns
+  containing `/about`, `/pricing`, `/careers` and `/privacy`.
+
+**Every number is read, not typed.** The page imports `BADGES`,
+`BADGE_FAMILIES`, `BUDDY_REQUEST_TTL_MS`, `CREDITS_PER_RATING_POINT`,
+`DAILY_COMPLETION_BONUS`, `ABANDON_PENALTY`, `INVITE_LINK_MAX_USES`,
+`MIN_TASK_MINUTES`, `MAX_TASK_MINUTES`, `MAX_RATING`, `EDUCATION_LEVELS`,
+`GOALS`, `STATUSES` and `REACTIONS` from `packages/shared`. Rebalance the
+economy in §2.5 and the pitch follows on the next build. This is what stops the
+marketing copy becoming the one place in the repo where the rules are wrong,
+and it is why the constraint above is enforceable rather than a good intention.
+
+**Both calls to action go to `/start/level`** — `SIGNUP_STEPS[0]`, held in one
+`START` constant — because the web app is where Buddy runs today. The closing
+panel and the footer both say the phone apps are still coming, rather than
+putting two dead store badges on the page.
+
+---
+
 ## 6. Monorepo layout
 ```
 FindBuddy/
