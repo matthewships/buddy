@@ -23,10 +23,18 @@ const nextConfig: NextConfig = {
    * a landing page that does not change after a deploy, which is exactly what
    * happened on 2026-09-02.
    *
-   * `max-age=0, must-revalidate` fixes it without giving up any caching worth
-   * having: the response already carries an ETag, so revalidating is a
-   * conditional request that comes back 304 with no body, and `s-maxage` is
-   * left alone so the CDN still holds the page.
+   * `max-age=0, must-revalidate` fixes it. What it costs is worth stating
+   * plainly, because the obvious assumption is wrong: the response carries an
+   * ETag, but OpenNext mints a **new one per response** — two requests a second
+   * apart return different values — so `If-None-Match` never matches and a
+   * revalidation is always a full body, never a 304. Measured against the
+   * deployed Worker, not assumed.
+   *
+   * That is an acceptable price here and would not be everywhere. Next's router
+   * navigates on the client after the first paint, so full document loads are
+   * the first visit and a reload — not every click. Paying ~80 KB (far less
+   * compressed) on those, in exchange for a deploy that is actually visible, is
+   * the right side of the trade. `s-maxage` is left intact for shared caches.
    *
    * Documents only. `/_next/static/*` is content-hashed and must keep its
    * immutable year — those files are never rewritten, only replaced.
