@@ -15,6 +15,7 @@ import {
   INVITE_LINK_MAX_USES,
   MAX_RATING,
   MAX_TASK_MINUTES,
+  MIN_AGE_YEARS,
   MIN_TASK_MINUTES,
   REACTIONS,
   STATUSES,
@@ -38,9 +39,19 @@ import { BUTTON_BASE, BUTTON_VARIANT, type ButtonVariant } from './buttonStyles'
  * would put the whole page behind ~630 KiB of JS and ship blank HTML until
  * hydration; as a server component the markup and every call to action are in
  * the response, and the links work before a single byte of script has run.
- * Nothing here is interactive for exactly that reason — no carousel, no
- * accordion, no counters that animate on scroll. The section nav in the top bar
- * is plain `#` anchors, which the browser has handled since before JavaScript.
+ * **Interactive, still without a byte of JavaScript.** The first version of this
+ * page said "no carousel, no accordion" and gave the bundle as the reason. The
+ * reason was right and the conclusion was too broad: `<details>` is an accordion
+ * the browser already implements, and `<details name>` makes a set of them
+ * mutually exclusive — so the features and the questions open and close, on a
+ * server component, at no cost. What stays banned is the interactivity that
+ * *would* cost something: no scroll-spy, no counters animating on scroll, no
+ * carousel needing a slide index. The section nav is plain `#` anchors, which
+ * the browser has handled since before JavaScript.
+ *
+ * A consequence worth knowing: every panel's markup is in the response whether
+ * it is open or not, so the page is still one document to a crawler and still
+ * readable with CSS off.
  *
  * **No images.** There are no marketing assets in the repo, and the CSP allows
  * images only from this origin and the API. Rather than commission stock photos
@@ -186,8 +197,8 @@ function Hero() {
             <span className="text-brand-muted">Have someone check.</span>
           </h1>
           <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-subtle">
-            Deciding to work is easy on your own. Finishing is not. Buddy pairs you with people
-            doing the same thing, and nothing counts until one of them says it does.
+            Buddy puts you in a small group of students, and nothing you plan counts until one
+            of them says it does.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -203,7 +214,7 @@ function Hero() {
           </div>
 
           <p className="mt-5 text-sm text-ink-subtle">
-            Opens in this browser. Nothing to install, no card, no invite code.
+            In this browser. Nothing to install.
           </p>
         </div>
 
@@ -369,22 +380,22 @@ function HowItWorks() {
     {
       n: '1',
       title: 'Plan today',
-      body: 'Write what you will actually finish today. Not this term — today. It resets at your midnight, in your timezone.',
+      body: 'Not this term. Today. It resets at your midnight, in your timezone.',
     },
     {
       n: '2',
       title: 'Do it',
-      body: 'Start the clock when you start working. While it runs you are out of the group chat, which is the point.',
+      body: 'Start the clock. While it runs, the group chat is closed to you.',
     },
     {
       n: '3',
       title: 'Someone checks',
-      body: `Mark it done and a groupmate approves it, rates it out of ${MAX_RATING}, or asks you for proof. Nobody marks their own.`,
+      body: `A groupmate approves it, rates it out of ${MAX_RATING}, or asks for proof.`,
     },
     {
       n: '4',
       title: 'The streak',
-      body: 'Every approved day extends it. Miss one and it goes back to nothing, which is exactly as annoying as it sounds.',
+      body: 'Every approved day extends it. Miss one and it is back to nothing.',
     },
   ];
 
@@ -408,50 +419,51 @@ function HowItWorks() {
   );
 }
 
-/** One feature: words on one side, a still of the real screen on the other. */
+/**
+ * One feature, as a row that opens.
+ *
+ * `<details name="features">` is an *exclusive* accordion — opening one closes
+ * the others — implemented by the browser, so this costs nothing and works with
+ * JavaScript disabled. It replaces four stacked full-height sections with four
+ * lines and one open panel, which is the whole point: the page is now scannable
+ * in a glance instead of a scroll, and the words are read by people who asked
+ * for them.
+ *
+ * `open` on the first is what stops the section reading as four dead headings.
+ */
 function Feature({
-  eyebrow,
   title,
+  eyebrow,
   body,
-  points,
   mock,
-  flip = false,
-  className = '',
-  id,
+  open = false,
 }: {
-  eyebrow: string;
   title: string;
+  eyebrow: string;
   body: string;
-  points: string[];
   mock: ReactNode;
-  flip?: boolean;
-  className?: string;
-  id?: string;
+  open?: boolean;
 }) {
   return (
-    <Section id={id} className={className}>
-      <div
-        className={`grid gap-10 md:grid-cols-2 md:items-center ${flip ? 'md:[&>*:first-child]:order-2' : ''}`}
-      >
-        <div className="flex flex-col">
-          <p className="text-sm font-semibold uppercase tracking-widest text-brand">{eyebrow}</p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">{title}</h2>
-          <p className="mt-4 text-lg leading-relaxed text-ink-muted">{body}</p>
-          <ul className="mt-6 flex flex-col gap-2.5">
-            {points.map((point) => (
-              <li key={point} className="flex flex-row gap-3">
-                <span
-                  aria-hidden="true"
-                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand"
-                />
-                <span className="text-base text-ink">{point}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+    <details name="features" open={open} className="group border-b border-surface-border">
+      <summary className="flex cursor-pointer list-none flex-row items-center gap-4 py-5 transition-colors hover:text-brand [&::-webkit-details-marker]:hidden">
+        <span className="text-xs font-semibold uppercase tracking-widest text-brand">
+          {eyebrow}
+        </span>
+        <span className="flex-1 text-lg font-semibold text-ink sm:text-xl">{title}</span>
+        <span
+          aria-hidden="true"
+          className="shrink-0 text-ink-subtle transition-transform duration-200 group-open:rotate-180"
+        >
+          ▾
+        </span>
+      </summary>
+
+      <div className="grid gap-8 pb-8 md:grid-cols-2 md:items-center">
+        <p className="text-lg leading-relaxed text-ink-muted">{body}</p>
         <div>{mock}</div>
       </div>
-    </Section>
+    </details>
   );
 }
 
@@ -467,159 +479,138 @@ function MockCard({ children }: { children: ReactNode }) {
 }
 
 /**
- * Four of them, in the shape a landing page for something like this usually
- * takes: alternating sides, a still of the real screen beside each. What is
- * missing on purpose is the per-section "Learn more" link — those go to product
- * pages Buddy does not have, and a link into a 404 is worse than no link.
+ * Four rows where there were four screens. Every bullet list is gone: they were
+ * four items of forty words each, and a landing page is not documentation.
+ * What survives is one sentence per feature and the picture, which is the part
+ * that was doing the persuading anyway.
  */
 function Features() {
   return (
-    <>
-      <Feature
-        id="features"
-        className="bg-surface-muted"
-        eyebrow="Finding someone"
-        title="Start with nobody. Leave with a group."
-        body="You do not need to already know somebody who studies the way you do. The directory ranks people by what you actually have in common, strongest signal first."
-        points={[
-          'Matched on your goal, then your institution, then your subject — in that order, so a shared goal always outranks three coincidences.',
-          'Filter by level, subject, country, or just “same institution as me”.',
-          `Send a request and it is answered within ${REQUEST_MINUTES} minutes, or it lapses and you try someone else.`,
-          'Already have friends? Make a group and send them a join link.',
-        ]}
-        mock={
-          <MockCard>
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
-              Recommended
-            </p>
-            <div className="mt-2 flex flex-col gap-2">
-              {[
-                { initials: 'PR', name: 'Priya R.', line: 'Same goal · same university' },
-                { initials: 'JO', name: 'Jonah T.', line: 'Same subject · active now' },
-                { initials: 'MK', name: 'Mei K.', line: 'Same goal · same country' },
-              ].map((person) => (
-                <div
-                  key={person.initials}
-                  className="flex flex-row items-center gap-3 rounded-2xl border border-surface-border px-3 py-2.5"
-                >
-                  <Face initials={person.initials} />
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-semibold text-ink">{person.name}</span>
-                    <span className="truncate text-[11px] text-ink-subtle">{person.line}</span>
+    <Section id="features" className="bg-surface-muted">
+      <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+        What you get
+      </h2>
+
+      <div className="mt-8 border-t border-surface-border">
+        <Feature
+          open
+          eyebrow="Find"
+          title="Start with nobody. Leave with a group."
+          body="Ranked by what you have in common — goal first, then campus, then subject. Ask, and you have an answer in five minutes."
+          mock={
+            <MockCard>
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+                Recommended
+              </p>
+              <div className="mt-2 flex flex-col gap-2">
+                {[
+                  { initials: 'PR', name: 'Priya R.', line: 'Same goal · same university' },
+                  { initials: 'JO', name: 'Jonah T.', line: 'Same subject · active now' },
+                  { initials: 'MK', name: 'Mei K.', line: 'Same goal · same country' },
+                ].map((person) => (
+                  <div
+                    key={person.initials}
+                    className="flex flex-row items-center gap-3 rounded-2xl border border-surface-border px-3 py-2.5"
+                  >
+                    <Face initials={person.initials} />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-semibold text-ink">{person.name}</span>
+                      <span className="truncate text-[11px] text-ink-subtle">{person.line}</span>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-brand px-3 py-1 text-[11px] font-semibold text-brand-fg">
+                      Ask
+                    </span>
                   </div>
-                  <span className="shrink-0 rounded-full bg-brand px-3 py-1 text-[11px] font-semibold text-brand-fg">
-                    Ask
+                ))}
+              </div>
+            </MockCard>
+          }
+        />
+
+        <Feature
+          eyebrow="Review"
+          title="Nobody marks their own homework"
+          body={`Saying you did the reading is free. Having someone doing the same reading agree is not. Rating times ${CREDITS_PER_RATING_POINT}, plus ${DAILY_COMPLETION_BONUS} for a clean day.`}
+          mock={
+            <MockCard>
+              <div className="flex flex-row items-center gap-3">
+                <Face initials="AN" />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm font-semibold text-ink">Ana marked this done</span>
+                  <span className="text-[11px] text-ink-subtle">Draft the intro · 50 min</span>
+                </div>
+              </div>
+              <p className="mt-3 rounded-2xl bg-surface-muted px-3 py-2.5 text-sm text-ink-muted">
+                “Got through the intro and half the lit review.”
+              </p>
+              <div className="mt-3 flex flex-row items-center justify-between">
+                <span className="text-lg tracking-widest text-warning">★★★★☆</span>
+                <span className="text-xs font-semibold text-success">
+                  +{4 * CREDITS_PER_RATING_POINT} points
+                </span>
+              </div>
+              <div className="mt-3 flex flex-row gap-2">
+                <span className="flex-1 rounded-xl bg-brand py-2 text-center text-xs font-semibold text-brand-fg">
+                  Approve
+                </span>
+                <span className="flex-1 rounded-xl border border-surface-border py-2 text-center text-xs font-semibold text-ink-muted">
+                  Ask for proof
+                </span>
+              </div>
+            </MockCard>
+          }
+        />
+
+        <Feature
+          eyebrow="Focus"
+          title="A chat that closes while you work"
+          body={`Start your clock and the group chat locks — for you. The others carry on. ${STATUSES.length} one-tap statuses say how it is going; ${REACTIONS.length} reactions, all of them positive.`}
+          mock={
+            <MockCard>
+              <div className="flex flex-row items-baseline justify-between">
+                <span className="text-sm font-bold text-ink">📚 Finals week</span>
+                <span className="text-[11px] text-ink-subtle">3 members</span>
+              </div>
+              <div className="mt-3 flex flex-col gap-2">
+                <div className="flex flex-row items-end gap-2">
+                  <Face initials="AN" size="h-7 w-7 text-[9px]" />
+                  <span className="max-w-[75%] rounded-2xl rounded-bl-md bg-surface-muted px-3 py-2 text-xs text-ink">
+                    Library at 7? I&rsquo;m stuck on Q3 🧱
                   </span>
                 </div>
-              ))}
-            </div>
-          </MockCard>
-        }
-      />
-
-      <Feature
-        flip
-        eyebrow="The review loop"
-        title="Nobody marks their own homework"
-        body="This is the part that makes the rest mean anything. Saying you did the reading is free. Having somebody who is doing the same reading agree that you did it is not."
-        points={[
-          `Approve with a rating from zero to ${MAX_RATING}, or send it back and ask for proof.`,
-          `Points are the rating times ${CREDITS_PER_RATING_POINT}, plus ${DAILY_COMPLETION_BONUS} when every task you planned that day gets approved.`,
-          'A zero still closes the task and keeps your streak. It just earns nothing.',
-          'One group member is the Buddy — the person whose job it is to check — and only the group’s creator or the Buddy can hand that over.',
-        ]}
-        mock={
-          <MockCard>
-            <div className="flex flex-row items-center gap-3">
-              <Face initials="AN" />
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="text-sm font-semibold text-ink">Ana marked this done</span>
-                <span className="text-[11px] text-ink-subtle">Draft the intro · 50 min</span>
+                <div className="flex flex-row justify-end">
+                  <span className="max-w-[75%] rounded-2xl rounded-br-md bg-brand px-3 py-2 text-xs text-brand-fg">
+                    Yes — starting my clock now
+                  </span>
+                </div>
               </div>
-            </div>
-            <p className="mt-3 rounded-2xl bg-surface-muted px-3 py-2.5 text-sm text-ink-muted">
-              “Got through the intro and half the lit review — pushed the rest to tomorrow.”
-            </p>
-            <div className="mt-3 flex flex-row items-center justify-between">
-              <span className="text-lg tracking-widest text-warning">★★★★☆</span>
-              <span className="text-xs font-semibold text-success">
-                +{4 * CREDITS_PER_RATING_POINT} points
-              </span>
-            </div>
-            <div className="mt-3 flex flex-row gap-2">
-              <span className="flex-1 rounded-xl bg-brand py-2 text-center text-xs font-semibold text-brand-fg">
-                Approve
-              </span>
-              <span className="flex-1 rounded-xl border border-surface-border py-2 text-center text-xs font-semibold text-ink-muted">
-                Ask for proof
-              </span>
-            </div>
-          </MockCard>
-        }
-      />
-
-      <Feature
-        className="bg-surface-muted"
-        eyebrow="Your group"
-        title="A chat that closes while you work"
-        body="A group is a few people, not a forum. It is where somebody notices your plan in the morning and asks about it in the evening — and it gets out of your way the moment you start."
-        points={[
-          'Start a task and the chat locks for you until you stop it. The others can still talk. You cannot, and that is the feature.',
-          `${STATUSES.length} one-tap statuses — heads down, stuck, need a push — that your group can see until your midnight.`,
-          `Bring people you already know with an invite link: ${INVITE_LINK_MAX_USES} uses, good for a week.`,
-          `A feed for a photo of what you are working on, with ${REACTIONS.length} reactions and every one of them positive.`,
-        ]}
-        mock={
-          <MockCard>
-            <div className="flex flex-row items-baseline justify-between">
-              <span className="text-sm font-bold text-ink">📚 Finals week</span>
-              <span className="text-[11px] text-ink-subtle">3 members</span>
-            </div>
-            <div className="mt-3 flex flex-col gap-2">
-              <div className="flex flex-row items-end gap-2">
-                <Face initials="AN" size="h-7 w-7 text-[9px]" />
-                <span className="max-w-[75%] rounded-2xl rounded-bl-md bg-surface-muted px-3 py-2 text-xs text-ink">
-                  Library at 7? I&rsquo;m stuck on Q3 🧱
+              <div className="mt-3 flex flex-row items-center gap-2 rounded-2xl border border-dashed border-surface-border bg-surface-muted px-3 py-2.5">
+                <span className="text-sm">🔇</span>
+                <span className="text-[11px] leading-snug text-ink-muted">
+                  Your clock is running. Chat unlocks when you stop it.
                 </span>
               </div>
-              <div className="flex flex-row justify-end">
-                <span className="max-w-[75%] rounded-2xl rounded-br-md bg-brand px-3 py-2 text-xs text-brand-fg">
-                  Yes — starting my clock now
-                </span>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-row items-center gap-2 rounded-2xl border border-dashed border-surface-border bg-surface-muted px-3 py-2.5">
-              <span className="text-sm">🔇</span>
-              <span className="text-[11px] leading-snug text-ink-muted">
-                Your clock is running. Chat unlocks when you stop it.
-              </span>
-            </div>
-          </MockCard>
-        }
-      />
+            </MockCard>
+          }
+        />
 
-      <Feature
-        flip
-        eyebrow="Keeping it up"
-        title="Something to show for the weeks you did turn up"
-        body="Points on their own are a number. They turn into badges you can see coming, and into a standing among the few people who actually know whether you earned it."
-        points={[
-          `${BADGE_FAMILIES.length} ladders — tasks approved, points, streak, reviews given — and ${BADGES.length} badges across them, each locked one showing how far off it is.`,
-          'A group board as well as a global one. Being ahead of the person who approves your work means more than being 4,312nd.',
-          'Everyone in a group appears, including on zero, and equal scores share a place.',
-        ]}
-        mock={
-          <MockCard>
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">Streak</p>
-            <div className="mt-2 flex flex-col divide-y divide-surface-border">
-              <MockBadge emoji="✨" name="Three in a row" earned />
-              <MockBadge emoji="📅" name="Seven days" current={5} target={7} />
-              <MockBadge emoji="🏆" name="Thirty days" current={5} target={30} />
-            </div>
-          </MockCard>
-        }
-      />
-    </>
+        <Feature
+          eyebrow="Keep going"
+          title="Something to show for the weeks you turned up"
+          body={`${BADGES.length} badges over ${BADGE_FAMILIES.length} ladders, and a standing among the few people who know whether you earned it.`}
+          mock={
+            <MockCard>
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">Streak</p>
+              <div className="mt-2 flex flex-col divide-y divide-surface-border">
+                <MockBadge emoji="✨" name="Three in a row" earned />
+                <MockBadge emoji="📅" name="Seven days" current={5} target={7} />
+                <MockBadge emoji="🏆" name="Thirty days" current={5} target={30} />
+              </div>
+            </MockCard>
+          }
+        />
+      </div>
+    </Section>
   );
 }
 
@@ -691,13 +682,9 @@ function WhoItIsFor() {
             Not only exam season
           </h2>
           <p className="mt-4 text-lg leading-relaxed text-ink-subtle">
-            Signup asks what you are working toward and matches you to people working toward the
-            same thing. These are the answers it offers, and one of them is a box you write
-            yourself.
-          </p>
-          <p className="mt-4 text-base leading-relaxed text-ink-subtle">
-            It asks your level too — {EDUCATION_LEVELS.map((level) => level.label).join(', ')} —
-            because a first-year and a postdoc do not want the same week.
+            You are matched to people working toward the same thing, at the same level — from{' '}
+            {EDUCATION_LEVELS[0]!.label.toLowerCase()} to{' '}
+            {EDUCATION_LEVELS[EDUCATION_LEVELS.length - 1]!.label.toLowerCase()}.
           </p>
         </div>
 
@@ -729,32 +716,32 @@ function Details() {
     {
       emoji: '🌅',
       title: 'A nudge at 8am, only if you need one',
-      body: 'If you have nothing planned when your morning starts, Buddy says so once. If you have, it stays quiet.',
+      body: 'Nothing planned when your day starts? Buddy says so once, then leaves you alone.',
     },
     {
       emoji: '🕓',
       title: 'Nobody is punished for a silent reviewer',
-      body: 'A task you finished that nobody checks gets the reviewer a full extra day, then closes itself. The day counts and your streak survives.',
+      body: 'An unchecked task closes itself after a full extra day. Your streak survives.',
     },
     {
       emoji: '🌍',
       title: 'Your day, not a server’s day',
-      body: 'Midnight means your midnight. A group can span three timezones and everybody still gets their own full day.',
+      body: 'Midnight means yours. A group can span three timezones and each gets a full day.',
     },
     {
       emoji: '🚪',
       title: 'Walking away costs something, but never everything',
-      body: `Abandoning a task you started is ${ABANDON_PENALTY} points — one rating point's worth. It is capped at what you have, so nobody ends up in debt.`,
+      body: `Abandoning a started task costs ${ABANDON_PENALTY} points, capped at what you have. Nobody goes into debt.`,
     },
     {
       emoji: '⏱️',
       title: `Between ${MIN_TASK_MINUTES} minutes and ${MAX_TASK_MINUTES / 60} hours`,
-      body: 'Shorter than that is not worth starting a clock for. Longer and a “task” is really a day’s plan, and the clock stops telling anyone anything.',
+      body: 'Below that is not worth a clock. Above it, a “task” is really a day’s plan.',
     },
     {
       emoji: '🔗',
       title: 'An invite link that expires',
-      body: `Anyone holding the link can join, so it is bounded on both axes: ${INVITE_LINK_MAX_USES} uses, and a week.`,
+      body: `Anyone holding it can join, so it is bounded both ways: ${INVITE_LINK_MAX_USES} uses, one week.`,
     },
   ];
 
@@ -779,27 +766,32 @@ function Details() {
 }
 
 /**
- * Plain headings and paragraphs rather than a `<details>` accordion. The
- * questions are four, they are short, and a visitor who has scrolled this far
- * is reading — hiding the answers behind a click would only cost them a click.
+ * The same `<details name>` trick as the features. The earlier version argued
+ * that four short answers were better left open than hidden behind a click —
+ * true when they were four paragraphs, and the fix was to make them one line
+ * each rather than to leave four paragraphs lying on the page.
  */
 function Questions() {
   const questions = [
     {
       q: 'Do I have to install anything?',
-      a: 'No. Buddy runs in this browser, on a laptop or a phone, and “Get started” goes straight into signup. The iPhone and Android apps are being built; there is nothing to download yet, so the page does not pretend there is.',
+      a: 'No. Buddy runs in this browser. Phone apps are being built; there is nothing to download yet, so the page does not pretend there is.',
     },
     {
-      q: 'What if I don’t know anybody on here?',
-      a: `That is the case it is built for. The directory ranks strangers by your goal first, then your institution, then your subject, and a request is answered within ${REQUEST_MINUTES} minutes or it lapses so you are never left waiting on somebody who has gone quiet.`,
+      q: 'What if I don’t know anybody here?',
+      a: `That is the case it is built for. Strangers are ranked by your goal, then your campus, then your subject, and a request lapses after ${REQUEST_MINUTES} minutes so you are never left waiting.`,
     },
     {
       q: 'What if my group never reviews my work?',
-      a: 'Your streak is not theirs to break. An unreviewed task gives the reviewer a full extra day and then closes on its own — the day still counts. It earns no points, because nobody actually looked, and an unreviewed approval would be an absence pretending to be a reviewer.',
+      a: 'Your streak is not theirs to break. An unreviewed task closes itself after a full extra day and the day still counts. It earns nothing, because nobody actually looked.',
     },
     {
       q: 'Is it only for exams?',
-      a: `No. The goals list runs from finals and a thesis to job hunting, a side project, fitness, a language or a reading habit — ${GOALS.length - 1} of them, plus a box you fill in yourself.`,
+      a: `No — ${GOALS.length - 1} goals, from a thesis to job hunting, fitness, a language or a reading habit. Plus a box you fill in yourself.`,
+    },
+    {
+      q: `Who can join?`,
+      a: `Anyone ${MIN_AGE_YEARS} or over. Signup asks your date of birth first, before anything else.`,
     },
   ];
 
@@ -808,12 +800,21 @@ function Questions() {
       <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
         Reasonable questions
       </h2>
-      <div className="mt-10 grid gap-x-10 gap-y-8 md:grid-cols-2">
+
+      <div className="mt-8 border-t border-surface-border">
         {questions.map((item) => (
-          <div key={item.q} className="flex flex-col">
-            <h3 className="text-lg font-semibold text-ink">{item.q}</h3>
-            <p className="mt-2 text-base leading-relaxed text-ink-muted">{item.a}</p>
-          </div>
+          <details key={item.q} name="questions" className="group border-b border-surface-border">
+            <summary className="flex cursor-pointer list-none flex-row items-center gap-4 py-4 text-base font-semibold text-ink transition-colors hover:text-brand [&::-webkit-details-marker]:hidden sm:text-lg">
+              <span className="flex-1">{item.q}</span>
+              <span
+                aria-hidden="true"
+                className="shrink-0 text-ink-subtle transition-transform duration-200 group-open:rotate-45"
+              >
+                +
+              </span>
+            </summary>
+            <p className="max-w-2xl pb-5 text-base leading-relaxed text-ink-muted">{item.a}</p>
+          </details>
         ))}
       </div>
     </Section>
@@ -828,8 +829,7 @@ function Closing() {
           Decide what today is for
         </h2>
         <p className="mt-4 max-w-xl text-lg leading-relaxed text-brand-muted">
-          A few questions about what you study and what you are working toward, and you are in a
-          group the same evening.
+          A few questions, and you are in a group the same evening.
         </p>
         <div className="mt-8 flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
           <Link
