@@ -201,6 +201,11 @@ function Hero() {
             only the second one undersold it. Finding somebody is the half most
             people arrive needing; finishing the work is the half that makes
             having found them worth anything.
+
+            The second line names *what* gets finished. It read "Actually finish
+            today", which is a mood rather than a claim — a visitor cannot tell
+            what they would be finishing. "What you planned" is the thing the
+            app actually holds, and it sets up the sentence below it.
           */}
           <h1
             className="landing-rise mt-3 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]"
@@ -208,14 +213,14 @@ function Hero() {
           >
             Find a study buddy.
             <br />
-            <span className="text-brand-muted">Actually finish today.</span>
+            <span className="text-brand-muted">Finish what you planned.</span>
           </h1>
           <p
             className="landing-rise mt-5 max-w-md text-lg leading-relaxed text-ink-subtle"
             style={{ animationDelay: '160ms' }}
           >
-            Matched with students working toward the same thing as you — then nothing you plan
-            counts until one of them says it does.
+            Matched with students working toward the same thing as you — and nothing counts until
+            one of them says it does.
           </p>
 
           <div
