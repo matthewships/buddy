@@ -13,6 +13,7 @@ export { Field } from './Field';
 export { IconButton } from './IconButton';
 export { AppFrame, Screen } from './Frame';
 export { LandingPage } from './LandingPage';
+export { GetFoundCard } from './GetFoundCard';
 export { GroupTasks } from './GroupTasks';
 export { RatingPicker } from './RatingPicker';
 export { NotificationBell } from './NotificationBell';

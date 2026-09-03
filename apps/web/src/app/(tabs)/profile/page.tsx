@@ -11,9 +11,9 @@ import { useSession } from '@/auth/store';
 import { useNotificationPreference } from '@/hooks/useNotificationPreference';
 import {
   Button,
-  Card,
   ConfirmSheet,
   ErrorText,
+  GetFoundCard,
   IconButton,
   NotificationBell,
   ProfileView,
@@ -163,15 +163,7 @@ export default function Profile() {
             />
             <ErrorText message={uploadAvatar.error?.message} />
 
-            {!profile.institution || !profile.educationLevel ? (
-              <Card>
-                <p className="text-base text-ink">Your profile is missing a few things.</p>
-                <p className="mt-1 text-sm text-ink-muted">
-                  Level of study and where you study are what the directory matches on — without
-                  them, fewer people will find you.
-                </p>
-              </Card>
-            ) : null}
+            <GetFoundCard profile={profile} compact />
           </div>
         }
       />

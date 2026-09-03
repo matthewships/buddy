@@ -21,6 +21,7 @@ import {
   Button,
   Card,
   ErrorText,
+  GetFoundCard,
   RefreshButton,
   RequestBanner,
   Screen,
@@ -155,6 +156,14 @@ export default function Buddies() {
           </p>
         </Card>
       ) : null}
+
+      {/*
+        Above the list, not below it: the answers it asks for are what decide
+        the order of the list, and somebody scrolling a directory that ranks
+        them poorly should be told why before they get to the bottom of it.
+        Only once /me is known, so it never flashes "0%" at a full profile.
+      */}
+      {me.data ? <GetFoundCard profile={me.data} /> : null}
 
       <Segmented label="Sort buddies by" options={SORTS} value={sort} onChange={setSort} />
 

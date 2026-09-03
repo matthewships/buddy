@@ -20,6 +20,7 @@ export * from './level-fit';
 export * from './limits';
 export * from './majors';
 export * from './occupations';
+export * from './profile-strength';
 export * from './reactions';
 export * from './schemas';
 export * from './statuses';
