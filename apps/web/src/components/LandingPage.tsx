@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { FIRST_STEP } from '@/onboarding/steps';
+import { FIRST_STEP, TASK_PARAM } from '@/onboarding/steps';
 import type { ReactNode } from 'react';
 
 import {
@@ -15,6 +15,7 @@ import {
   INVITE_LINK_MAX_USES,
   MAX_RATING,
   MAX_TASK_MINUTES,
+  MAX_TASK_TITLE,
   MIN_AGE_YEARS,
   MIN_TASK_MINUTES,
   REACTIONS,
@@ -39,28 +40,30 @@ import { BUTTON_BASE, BUTTON_VARIANT, type ButtonVariant } from './buttonStyles'
  * would put the whole page behind ~630 KiB of JS and ship blank HTML until
  * hydration; as a server component the markup and every call to action are in
  * the response, and the links work before a single byte of script has run.
- * **Interactive and animated, still without a byte of JavaScript.** The first
- * version said "no carousel, no accordion, no counters that animate on scroll"
- * and gave the bundle as the reason. The reason was right and the conclusion
- * was too broad. `<details name>` is an exclusive accordion the browser already
- * implements, and `animation-timeline: view()` is a scroll-driven animation
- * with no observer and no listener — so the features and questions open and
- * close, and sections rise as they arrive, on a server component, at no cost.
- * What stays banned is what would still need script: a scroll-spy nav, a
- * counter that has to count, a carousel needing a slide index.
+ *
+ * **The hero is a form, not a button (§2.9).** The single most effective thing
+ * a product page can do is let the visitor *do the product* before signing up
+ * — Duolingo's first lesson, Airbnb's search box — and Buddy's product is one
+ * sentence: what will you finish today? So the hero asks it. A plain
+ * `<form method="get">` posts the answer to the first signup step as
+ * `?task=`, where `TaskFromQuery` writes it into the draft; the task is
+ * waiting on `/start/today` and again on `/register`, and becomes the first
+ * thing on their desk. All of it without a byte of JavaScript on this page.
+ *
+ * **Interactive and animated, still without a byte of JavaScript.**
+ * `<details name>` is an exclusive accordion the browser already implements,
+ * and `animation-timeline: view()` is a scroll-driven animation with no
+ * observer and no listener — so the features and questions open and close,
+ * and sections rise as they arrive, at no cost. What stays banned is what
+ * would still need script: a scroll-spy nav, a counter that has to count, a
+ * carousel needing a slide index.
  *
  * The motion rules live in globals.css and are all inside
  * `prefers-reduced-motion: no-preference`, so the page's default state is the
- * finished one — delete every animation and nothing disappears. The section nav is plain `#` anchors, which
- * the browser has handled since before JavaScript.
- *
- * A consequence worth knowing: every panel's markup is in the response whether
- * it is open or not, so the page is still one document to a crawler and still
- * readable with CSS off.
+ * finished one — delete every animation and nothing disappears.
  *
  * **No images.** There are no marketing assets in the repo, and the CSP allows
- * images only from this origin and the API. Rather than commission stock photos
- * of students looking pleased near a laptop, the illustrations are static
+ * images only from this origin and the API. The illustrations are static
  * mockups of the real interface built from the real design tokens — so what a
  * visitor is shown is what they will actually get, and it costs no bytes.
  *
@@ -68,9 +71,12 @@ import { BUTTON_BASE, BUTTON_VARIANT, type ButtonVariant } from './buttonStyles'
  * arithmetic and the counts in the feature copy are read from the same
  * constants the API enforces, rather than typed in. Rebalance the economy and
  * the pitch follows; there is no second copy to go stale. This is also the rule
- * that decides what the page is *allowed* to say — see the note on §5.7 in
- * ARCHITECTURE.md about the sections a competitor's page has and this one
- * cannot honestly have.
+ * that decides what the page is *allowed* to say — see §5.7 in ARCHITECTURE.md
+ * about the sections a competitor's page has and this one cannot honestly have.
+ *
+ * **The look is §5.8.** Dense at the top, long and quiet after; square corners;
+ * uppercase eyebrows; the up-arrow on every number that goes up; lime for the
+ * one thing on each screen that says *go*.
  */
 
 /**
@@ -106,7 +112,7 @@ function Section({
   return (
     // `scroll-mt-14` is the sticky bar's height: without it an anchored jump
     // parks the heading underneath the header.
-    <section id={id} className={`scroll-mt-14 px-5 py-16 sm:py-20 ${className}`}>
+    <section id={id} className={`scroll-mt-14 px-5 py-16 sm:py-24 ${className}`}>
       <div className="mx-auto w-full max-w-5xl">{children}</div>
     </section>
   );
@@ -118,6 +124,7 @@ export function LandingPage() {
       <TopBar />
       <main className="flex-1">
         <Hero />
+        <Figures />
         <HowItWorks />
         <Features />
         <WhoItIsFor />
@@ -142,12 +149,20 @@ const NAV = [
   { href: '#questions', label: 'Questions' },
 ];
 
+function Wordmark({ className = 'text-ink' }: { className?: string }) {
+  return (
+    <span className={`font-display text-lg font-bold tracking-tight ${className}`}>
+      Buddy<span className="text-accent">.</span>
+    </span>
+  );
+}
+
 function TopBar() {
   return (
     <header className="sticky top-0 z-40 border-b border-surface-border bg-surface/90 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-5xl flex-row items-center justify-between gap-6 px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-ink">
-          Buddy
+        <Link href="/">
+          <Wordmark />
         </Link>
 
         <nav aria-label="Sections" className="hidden flex-1 flex-row gap-6 md:flex">
@@ -182,71 +197,93 @@ function TopBar() {
 }
 
 /**
+ * The question, as a form. Used twice — in the hero and in the closing band —
+ * because the second one catches the reader who scrolled past the first while
+ * deciding, and by then they have an answer.
+ *
+ * `required` is the only validation: the step it lands on has the real one,
+ * and a browser's own "please fill in this field" is enough here. `maxLength`
+ * is the task title's cap so nothing typed here is cut on the way in.
+ */
+function TaskForm({ id, dark = false }: { id: string; dark?: boolean }) {
+  return (
+    <form method="get" action={START} className="flex w-full flex-col gap-2 sm:flex-row">
+      <label htmlFor={id} className="sr-only">
+        What will you finish today?
+      </label>
+      <input
+        id={id}
+        name={TASK_PARAM}
+        type="text"
+        required
+        maxLength={MAX_TASK_TITLE}
+        autoComplete="off"
+        placeholder="e.g. Problem set 7, questions 1 to 4"
+        className={`h-12 min-w-0 flex-1 rounded-md border px-4 text-base outline-none transition-colors ${
+          dark
+            ? 'border-white/20 bg-white/5 text-white placeholder:text-white/40 focus:border-accent'
+            : 'border-ink/20 bg-surface text-ink placeholder:text-ink-subtle focus:border-brand'
+        }`}
+      />
+      <button type="submit" className={`${cta('primary')} shrink-0`}>
+        Start my day&nbsp;↑
+      </button>
+    </form>
+  );
+}
+
+/**
  * The dark band is the one piece of the page that is not app chrome. The app is
- * white and indigo because it is a tool somebody looks at for an hour a day;
- * the landing page has about four seconds, and inverting the palette for the
- * top of it is what makes the product screenshot below read as a screenshot
- * rather than as more page.
+ * cream and olive because it is a tool somebody looks at for an hour a day; the
+ * landing page has about four seconds, and inverting the palette for the top of
+ * it is what makes the product screenshot beside it read as a screenshot rather
+ * than as more page.
+ *
+ * Seven columns to five on `lg`: the seed's first digit, and the side with the
+ * question gets the room.
  */
 function Hero() {
   return (
-    <div className="bg-ink px-5 pb-14 pt-16 sm:pt-20">
-      <div className="mx-auto grid w-full max-w-5xl gap-12 md:grid-cols-2 md:items-center md:gap-10">
-        <div className="flex flex-col">
-          <p className="landing-rise text-sm font-semibold uppercase tracking-widest text-brand-muted/70">
-            For students
+    <div className="bg-ink px-5 pb-16 pt-16 sm:pt-24">
+      <div className="mx-auto grid w-full max-w-5xl gap-12 lg:grid-cols-12 lg:items-center lg:gap-10">
+        <div className="flex flex-col lg:col-span-7">
+          <p className="landing-rise eyebrow text-accent">
+            For students · {MIN_AGE_YEARS} and over
           </p>
-          {/*
-            Two promises, because the product is two things and leading with
-            only the second one undersold it. Finding somebody is the half most
-            people arrive needing; finishing the work is the half that makes
-            having found them worth anything.
-
-            The second line names *what* gets finished. It read "Actually finish
-            today", which is a mood rather than a claim — a visitor cannot tell
-            what they would be finishing. "What you planned" is the thing the
-            app actually holds, and it sets up the sentence below it.
-          */}
           <h1
-            className="landing-rise mt-3 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]"
+            className="landing-rise mt-4 text-4xl font-bold leading-[1.02] tracking-tight text-white sm:text-5xl lg:text-[3.75rem]"
             style={{ animationDelay: '80ms' }}
           >
-            Find a study buddy.
+            Say what you&rsquo;ll finish today.
             <br />
-            <span className="text-brand-muted">Finish what you planned.</span>
+            <span className="text-accent">Then have someone check.</span>
           </h1>
           <p
-            className="landing-rise mt-5 max-w-md text-lg leading-relaxed text-ink-subtle"
+            className="landing-rise mt-5 max-w-lg text-lg leading-relaxed text-white/70"
             style={{ animationDelay: '160ms' }}
           >
-            Matched with students working toward the same thing as you — and nothing counts until
-            one of them says it does.
+            Buddy pairs you with a student working toward the same thing. You plan one day at a
+            time, they sign it off, and the streak is the score.
           </p>
 
-          <div
-            className="landing-rise mt-8 flex flex-col gap-3 sm:flex-row"
-            style={{ animationDelay: '240ms' }}
-          >
-            <Link href={START} className={cta('primary')}>
-              Find my buddy
-            </Link>
-            <Link
-              href="/login"
-              className={`${BUTTON_BASE} w-full cursor-pointer border border-white/25 text-white transition-colors hover:bg-white/10 sm:w-auto`}
-            >
-              I already have an account
-            </Link>
+          <div className="landing-rise mt-8 max-w-xl" style={{ animationDelay: '240ms' }}>
+            <TaskForm id="hero-task" dark />
           </div>
 
           <p
-            className="landing-rise mt-5 text-sm text-ink-subtle"
+            className="landing-rise mt-4 text-sm text-white/50"
             style={{ animationDelay: '320ms' }}
           >
-            In this browser. Nothing to install.
+            No account yet — that comes after.{' '}
+            <Link href="/login" className="text-white/80 underline-offset-4 hover:underline">
+              Already here? Sign in.
+            </Link>
           </p>
         </div>
 
-        <HeroMock />
+        <div className="lg:col-span-5">
+          <HeroMock />
+        </div>
       </div>
     </div>
   );
@@ -255,7 +292,7 @@ function Hero() {
 /** Small round avatar stand-in. The app draws initials when there is no photo. */
 function Face({
   initials,
-  tint = 'bg-brand-muted text-brand',
+  tint = 'bg-people text-people-fg',
   size = 'h-10 w-10 text-xs',
 }: {
   initials: string;
@@ -273,33 +310,32 @@ function Face({
 }
 
 /**
- * A still of the group screen. Built from the same tokens the app uses, so it
- * cannot show a product that does not exist — and it is hidden from screen
- * readers, because a picture of an interface is not information, it is a
- * picture.
+ * A still of the desk. Built from the same tokens the app uses, so it cannot
+ * show a product that does not exist — and it is hidden from screen readers,
+ * because a picture of an interface is not information, it is a picture.
  */
 function HeroMock() {
   return (
     <div
       aria-hidden="true"
-      className="landing-rise mx-auto w-full max-w-sm rounded-xl border border-surface-border bg-surface p-4 shadow-2xl"
+      className="landing-rise bracket mx-auto w-full max-w-sm rounded-lg border border-white/10 bg-surface p-4 text-ink shadow-2xl"
       style={{ animationDelay: '200ms' }}
     >
       <div className="flex flex-row items-baseline justify-between">
-        <span className="text-base font-bold text-ink">📚 Finals week</span>
+        <span className="font-display text-base font-bold">🎯 Ana&rsquo;s desk</span>
         <span className="text-xs text-ink-subtle">3 members</span>
       </div>
 
       {/* The member strip: who is in the group, and how each of them is doing. */}
       <div className="mt-3 flex flex-row gap-2">
         {[
-          { name: 'You', initials: 'ME', status: '🎯', buddy: false },
-          { name: 'Ana', initials: 'AN', status: '🧱', buddy: true },
-          { name: 'Sam', initials: 'SA', status: null, buddy: false },
+          { name: 'You', initials: 'AN', status: '🎯', buddy: false },
+          { name: 'Sam', initials: 'SA', status: '🧱', buddy: true },
+          { name: 'Mei', initials: 'MK', status: null, buddy: false },
         ].map((member) => (
           <div
             key={member.name}
-            className={`flex w-16 flex-col items-center gap-1 rounded-lg border px-1 py-2 ${
+            className={`flex w-16 flex-col items-center gap-1 rounded-md border px-1 py-2 ${
               member.name === 'You' ? 'border-brand bg-brand-muted' : 'border-transparent'
             }`}
           >
@@ -324,12 +360,12 @@ function HeroMock() {
       <div className="mt-3 flex flex-col gap-2">
         <MockTask title="Rewrite the methods section" meta="45 min" state="approved" />
         <MockTask title="Problem set 7, Q1–Q4" meta="Running · 12:04" state="running" />
-        <MockTask title="Read two papers" meta="Waiting on Ana" state="waiting" />
+        <MockTask title="Read two papers" meta="Waiting on Sam" state="waiting" />
       </div>
 
-      <div className="mt-3 flex flex-row items-center justify-between rounded-lg bg-surface-muted px-3 py-2">
+      <div className="mt-3 flex flex-row items-center justify-between rounded-md bg-surface-muted px-3 py-2">
         <span className="text-xs text-ink-muted">Next badge · Seven days</span>
-        <span className="text-xs font-semibold text-ink">5/7</span>
+        <span className="font-display text-xs font-bold text-brand">5/7 ↑</span>
       </div>
     </div>
   );
@@ -348,13 +384,13 @@ function MockTask({
     approved: 'bg-success',
     // The only thing on the page that moves by itself, because it is the only
     // one claiming to be live. See `landing-pulse` in globals.css.
-    running: 'bg-brand landing-pulse',
+    running: 'bg-live landing-pulse',
     waiting: 'bg-warning',
   }[state];
 
   return (
-    <div className="flex flex-row items-center gap-3 rounded-lg border border-surface-border px-3 py-2.5">
-      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+    <div className="flex flex-row items-center gap-3 rounded-md border border-surface-border px-3 py-2.5">
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${dot}`} />
       <div className="flex min-w-0 flex-1 flex-col">
         <span
           className={`truncate text-sm ${state === 'approved' ? 'text-ink-subtle line-through' : 'text-ink'}`}
@@ -371,12 +407,60 @@ function MockTask({
 }
 
 /**
+ * The strip under the hero holds *product* facts, not adoption ones (§5.7):
+ * every figure is a constant the API enforces, and none of them is a number of
+ * users. A visitor can check each one against the app they are about to use.
+ */
+function Figures() {
+  const figures = [
+    {
+      value: `${REQUEST_MINUTES} min`,
+      label: 'to hear back from a buddy you asked',
+    },
+    {
+      value: `${MAX_RATING * CREDITS_PER_RATING_POINT} pts`,
+      label: `for a ${MAX_RATING}-star task, +${DAILY_COMPLETION_BONUS} for a clean day`,
+    },
+    {
+      value: `${BADGES.length}`,
+      label: `badges on ${BADGE_FAMILIES.length} ladders, first rung one task away`,
+    },
+    {
+      value: `${EDUCATION_LEVELS.length}`,
+      label: `levels, ${EDUCATION_LEVELS[0]!.label.toLowerCase()} to ${EDUCATION_LEVELS[EDUCATION_LEVELS.length - 2]!.label.toLowerCase()}`,
+    },
+  ];
+
+  return (
+    <div className="border-b border-surface-border bg-surface px-5">
+      <dl className="mx-auto grid w-full max-w-5xl grid-cols-2 divide-surface-border sm:grid-cols-4 sm:divide-x">
+        {figures.map((figure, index) => (
+          <div
+            key={figure.label}
+            className={`landing-reveal flex flex-col gap-1 py-6 sm:px-6 ${index % 2 === 1 ? 'pl-6 sm:pl-6' : ''} ${index === 0 ? 'sm:pl-0' : ''}`}
+            style={{ animationDelay: `${index * 60}ms` }}
+          >
+            <dd className="font-display text-3xl font-bold tracking-tight text-ink">
+              {figure.value}
+              <span className="ml-1 text-accent" aria-hidden="true">
+                ↑
+              </span>
+            </dd>
+            <dt className="text-sm leading-snug text-ink-muted">{figure.label}</dt>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/**
  * The mechanic, in five steps.
  *
- * It used to be four and started at "plan today", which quietly assumed the
- * hard part was already solved. It is not: most people arrive with nobody to be
- * accountable to, and the matching is half of what this product does. Finding
- * somebody is step one.
+ * Planning is step one now, because the hero just asked for it. Finding
+ * somebody used to lead — most people arrive with nobody to be accountable to
+ * — but the page's own first act is the task, and the steps should read in the
+ * order the visitor will actually do them.
  *
  * Each card reveals as it scrolls in, with the delay coming from its position
  * so the row assembles left to right. `animation-timeline: view()` does that
@@ -385,27 +469,22 @@ function MockTask({
 function HowItWorks() {
   const steps = [
     {
-      n: '1',
-      title: 'Find someone',
-      body: 'Matched on your goal first, then your campus, then your subject. Ask, and you know inside five minutes.',
-    },
-    {
-      n: '2',
       title: 'Plan today',
-      body: 'Not this term. Today. It resets at your midnight, in your timezone.',
+      body: 'Not this term. Today. One task with a time on it; it resets at your midnight.',
     },
     {
-      n: '3',
+      title: 'Find someone',
+      body: `Ranked by your goal first, then your campus, then your subject. Ask, and you know inside ${REQUEST_MINUTES} minutes.`,
+    },
+    {
       title: 'Do it',
       body: 'Start the clock. While it runs, the group chat is closed to you.',
     },
     {
-      n: '4',
       title: 'They check',
       body: `Your buddy approves it, rates it out of ${MAX_RATING}, or asks for proof.`,
     },
     {
-      n: '5',
       title: 'The streak',
       body: 'Every approved day extends it. Miss one and it is back to nothing.',
     },
@@ -413,24 +492,25 @@ function HowItWorks() {
 
   return (
     <Section id="how" className="bg-surface">
-      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+      <p className="eyebrow">How it works</p>
+      <h2 className="landing-reveal mt-3 max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
         Someone to answer to, and something to answer for
       </h2>
-      <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
+      <ol className="mt-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-6">
         {steps.map((step, index) => (
-          <div
-            key={step.n}
-            className="landing-reveal flex flex-col"
+          <li
+            key={step.title}
+            className="landing-reveal bracket flex flex-col p-3"
             style={{ animationDelay: `${index * 60}ms` }}
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-muted text-sm font-bold text-brand">
-              {step.n}
+            <span className="font-display text-4xl font-bold leading-none text-brand">
+              {index + 1}
             </span>
             <h3 className="mt-4 text-lg font-semibold text-ink">{step.title}</h3>
             <p className="mt-1.5 text-base leading-relaxed text-ink-muted">{step.body}</p>
-          </div>
+          </li>
         ))}
-      </div>
+      </ol>
     </Section>
   );
 }
@@ -440,12 +520,8 @@ function HowItWorks() {
  *
  * `<details name="features">` is an *exclusive* accordion — opening one closes
  * the others — implemented by the browser, so this costs nothing and works with
- * JavaScript disabled. It replaces four stacked full-height sections with four
- * lines and one open panel, which is the whole point: the page is now scannable
- * in a glance instead of a scroll, and the words are read by people who asked
- * for them.
- *
- * `open` on the first is what stops the section reading as four dead headings.
+ * JavaScript disabled. `open` on the first is what stops the section reading as
+ * four dead headings.
  */
 function Feature({
   title,
@@ -463,19 +539,17 @@ function Feature({
   return (
     <details name="features" open={open} className="group border-b border-surface-border">
       <summary className="flex cursor-pointer list-none flex-row items-center gap-4 py-5 transition-colors hover:text-brand [&::-webkit-details-marker]:hidden">
-        <span className="text-xs font-semibold uppercase tracking-widest text-brand">
-          {eyebrow}
-        </span>
-        <span className="flex-1 text-lg font-semibold text-ink sm:text-xl">{title}</span>
+        <span className="eyebrow w-20 shrink-0">{eyebrow}</span>
+        <span className="flex-1 font-display text-lg font-semibold text-ink sm:text-xl">{title}</span>
         <span
           aria-hidden="true"
-          className="shrink-0 text-ink-subtle transition-transform duration-200 group-open:rotate-180"
+          className="shrink-0 text-ink-subtle transition-transform duration-200 group-open:rotate-90"
         >
-          ▾
+          →
         </span>
       </summary>
 
-      <div className="grid gap-8 pb-8 md:grid-cols-2 md:items-center">
+      <div className="grid gap-8 pb-10 md:grid-cols-2 md:items-center">
         <p className="text-lg leading-relaxed text-ink-muted">{body}</p>
         <div>{mock}</div>
       </div>
@@ -487,7 +561,7 @@ function MockCard({ children }: { children: ReactNode }) {
   return (
     <div
       aria-hidden="true"
-      className="mx-auto w-full max-w-sm rounded-xl border border-surface-border bg-surface p-4 shadow-xl"
+      className="mx-auto w-full max-w-sm rounded-lg border border-surface-border bg-surface p-4 shadow-xl"
     >
       {children}
     </div>
@@ -495,45 +569,47 @@ function MockCard({ children }: { children: ReactNode }) {
 }
 
 /**
- * Four rows where there were four screens. Every bullet list is gone: they were
- * four items of forty words each, and a landing page is not documentation.
- * What survives is one sentence per feature and the picture, which is the part
- * that was doing the persuading anyway.
+ * Four rows where there were four screens. One sentence per feature and the
+ * picture, which is the part that was doing the persuading anyway.
  */
 function Features() {
   return (
     <Section id="features" className="bg-surface-muted">
-      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
-        What you get
+      <p className="eyebrow">What you get</p>
+      <h2 className="landing-reveal mt-3 max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+        A desk, a buddy, and a reason to sit down
       </h2>
 
-      <div className="mt-8 border-t border-surface-border">
+      <div className="mt-10 border-t border-surface-border">
         <Feature
           open
           eyebrow="Find"
           title="Start with nobody. Leave with a group."
-          body="Ranked by what you have in common — goal first, then campus, then subject. Ask, and you have an answer in five minutes."
+          body={`Ranked by what you have in common — goal first, then campus, then subject. Ask, and you have an answer in ${REQUEST_MINUTES} minutes.`}
           mock={
             <MockCard>
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
-                Recommended
-              </p>
+              <p className="eyebrow">Recommended</p>
               <div className="mt-2 flex flex-col gap-2">
                 {[
                   { initials: 'PR', name: 'Priya R.', line: 'Same goal · same university' },
                   { initials: 'JO', name: 'Jonah T.', line: 'Same subject · active now' },
                   { initials: 'MK', name: 'Mei K.', line: 'Same goal · same country' },
-                ].map((person) => (
+                ].map((person, index) => (
                   <div
                     key={person.initials}
-                    className="flex flex-row items-center gap-3 rounded-lg border border-surface-border px-3 py-2.5"
+                    className="flex flex-row items-center gap-3 rounded-md border border-surface-border px-3 py-2.5"
                   >
-                    <Face initials={person.initials} />
+                    <span className="relative">
+                      <Face initials={person.initials} />
+                      {index === 1 ? (
+                        <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface bg-live" />
+                      ) : null}
+                    </span>
                     <div className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-sm font-semibold text-ink">{person.name}</span>
                       <span className="truncate text-[11px] text-ink-subtle">{person.line}</span>
                     </div>
-                    <span className="shrink-0 rounded-full bg-brand px-3 py-1 text-[11px] font-semibold text-brand-fg">
+                    <span className="shrink-0 rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-accent-fg">
                       Ask
                     </span>
                   </div>
@@ -556,17 +632,17 @@ function Features() {
                   <span className="text-[11px] text-ink-subtle">Draft the intro · 50 min</span>
                 </div>
               </div>
-              <p className="mt-3 rounded-lg bg-surface-muted px-3 py-2.5 text-sm text-ink-muted">
+              <p className="mt-3 rounded-md bg-surface-muted px-3 py-2.5 text-sm text-ink-muted">
                 “Got through the intro and half the lit review.”
               </p>
               <div className="mt-3 flex flex-row items-center justify-between">
                 <span className="text-lg tracking-widest text-warning">★★★★☆</span>
-                <span className="text-xs font-semibold text-success">
-                  +{4 * CREDITS_PER_RATING_POINT} points
+                <span className="font-display text-xs font-bold text-success">
+                  +{4 * CREDITS_PER_RATING_POINT} ↑
                 </span>
               </div>
               <div className="mt-3 flex flex-row gap-2">
-                <span className="flex-1 rounded-md bg-brand py-2 text-center text-xs font-semibold text-brand-fg">
+                <span className="flex-1 rounded-md bg-accent py-2 text-center text-xs font-semibold text-accent-fg">
                   Approve
                 </span>
                 <span className="flex-1 rounded-md border border-surface-border py-2 text-center text-xs font-semibold text-ink-muted">
@@ -584,12 +660,12 @@ function Features() {
           mock={
             <MockCard>
               <div className="flex flex-row items-baseline justify-between">
-                <span className="text-sm font-bold text-ink">📚 Finals week</span>
+                <span className="font-display text-sm font-bold text-ink">🎯 Ana&rsquo;s desk</span>
                 <span className="text-[11px] text-ink-subtle">3 members</span>
               </div>
               <div className="mt-3 flex flex-col gap-2">
                 <div className="flex flex-row items-end gap-2">
-                  <Face initials="AN" size="h-7 w-7 text-[9px]" />
+                  <Face initials="SA" size="h-7 w-7 text-[9px]" />
                   <span className="max-w-[75%] rounded-lg rounded-bl-sm bg-surface-muted px-3 py-2 text-xs text-ink">
                     Library at 7? I&rsquo;m stuck on Q3 🧱
                   </span>
@@ -600,8 +676,8 @@ function Features() {
                   </span>
                 </div>
               </div>
-              <div className="mt-3 flex flex-row items-center gap-2 rounded-lg border border-dashed border-surface-border bg-surface-muted px-3 py-2.5">
-                <span className="text-sm">🔇</span>
+              <div className="mt-3 flex flex-row items-center gap-2 rounded-md border border-dashed border-surface-border bg-surface-muted px-3 py-2.5">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-live landing-pulse" />
                 <span className="text-[11px] leading-snug text-ink-muted">
                   Your clock is running. Chat unlocks when you stop it.
                 </span>
@@ -616,7 +692,7 @@ function Features() {
           body={`${BADGES.length} badges over ${BADGE_FAMILIES.length} ladders, and a standing among the few people who know whether you earned it.`}
           mock={
             <MockCard>
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">Streak</p>
+              <p className="eyebrow">Streak</p>
               <div className="mt-2 flex flex-col divide-y divide-surface-border">
                 <MockBadge emoji="✨" name="Three in a row" earned />
                 <MockBadge emoji="📅" name="Seven days" current={5} target={7} />
@@ -691,13 +767,11 @@ function WhoItIsFor() {
     <Section className="bg-ink">
       <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:items-start">
         <div className="flex flex-col">
-          <p className="text-sm font-semibold uppercase tracking-widest text-brand-muted/70">
-            Who it is for
-          </p>
-          <h2 className="landing-reveal mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          <p className="eyebrow text-accent">Who it is for</p>
+          <h2 className="landing-reveal mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
             Not only exam season
           </h2>
-          <p className="mt-4 text-lg leading-relaxed text-ink-subtle">
+          <p className="mt-4 text-lg leading-relaxed text-white/70">
             You are matched to people working toward the same thing, at the same level — from{' '}
             {EDUCATION_LEVELS[0]!.label.toLowerCase()} to{' '}
             {EDUCATION_LEVELS[EDUCATION_LEVELS.length - 1]!.label.toLowerCase()}.
@@ -708,12 +782,12 @@ function WhoItIsFor() {
           {goals.map((goal) => (
             <li
               key={goal.key}
-              className="rounded-full border border-white/15 bg-white/5 px-3.5 py-2 text-sm font-medium text-white"
+              className="rounded-md border border-white/15 bg-white/5 px-3.5 py-2 text-sm font-medium text-white"
             >
               {goal.label}
             </li>
           ))}
-          <li className="rounded-full border border-brand bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg">
+          <li className="rounded-md bg-accent px-3.5 py-2 text-sm font-semibold text-accent-fg">
             …or write your own
           </li>
         </ul>
@@ -763,16 +837,17 @@ function Details() {
 
   return (
     <Section id="details" className="bg-surface">
-      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
-        The details we argued about
+      <p className="eyebrow">The details</p>
+      <h2 className="landing-reveal mt-3 max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+        The things we argued about
       </h2>
-      <div className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
         {details.map((detail) => (
           <div key={detail.title} className="flex flex-col">
             <span aria-hidden="true" className="text-2xl">
               {detail.emoji}
             </span>
-            <h3 className="mt-2.5 text-base font-semibold text-ink">{detail.title}</h3>
+            <h3 className="mt-3 text-base font-semibold text-ink">{detail.title}</h3>
             <p className="mt-1 text-base leading-relaxed text-ink-muted">{detail.body}</p>
           </div>
         ))}
@@ -781,12 +856,7 @@ function Details() {
   );
 }
 
-/**
- * The same `<details name>` trick as the features. The earlier version argued
- * that four short answers were better left open than hidden behind a click —
- * true when they were four paragraphs, and the fix was to make them one line
- * each rather than to leave four paragraphs lying on the page.
- */
+/** The same `<details name>` trick as the features, one line per answer. */
 function Questions() {
   const questions = [
     {
@@ -798,6 +868,10 @@ function Questions() {
       a: `That is the case it is built for. Strangers are ranked by your goal, then your campus, then your subject, and a request lapses after ${REQUEST_MINUTES} minutes so you are never left waiting.`,
     },
     {
+      q: 'What happens to the task I type at the top?',
+      a: 'It goes on your desk the moment your account exists — a group of one, named after you — and you can start the clock on it from the last screen of signup. Nothing counts for points until a buddy checks it, and the page says so rather than letting you find out.',
+    },
+    {
       q: 'What if my group never reviews my work?',
       a: 'Your streak is not theirs to break. An unreviewed task closes itself after a full extra day and the day still counts. It earns nothing, because nobody actually looked.',
     },
@@ -806,21 +880,22 @@ function Questions() {
       a: `No — ${GOALS.length - 1} goals, from a thesis to job hunting, fitness, a language or a reading habit. Plus a box you fill in yourself.`,
     },
     {
-      q: `Who can join?`,
+      q: 'Who can join?',
       a: `Anyone ${MIN_AGE_YEARS} or over. Signup asks your date of birth first, before anything else.`,
     },
   ];
 
   return (
     <Section id="questions" className="bg-surface-muted">
-      <h2 className="landing-reveal max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+      <p className="eyebrow">Questions</p>
+      <h2 className="landing-reveal mt-3 max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">
         Reasonable questions
       </h2>
 
-      <div className="mt-8 border-t border-surface-border">
+      <div className="mt-10 border-t border-surface-border">
         {questions.map((item) => (
           <details key={item.q} name="questions" className="group border-b border-surface-border">
-            <summary className="flex cursor-pointer list-none flex-row items-center gap-4 py-4 text-base font-semibold text-ink transition-colors hover:text-brand [&::-webkit-details-marker]:hidden sm:text-lg">
+            <summary className="flex cursor-pointer list-none flex-row items-center gap-4 py-4 font-display text-base font-semibold text-ink transition-colors hover:text-brand [&::-webkit-details-marker]:hidden sm:text-lg">
               <span className="flex-1">{item.q}</span>
               <span
                 aria-hidden="true"
@@ -837,36 +912,31 @@ function Questions() {
   );
 }
 
+/**
+ * Lime, with ink on it — the one band on the page in the colour that says go,
+ * and the question asked a second time for the reader who has an answer now.
+ */
 function Closing() {
   return (
-    <div className="bg-brand px-5 py-16 sm:py-20">
+    <div className="bg-accent px-5 py-16 sm:py-24">
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center text-center">
-        <h2 className="text-3xl font-bold tracking-tight text-brand-fg sm:text-4xl">
+        <p className="eyebrow text-ink/70">Today</p>
+        <h2 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">
           Decide what today is for
         </h2>
-        <p className="mt-4 max-w-xl text-lg leading-relaxed text-brand-muted">
-          A few questions, and you are in a group the same evening.
+        <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink/70">
+          Six questions, and the task you type here is on your desk before you have finished
+          reading the code in your email.
         </p>
-        <div className="mt-8 flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-          <Link
-            href={START}
-            className={`${BUTTON_BASE} w-full cursor-pointer bg-surface text-brand hover:bg-surface/90 sm:w-auto`}
-          >
-            Get started
-          </Link>
-          <Link
-            href="/login"
-            className={`${BUTTON_BASE} w-full cursor-pointer border border-white/40 text-brand-fg transition-colors hover:bg-white/10 sm:w-auto`}
-          >
-            Sign in
-          </Link>
+        <div className="mt-8 w-full max-w-xl">
+          <TaskForm id="closing-task" />
         </div>
         {/*
           "For now, the web app" — said on the page rather than left for someone
           to discover. There is an Expo client in the repo, and until it ships
           promising it here would be a lie with a download button on it.
         */}
-        <p className="mt-6 text-sm text-brand-muted">
+        <p className="mt-6 text-sm text-ink/60">
           Buddy runs in your browser today. iPhone and Android apps are on the way.
         </p>
       </div>
@@ -892,7 +962,7 @@ function Footer() {
     {
       heading: 'How it works',
       links: [
-        { href: '#how', label: 'The four steps' },
+        { href: '#how', label: 'The five steps' },
         { href: '#features', label: 'Features' },
         { href: '#details', label: 'Details' },
         { href: '#questions', label: 'Questions' },
@@ -904,8 +974,8 @@ function Footer() {
     <footer className="bg-ink px-5 py-12">
       <div className="mx-auto grid w-full max-w-5xl gap-10 sm:grid-cols-2 lg:grid-cols-4">
         <div className="flex flex-col lg:col-span-2">
-          <span className="text-base font-bold text-white">Buddy</span>
-          <span className="mt-1 max-w-xs text-sm leading-relaxed text-ink-subtle">
+          <Wordmark className="text-white" />
+          <span className="mt-2 max-w-xs text-sm leading-relaxed text-white/60">
             Plan it, finish it, have somebody check. Accountability for people who study alone and
             would rather not.
           </span>
@@ -913,23 +983,21 @@ function Footer() {
 
         {columns.map((column) => (
           <nav key={column.heading} aria-label={column.heading} className="flex flex-col">
-            <span className="text-xs font-semibold uppercase tracking-widest text-ink-muted">
-              {column.heading}
-            </span>
+            <span className="eyebrow text-white/50">{column.heading}</span>
             <ul className="mt-3 flex flex-col gap-2">
               {column.links.map((link) => (
                 <li key={link.href}>
                   {link.href.startsWith('#') ? (
                     <a
                       href={link.href}
-                      className="text-sm text-ink-subtle transition-colors hover:text-white"
+                      className="text-sm text-white/70 transition-colors hover:text-white"
                     >
                       {link.label}
                     </a>
                   ) : (
                     <Link
                       href={link.href}
-                      className="text-sm text-ink-subtle transition-colors hover:text-white"
+                      className="text-sm text-white/70 transition-colors hover:text-white"
                     >
                       {link.label}
                     </Link>
@@ -942,7 +1010,7 @@ function Footer() {
       </div>
 
       <div className="mx-auto mt-10 w-full max-w-5xl border-t border-white/10 pt-6">
-        <span className="text-xs text-ink-muted">
+        <span className="text-xs text-white/50">
           Buddy runs in your browser. iPhone and Android apps are on the way.
         </span>
       </div>
