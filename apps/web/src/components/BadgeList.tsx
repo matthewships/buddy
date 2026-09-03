@@ -114,7 +114,7 @@ export function BadgeLadder({ stats, badges }: { stats: BadgeStats; badges: read
         return (
           <section
             key={family.key}
-            className="flex flex-col rounded-2xl border border-surface-border bg-surface p-4"
+            className="flex flex-col rounded-lg border border-surface-border bg-surface p-4"
           >
             <div className="flex flex-row items-baseline justify-between gap-2">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">

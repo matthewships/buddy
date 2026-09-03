@@ -282,7 +282,7 @@ function HeroMock() {
   return (
     <div
       aria-hidden="true"
-      className="landing-rise mx-auto w-full max-w-sm rounded-3xl border border-surface-border bg-surface p-4 shadow-2xl"
+      className="landing-rise mx-auto w-full max-w-sm rounded-xl border border-surface-border bg-surface p-4 shadow-2xl"
       style={{ animationDelay: '200ms' }}
     >
       <div className="flex flex-row items-baseline justify-between">
@@ -299,7 +299,7 @@ function HeroMock() {
         ].map((member) => (
           <div
             key={member.name}
-            className={`flex w-16 flex-col items-center gap-1 rounded-2xl border px-1 py-2 ${
+            className={`flex w-16 flex-col items-center gap-1 rounded-lg border px-1 py-2 ${
               member.name === 'You' ? 'border-brand bg-brand-muted' : 'border-transparent'
             }`}
           >
@@ -327,7 +327,7 @@ function HeroMock() {
         <MockTask title="Read two papers" meta="Waiting on Ana" state="waiting" />
       </div>
 
-      <div className="mt-3 flex flex-row items-center justify-between rounded-2xl bg-surface-muted px-3 py-2">
+      <div className="mt-3 flex flex-row items-center justify-between rounded-lg bg-surface-muted px-3 py-2">
         <span className="text-xs text-ink-muted">Next badge · Seven days</span>
         <span className="text-xs font-semibold text-ink">5/7</span>
       </div>
@@ -353,7 +353,7 @@ function MockTask({
   }[state];
 
   return (
-    <div className="flex flex-row items-center gap-3 rounded-2xl border border-surface-border px-3 py-2.5">
+    <div className="flex flex-row items-center gap-3 rounded-lg border border-surface-border px-3 py-2.5">
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
       <div className="flex min-w-0 flex-1 flex-col">
         <span
@@ -487,7 +487,7 @@ function MockCard({ children }: { children: ReactNode }) {
   return (
     <div
       aria-hidden="true"
-      className="mx-auto w-full max-w-sm rounded-3xl border border-surface-border bg-surface p-4 shadow-xl"
+      className="mx-auto w-full max-w-sm rounded-xl border border-surface-border bg-surface p-4 shadow-xl"
     >
       {children}
     </div>
@@ -526,7 +526,7 @@ function Features() {
                 ].map((person) => (
                   <div
                     key={person.initials}
-                    className="flex flex-row items-center gap-3 rounded-2xl border border-surface-border px-3 py-2.5"
+                    className="flex flex-row items-center gap-3 rounded-lg border border-surface-border px-3 py-2.5"
                   >
                     <Face initials={person.initials} />
                     <div className="flex min-w-0 flex-1 flex-col">
@@ -556,7 +556,7 @@ function Features() {
                   <span className="text-[11px] text-ink-subtle">Draft the intro · 50 min</span>
                 </div>
               </div>
-              <p className="mt-3 rounded-2xl bg-surface-muted px-3 py-2.5 text-sm text-ink-muted">
+              <p className="mt-3 rounded-lg bg-surface-muted px-3 py-2.5 text-sm text-ink-muted">
                 “Got through the intro and half the lit review.”
               </p>
               <div className="mt-3 flex flex-row items-center justify-between">
@@ -566,10 +566,10 @@ function Features() {
                 </span>
               </div>
               <div className="mt-3 flex flex-row gap-2">
-                <span className="flex-1 rounded-xl bg-brand py-2 text-center text-xs font-semibold text-brand-fg">
+                <span className="flex-1 rounded-md bg-brand py-2 text-center text-xs font-semibold text-brand-fg">
                   Approve
                 </span>
-                <span className="flex-1 rounded-xl border border-surface-border py-2 text-center text-xs font-semibold text-ink-muted">
+                <span className="flex-1 rounded-md border border-surface-border py-2 text-center text-xs font-semibold text-ink-muted">
                   Ask for proof
                 </span>
               </div>
@@ -590,17 +590,17 @@ function Features() {
               <div className="mt-3 flex flex-col gap-2">
                 <div className="flex flex-row items-end gap-2">
                   <Face initials="AN" size="h-7 w-7 text-[9px]" />
-                  <span className="max-w-[75%] rounded-2xl rounded-bl-md bg-surface-muted px-3 py-2 text-xs text-ink">
+                  <span className="max-w-[75%] rounded-lg rounded-bl-sm bg-surface-muted px-3 py-2 text-xs text-ink">
                     Library at 7? I&rsquo;m stuck on Q3 🧱
                   </span>
                 </div>
                 <div className="flex flex-row justify-end">
-                  <span className="max-w-[75%] rounded-2xl rounded-br-md bg-brand px-3 py-2 text-xs text-brand-fg">
+                  <span className="max-w-[75%] rounded-lg rounded-br-sm bg-brand px-3 py-2 text-xs text-brand-fg">
                     Yes — starting my clock now
                   </span>
                 </div>
               </div>
-              <div className="mt-3 flex flex-row items-center gap-2 rounded-2xl border border-dashed border-surface-border bg-surface-muted px-3 py-2.5">
+              <div className="mt-3 flex flex-row items-center gap-2 rounded-lg border border-dashed border-surface-border bg-surface-muted px-3 py-2.5">
                 <span className="text-sm">🔇</span>
                 <span className="text-[11px] leading-snug text-ink-muted">
                   Your clock is running. Chat unlocks when you stop it.

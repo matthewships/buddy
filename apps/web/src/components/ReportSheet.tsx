@@ -76,7 +76,7 @@ export function ReportSheet({
                   role="radio"
                   aria-checked={active}
                   onClick={() => setReason(option)}
-                  className={`cursor-pointer rounded-xl border px-4 py-3 text-left text-base transition-colors ${
+                  className={`cursor-pointer rounded-md border px-4 py-3 text-left text-base transition-colors ${
                     active
                       ? 'border-brand bg-brand-muted font-semibold text-brand'
                       : 'border-surface-border text-ink hover:border-brand'

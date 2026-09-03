@@ -861,6 +861,83 @@ putting two dead store badges on the page.
 
 ---
 
+## 5.8 The creative direction — added 2026-09-03
+
+The web client's look was, until now, the mobile app's: the same indigo, the
+same `rounded-2xl`, the same system font, held byte-identical in two Tailwind
+configs so the clients could not drift. On 2026-09-03 the web client got a
+direction of its own, and this section records where it came from so it can be
+argued with rather than guessed at.
+
+**It was seeded, on purpose.** Rather than pick a palette from taste — which is
+how every student app ends up the same blue — a random string was generated and
+the direction derived from it. The string, and the script that made it, are
+here verbatim; the derivation below is reproducible from them.
+
+```sh
+#!/usr/bin/env bash
+# Generate a long random alphanumeric string to seed the creative direction.
+# `head -c` on the raw device first, then filter — a filter fed by an unbounded
+# stream dies of SIGPIPE under `pipefail` before it can print anything.
+set -eu
+LEN="${1:-96}"
+SEED=""
+while [ "${#SEED}" -lt "$LEN" ]; do
+  SEED="$SEED$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"
+done
+printf '%s\n' "${SEED:0:$LEN}"
+```
+
+```
+7WH0yz8LoJHw2stT1IperpAU8cIUzfkI4UpBYrO0qPFbR7zKjH3AZnkkTTXtmVWAOsoRPrGFsHFsEBs9cMesd1SFUUpEOpxn
+```
+
+**What is in it, and what each thing became.**
+
+| Found | Where | Became |
+| --- | --- | --- |
+| The hex-valid characters, read in order: `70821e a8cf4b 0fb73a affeb9 ced1fe` | 30 of the 96 characters | **Five colours, four of them green and one periwinkle.** That is the palette. It was not chosen; it was read. The badge ladder was already 🌱 🌿 🌳, so the product had been reaching for green without saying so. |
+| `perp`, at position 18 | the only English word in the string | **Square corners.** Perpendicular. The radius scale drops one step everywhere (`2xl → lg`, `xl → md`), chips and segmented controls lose their pill shape, and the one ornament the direction allows is a right-angle corner bracket (`.bracket` in globals.css) on the thing that matters most on a screen. Avatars, dots and progress bars stay round: a face is not a corner. |
+| `Up`, twice — positions 33 and 89 | the only repeated bigram apart from `Fs` | **The direction of every number that matters.** Streak, points, rank, the progress bar. The landing page's hero is built around it. |
+| 96 characters = 12 × 8 | the length | An 8px rhythm and, on the landing page, a 12-column grid. |
+| 45 uppercase to 39 lowercase | the case ratio | **Uppercase eyebrows** (`.eyebrow`): the one line of spaced small capitals above a heading that says where you are. |
+| `s` and `p` most frequent, 7 each; then `t` | letter frequency | *step*. The product in a word, and the name of the signup's screens (§2.9). |
+| Digit sum 50; digits at 0, 3, 6, 12, 16, 24, 32, 39, 45, 50 and then nothing until 79 | the numbers | A page that is dense at the top and then breathes: the landing page front-loads its information and lets the second half run long and quiet. |
+
+**The palette, by role.** Every value is in `apps/web/tailwind.config.js`, and
+the token *names* did not change — `brand`, `surface`, `ink`, `success` — which
+is what let 32 files restyle without an edit. Contrast figures are against the
+cream surface, computed rather than eyeballed.
+
+| Token | Value | From | Role |
+| --- | --- | --- | --- |
+| `brand` | `#55661a` | seed `#70821e`, deepened | Text, links, active states, progress. The seed olive is 4.2:1 on cream, which fails AA for body text; deepening to 6.2:1 is the one place the seed was overruled, and it was overruled by arithmetic. |
+| `accent` | `#a8cf4b` | seed, exact | **Primary buttons, with ink on them** (9.8:1). White on lime is 1.8:1, so the primary variant in `buttonStyles.ts` changed from `bg-brand text-brand-fg` to `bg-accent text-accent-fg`. This is the colour that says *go*. |
+| `live` | `#0fb73a` | seed, exact | Only for things that are happening now — a running clock, an active-now dot. Never text (2.6:1). |
+| `brand-muted` | `#e3f1d6` | seed `#affeb9`, tinted toward cream | Soft surfaces: earned badges, the self-row on the board, secondary buttons. The seed mint itself appears on the dark bands, where it is 14.8:1. |
+| `people` | `#ced1fe` | seed, exact | Avatars without a photo, and anything about a person rather than the work. The one non-green, for the one thing in the app that is not a task. |
+| `surface` / `-muted` / `-border` | `#fcfcf7` / `#f3f4ea` / `#dde2cc` | derived | Cream, not white. A white page next to four greens looks like a hospital. |
+| `ink` / `-muted` / `-subtle` | `#161b0e` / `#5b6350` / `#7f8772` | derived | A black with green in it. `ink-subtle` went from 2.6:1 (the old slate) to 3.7:1, which is the minimum for the 11px meta text it is used on. |
+| `success` / `warning` / `danger` | `#15803d` / `#b45309` / `#b91c1c` | derived | All three are used as text and all three clear 4.8:1. `success` is deliberately not `live`: one is a verdict, the other a state. |
+
+**Type.** Two faces from Google Fonts, loaded through `next/font` so they are
+fetched at build time and served from this origin — a `<link>` to
+`fonts.googleapis.com` would be blocked by the CSP's `font-src 'self'` (§5.4),
+silently. *Instrument Sans* for the body, because it is narrow enough for a
+phone column and does not draw attention to itself. *Bricolage Grotesque* for
+every `h1`–`h3` and for any number that is the point of a screen, because it
+does draw attention and that is the job. The heading rule lives in globals.css
+so no component names a font.
+
+**What this costs.** `apps/web/tailwind.config.js` and
+`apps/mobile/tailwind.config.js` are no longer identical, and the comment at the
+top of the web one says so. The mobile app keeps the indigo until somebody
+ports the direction; the token names being shared is what makes that port a
+values change. The two fonts add roughly 60 KB of woff2 to the first load,
+cached for a year.
+
+---
+
 ## 6. Monorepo layout
 ```
 FindBuddy/

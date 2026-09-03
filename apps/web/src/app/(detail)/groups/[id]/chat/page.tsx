@@ -112,7 +112,7 @@ export default function Chat() {
       )}
 
       {locked && myRunningTask?.startedAt && myRunningTask.estimatedMinutes !== null ? (
-        <div className="flex flex-row items-center justify-between gap-3 rounded-2xl border border-brand bg-surface-muted px-4 py-3">
+        <div className="flex flex-row items-center justify-between gap-3 rounded-lg border border-brand bg-surface-muted px-4 py-3">
           <div className="flex flex-1 flex-col">
             <p className="text-sm font-semibold text-ink">
               You&apos;re working on &ldquo;{myRunningTask.title}&rdquo;
@@ -152,14 +152,14 @@ export default function Chat() {
               send();
             }
           }}
-          className="max-h-28 min-h-12 flex-1 resize-none rounded-2xl border border-surface-border bg-surface px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle focus:border-brand disabled:opacity-60"
+          className="max-h-28 min-h-12 flex-1 resize-none rounded-lg border border-surface-border bg-surface px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle focus:border-brand disabled:opacity-60"
         />
         <button
           type="button"
           aria-label="Send message"
           disabled={!canSend}
           onClick={send}
-          className={`h-12 rounded-2xl px-5 font-semibold transition-colors ${
+          className={`h-12 rounded-lg px-5 font-semibold transition-colors ${
             canSend
               ? 'cursor-pointer bg-brand text-brand-fg hover:bg-brand/90'
               : 'cursor-not-allowed bg-surface-border text-ink-subtle'
@@ -226,7 +226,7 @@ function Bubble({
           </p>
         ) : null}
         <div
-          className={`rounded-2xl px-4 py-2.5 ${
+          className={`rounded-lg px-4 py-2.5 ${
             mine ? 'bg-brand' : 'border border-surface-border bg-surface'
           }`}
         >

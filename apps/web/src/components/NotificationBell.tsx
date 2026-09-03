@@ -186,7 +186,7 @@ function Row({
 }) {
   return (
     <div
-      className={`flex flex-row items-center gap-3 rounded-2xl border px-3 py-3 ${
+      className={`flex flex-row items-center gap-3 rounded-lg border px-3 py-3 ${
         urgent ? 'border-brand bg-brand-muted' : 'border-surface-border bg-surface'
       }`}
     >

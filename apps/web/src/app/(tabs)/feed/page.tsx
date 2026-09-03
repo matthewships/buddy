@@ -218,10 +218,10 @@ function Composer() {
             <img
               src={preview}
               alt="The photo you are about to post"
-              className="max-h-80 w-full rounded-xl object-cover"
+              className="max-h-80 w-full rounded-md object-cover"
             />
             {upload.isPending ? (
-              <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/30 text-sm font-semibold text-white">
+              <span className="absolute inset-0 flex items-center justify-center rounded-md bg-black/30 text-sm font-semibold text-white">
                 Uploading…
               </span>
             ) : (
@@ -320,7 +320,7 @@ function PostCard({ post, viewerId }: { post: FeedPost; viewerId: string }) {
           // a different origin in development, and without it the image is
           // opaque.
           crossOrigin="anonymous"
-          className="w-full rounded-xl object-cover"
+          className="w-full rounded-md object-cover"
         />
       ) : null}
 

@@ -43,7 +43,7 @@ function Chips({ values }: { values: string[] }) {
       {values.map((value) => (
         <span
           key={value}
-          className="rounded-full border border-surface-border bg-surface-muted px-3 py-1 text-sm text-ink"
+          className="rounded-md border border-surface-border bg-surface-muted px-3 py-1 text-sm text-ink"
         >
           {value}
         </span>
@@ -292,7 +292,7 @@ export function ProfileView({
                 {profile.badges.map((badge) => (
                   <span
                     key={badge.key}
-                    className="rounded-full border border-surface-border bg-surface-muted px-3 py-1.5 text-xs text-ink"
+                    className="rounded-md border border-surface-border bg-surface-muted px-3 py-1.5 text-xs text-ink"
                   >
                     {badge.emoji} {badge.name}
                   </span>

@@ -92,7 +92,7 @@ export function BuddyCard({
   };
 
   return (
-    <div className="flex flex-col rounded-2xl border border-surface-border bg-surface p-4">
+    <div className="flex flex-col rounded-lg border border-surface-border bg-surface p-4">
       {onPress ? (
         <button
           type="button"

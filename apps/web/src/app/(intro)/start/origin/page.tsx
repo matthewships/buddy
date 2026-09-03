@@ -44,7 +44,7 @@ export default function OriginStep() {
       <div
         role="radiogroup"
         aria-label="Country"
-        className="flex max-h-72 flex-col overflow-y-auto rounded-2xl border border-surface-border bg-surface"
+        className="flex max-h-72 flex-col overflow-y-auto rounded-lg border border-surface-border bg-surface"
       >
         {matches.length === 0 ? (
           <p className="p-4 text-sm text-ink-subtle">No country matches “{search.trim()}”.</p>

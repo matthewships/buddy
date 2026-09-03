@@ -18,7 +18,7 @@ export function RefreshButton({ busy, onClick }: { busy: boolean; onClick: () =>
       onClick={onClick}
       disabled={busy}
       aria-label="Refresh"
-      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-ink-subtle transition-colors hover:bg-surface hover:text-ink disabled:cursor-not-allowed"
+      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-ink-subtle transition-colors hover:bg-surface hover:text-ink disabled:cursor-not-allowed"
     >
       {busy ? <Spinner size={14} /> : <span aria-hidden="true">↻</span>}
     </button>

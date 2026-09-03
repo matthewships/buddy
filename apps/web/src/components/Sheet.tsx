@@ -89,8 +89,8 @@ export function Sheet({
           tabIndex={-1}
           className={`flex flex-col gap-3 overflow-y-auto bg-surface p-5 outline-none ${
             side
-              ? 'h-full w-[86%] max-w-sm sheet-slide-in rounded-l-3xl shadow-2xl'
-              : 'max-h-[90dvh] w-full rounded-t-3xl'
+              ? 'h-full w-[86%] max-w-sm sheet-slide-in rounded-l-xl shadow-2xl'
+              : 'max-h-[90dvh] w-full rounded-t-xl'
           }`}
         >
           {children}

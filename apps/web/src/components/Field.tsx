@@ -70,7 +70,7 @@ export function Field({
     'aria-describedby': message ? messageId : undefined,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChangeText(event.target.value),
-    className: `w-full rounded-xl border bg-surface px-4 text-base text-ink outline-none placeholder:text-ink-subtle focus:border-brand disabled:opacity-60 ${
+    className: `w-full rounded-md border bg-surface px-4 text-base text-ink outline-none placeholder:text-ink-subtle focus:border-brand disabled:opacity-60 ${
       error ? 'border-danger' : 'border-surface-border'
     }`,
   };

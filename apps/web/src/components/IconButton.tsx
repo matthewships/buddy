@@ -29,7 +29,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand"
+      className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-surface-border bg-surface text-ink-muted transition-colors hover:border-brand hover:text-brand"
     >
       <span className="h-5 w-5">{glyph}</span>
     </button>

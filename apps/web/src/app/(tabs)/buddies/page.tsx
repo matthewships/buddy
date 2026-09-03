@@ -217,7 +217,7 @@ export default function Buddies() {
               <select
                 value={country ?? ''}
                 onChange={(event) => setCountry(event.target.value || null)}
-                className="cursor-pointer rounded-xl border border-surface-border bg-surface px-3 py-2 text-base text-ink"
+                className="cursor-pointer rounded-md border border-surface-border bg-surface px-3 py-2 text-base text-ink"
               >
                 <option value="">Anywhere</option>
                 {COUNTRIES.map((option) => (

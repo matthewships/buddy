@@ -22,7 +22,7 @@ export function WaitingCard({
   const countdown = useCountdown(request.expiresAt);
 
   return (
-    <div className="flex flex-col rounded-2xl border border-brand bg-surface p-4">
+    <div className="flex flex-col rounded-lg border border-brand bg-surface p-4">
       <p className="text-base font-bold text-ink">Waiting for {request.user.displayName}</p>
       <p
         className="mt-1 text-2xl font-bold text-brand"

@@ -226,7 +226,7 @@ export default function EditProfile() {
           <select
             value={form.country ?? ''}
             onChange={(event) => patch({ country: event.target.value || null })}
-            className="cursor-pointer rounded-xl border border-surface-border bg-surface px-3 py-2 text-base text-ink"
+            className="cursor-pointer rounded-md border border-surface-border bg-surface px-3 py-2 text-base text-ink"
           >
             <option value="">Prefer not to say</option>
             {COUNTRIES.map((option) => (

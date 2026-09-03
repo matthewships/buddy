@@ -10,16 +10,74 @@
   }
 
   body {
-    @apply bg-surface-muted text-ink antialiased;
-    font-family:
-      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-      sans-serif;
+    @apply bg-surface-muted font-sans text-ink antialiased;
+  }
+
+  /**
+   * Headings take the display face, everywhere, without a class. The two faces
+   * are the creative direction (ARCHITECTURE.md §5.8): a body that stays out of
+   * the way and a display that does not. Numbers that are the point of a
+   * screen — a streak, a rank, a clock — opt in with `font-display`.
+   */
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+    letter-spacing: -0.015em;
   }
 
   /* Mobile renders inside a native scroll view with no visible bar; matching
      that keeps the two clients looking alike on a trackpad. */
   * {
     scrollbar-width: thin;
+  }
+}
+
+@layer components {
+  /**
+   * The eyebrow: the one line of small capitals above a heading that says
+   * which part of the app you are in. Uppercase because the seed is (§5.8),
+   * spaced because uppercase needs it.
+   */
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-eyebrow text-brand;
+  }
+
+  /**
+   * The corner bracket — the direction's one ornament. "perp" sits at
+   * position 18 of the seed and the corners went square for it; this is the
+   * same right angle drawn on its own, marking the thing on the screen that
+   * matters most. It is a border on two sides of a pseudo-element, so it costs
+   * no markup and no image.
+   */
+  .bracket {
+    position: relative;
+  }
+
+  .bracket::before,
+  .bracket::after {
+    content: '';
+    position: absolute;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-color: currentColor;
+    border-style: solid;
+    border-width: 0;
+    opacity: 0.6;
+  }
+
+  .bracket::before {
+    top: 0;
+    left: 0;
+    border-top-width: 2px;
+    border-left-width: 2px;
+  }
+
+  .bracket::after {
+    right: 0;
+    bottom: 0;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
   }
 }
 

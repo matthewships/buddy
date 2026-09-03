@@ -137,7 +137,7 @@ export function GroupTasks({
               role="tab"
               aria-selected={active}
               onClick={() => setSelectedId(member.id)}
-              className={`flex w-20 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-2xl border px-2 py-2 transition-colors ${
+              className={`flex w-20 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-lg border px-2 py-2 transition-colors ${
                 active
                   ? 'border-brand bg-brand-muted'
                   : 'border-transparent hover:border-surface-border'
@@ -202,7 +202,7 @@ export function GroupTasks({
         <button
           type="button"
           onClick={onInvite}
-          className="flex w-20 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-2xl border border-transparent px-2 py-2 transition-colors hover:border-surface-border"
+          className="flex w-20 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-2 transition-colors hover:border-surface-border"
         >
           <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-surface-border text-xl leading-none text-ink-subtle">
             +
@@ -314,7 +314,7 @@ function TodayStatus({
   if (!isViewer) {
     if (!current) return null;
     return (
-      <div className="flex flex-row items-center gap-2 rounded-2xl border border-surface-border bg-surface px-4 py-2.5">
+      <div className="flex flex-row items-center gap-2 rounded-lg border border-surface-border bg-surface px-4 py-2.5">
         <span aria-hidden="true" className="text-lg">
           {current.emoji}
         </span>
@@ -332,7 +332,7 @@ function TodayStatus({
     <button
       type="button"
       onClick={onChange}
-      className="flex cursor-pointer flex-row items-center gap-2 rounded-2xl border border-surface-border bg-surface px-4 py-2.5 text-left transition-colors hover:border-brand"
+      className="flex cursor-pointer flex-row items-center gap-2 rounded-lg border border-surface-border bg-surface px-4 py-2.5 text-left transition-colors hover:border-brand"
     >
       <span aria-hidden="true" className="text-lg">
         {current?.emoji ?? '💬'}
@@ -472,7 +472,7 @@ function TaskShell({
         : 'border-surface-border';
 
   return (
-    <div className={`flex flex-col rounded-2xl border bg-surface p-3 ${border}`}>
+    <div className={`flex flex-col rounded-lg border bg-surface p-3 ${border}`}>
       <div className="flex flex-row items-center gap-3">
         {leading}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -550,7 +550,7 @@ function AddTask({ groupId }: { groupId: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex cursor-pointer flex-row items-center gap-3 rounded-2xl border border-dashed border-surface-border bg-surface/50 p-3 text-left transition-colors hover:border-brand hover:bg-surface"
+        className="flex cursor-pointer flex-row items-center gap-3 rounded-lg border border-dashed border-surface-border bg-surface/50 p-3 text-left transition-colors hover:border-brand hover:bg-surface"
       >
         <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-surface-border text-2xl leading-none text-ink-subtle">
           +
@@ -564,7 +564,7 @@ function AddTask({ groupId }: { groupId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-brand bg-surface p-3">
+    <div className="flex flex-col gap-3 rounded-lg border border-brand bg-surface p-3">
       <Field
         label="What will you finish today?"
         value={title}
@@ -1124,7 +1124,7 @@ function ProofPhotoPicker({
       />
 
       {preview && imageKey ? (
-        <div className="flex flex-row items-center gap-3 rounded-xl border border-surface-border p-2">
+        <div className="flex flex-row items-center gap-3 rounded-md border border-surface-border p-2">
           {/* An object URL cannot go through next/image, which needs a
               fetchable path — the same reason Avatar.tsx uses a plain tag. */}
           <img
@@ -1144,7 +1144,7 @@ function ProofPhotoPicker({
       ) : (
         <label
           htmlFor={inputId}
-          className="flex cursor-pointer flex-row items-center justify-center gap-2 rounded-xl border border-dashed border-surface-border py-3 text-sm font-semibold text-ink-muted transition-colors hover:border-brand hover:text-brand"
+          className="flex cursor-pointer flex-row items-center justify-center gap-2 rounded-md border border-dashed border-surface-border py-3 text-sm font-semibold text-ink-muted transition-colors hover:border-brand hover:text-brand"
         >
           {upload.isPending ? 'Uploading…' : '📷 Add a photo (optional)'}
         </label>
@@ -1178,7 +1178,7 @@ function ProofView({
   if (!task.proofText && !task.proofImageKey) return null;
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl bg-surface-muted p-3">
+    <div className="flex flex-col gap-2 rounded-md bg-surface-muted p-3">
       <div className="flex flex-row items-start justify-between gap-2">
         <p className="text-xs font-semibold text-ink-muted">Proof</p>
         {task.proofImageKey ? (
@@ -1229,7 +1229,7 @@ function ReviewTask({ task }: { task: Task }) {
 
   if (review.isSuccess && award) {
     return (
-      <div className="flex flex-col rounded-2xl border border-success bg-surface p-3">
+      <div className="flex flex-col rounded-lg border border-success bg-surface p-3">
         <p className="text-base font-semibold text-ink">Reviewed · {task.title}</p>
         <p className="mt-1 text-sm text-ink-muted">
           {task.ownerDisplayName} earned {award.credits + award.dailyBonus} points

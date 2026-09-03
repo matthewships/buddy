@@ -79,7 +79,7 @@ export function SharePanel({ url, groupName }: { url: string; groupName: string 
           value={url}
           onFocus={(event) => event.currentTarget.select()}
           aria-label="Invite link"
-          className="flex-1 rounded-xl border border-surface-border bg-surface-muted px-3 py-2 font-mono text-xs text-ink-muted"
+          className="flex-1 rounded-md border border-surface-border bg-surface-muted px-3 py-2 font-mono text-xs text-ink-muted"
         />
         <Button label={copied ? 'Copied' : 'Copy'} variant="ghost" onClick={() => void copy()} />
       </div>

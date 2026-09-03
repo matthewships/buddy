@@ -20,7 +20,7 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex flex-row rounded-full border border-surface-border bg-surface-muted p-1"
+      className="flex flex-row rounded-md border border-surface-border bg-surface-muted p-1"
     >
       {options.map((option) => {
         const active = option.key === value;
@@ -31,7 +31,7 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option.key)}
-            className={`flex-1 cursor-pointer rounded-full px-3 py-1.5 text-sm transition-colors ${
+            className={`flex-1 cursor-pointer rounded px-3 py-1.5 text-sm transition-colors ${
               active
                 ? 'bg-surface font-semibold text-ink shadow-sm'
                 : 'text-ink-muted hover:text-ink'

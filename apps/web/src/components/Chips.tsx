@@ -88,7 +88,7 @@ export function Chips(props: SingleChipsProps | MultiChipsProps) {
             aria-checked={active}
             disabled={blocked}
             onClick={() => toggle(option.key)}
-            className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+            className={`rounded-md border px-4 py-2 text-sm transition-colors ${
               active
                 ? 'border-brand bg-brand font-semibold text-brand-fg'
                 : 'border-surface-border bg-surface text-ink'

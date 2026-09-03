@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
 
 import { Providers } from './providers';
 
@@ -19,7 +20,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#4f46e5',
+  // `brand` in tailwind.config.js; the manifest carries the same value.
+  themeColor: '#55661a',
   width: 'device-width',
   initialScale: 1,
 };
@@ -37,9 +39,31 @@ export const viewport: Viewport = {
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
 
+/**
+ * The two faces of the creative direction (ARCHITECTURE.md §5.8), loaded through
+ * `next/font` so they are downloaded at build time and served from this origin.
+ * That is what keeps them inside the CSP's `font-src 'self'` — a stylesheet
+ * link to Google Fonts would be blocked, silently, on every page.
+ *
+ * Exposed as CSS variables and picked up by `theme.fontFamily` in
+ * tailwind.config.js and the heading rule in globals.css, so no component has
+ * to name a font.
+ */
+const body = Instrument_Sans({
+  subsets: ['latin'],
+  variable: '--font-body',
+  display: 'swap',
+});
+
+const display = Bricolage_Grotesque({
+  subsets: ['latin'],
+  variable: '--font-display',
+  display: 'swap',
+});
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${body.variable} ${display.variable}`}>
       <head>
         <link rel="preconnect" href={API_URL} crossOrigin="anonymous" />
         <link rel="dns-prefetch" href={API_URL} />

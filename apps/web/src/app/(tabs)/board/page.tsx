@@ -67,7 +67,7 @@ export default function Board() {
           {entries.map((item) => (
             <li
               key={item.userId}
-              className={`flex flex-row items-center gap-3 rounded-2xl border p-3 ${
+              className={`flex flex-row items-center gap-3 rounded-lg border p-3 ${
                 item.userId === me.data?.id
                   ? 'border-brand bg-brand-muted'
                   : 'border-surface-border bg-surface'
@@ -105,7 +105,7 @@ function ScopeTab({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`flex-1 cursor-pointer rounded-xl border py-2.5 text-sm font-semibold transition-colors ${
+      className={`flex-1 cursor-pointer rounded-md border py-2.5 text-sm font-semibold transition-colors ${
         active
           ? 'border-brand bg-brand text-brand-fg'
           : 'border-surface-border bg-surface text-ink hover:border-brand'
