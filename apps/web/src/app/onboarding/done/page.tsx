@@ -7,30 +7,60 @@ import { EDUCATION_LEVELS, MAJORS, MAX_HANDLE, MIN_HANDLE } from '@buddy/shared'
 
 import { useHandleAvailable, useMe, useUpdateMe } from '@/api/auth';
 import { useUploadAvatar } from '@/api/avatar';
+import { useCreateGroup } from '@/api/groups';
 import { useAcceptInviteLink } from '@/api/invite-links';
-import { Avatar, Button, Card, ErrorText, Field, Screen } from '@/components';
+import { localToday, useCreateTask, useStartTask } from '@/api/tasks';
+import { Avatar, Button, Card, DayOneCard, ErrorText, Field, Screen, Spinner } from '@/components';
 import { draftToPatch, useDraft } from '@/onboarding/draft';
 
 function labelFor(list: readonly { key: string; label: string }[], key: string | null) {
   return list.find((entry) => entry.key === key)?.label ?? null;
 }
 
+interface Desk {
+  groupId: string;
+  /** Known when this visit created or joined the group; `null` after a refresh. */
+  groupName: string | null;
+  /** The first task, if one was written and the create succeeded. */
+  taskId: string | null;
+  /** Whether the person is alone in it — the "checked by" line depends on it. */
+  solo: boolean;
+}
+
 /**
- * The end of signup: the answers are written, and the only thing left to ask
- * for is a photo.
+ * The end of signup: the answers are written, the desk is built, and the
+ * clock is one tap away (§2.9).
  *
- * The save happens on arrival rather than behind a Finish button. Every answer
- * was given several screens ago — asking someone to confirm what they already
- * typed is a step that exists for the code's benefit, not theirs, and it used
- * to make the photo a *second* action gated behind the first ("Available once
- * your profile is saved"). Now the profile is saved by the time this screen has
- * finished rendering, and the photo is a genuine choice: add one, or don't.
+ * **The save happens on arrival**, not behind a Finish button. Every answer was
+ * given several screens ago, and asking someone to confirm what they already
+ * typed is a step that exists for the code's benefit.
+ *
+ * **Then the desk.** Once the profile is saved, this screen creates the group
+ * that will hold the first task — a group of one, named after them — or joins
+ * the group they were invited to, and puts the task they typed on `/start/today`
+ * into it. That used to be three separate things somebody had to discover after
+ * signup: make a group, open it, add a task. The apps that keep people through
+ * their first session all do this the same way — Duolingo's first lesson,
+ * Strava's first recorded walk — the product's core act happens *before* the
+ * person has had to work out where it lives.
+ *
+ * A group of one is honest, not a hack. §2.4's rollover approves an unreviewed
+ * task at rating 0 after a full extra day: the day counts, the streak
+ * survives, and it earns nothing because nobody looked. The card says exactly
+ * that, and it is the sentence that sends people to the directory.
+ *
+ * **Idempotent across a refresh.** The group id goes into the draft the moment
+ * it exists, so reloading this screen finds the desk rather than building a
+ * second one. The task is only created on the visit that created the group,
+ * for the same reason. Neither failure blocks: the profile is the thing that
+ * matters, and the worst case is landing on the groups tab with a desk to make
+ * by hand.
  *
  * The handle is the one thing that can still block the save, and only in one
- * case. Someone who registered on the mobile app and never finished lands here
- * already signed in, which means the flow skipped `/register` — the only screen
- * that asks for a handle. Onboarding cannot complete without one, so they get
- * the field and an explicit button; everyone else never sees either.
+ * case: someone who registered on the mobile app and never finished lands here
+ * already signed in, having skipped `/register`, the only screen that asks for
+ * one. Onboarding cannot complete without it, so they get the field and an
+ * explicit button; everyone else never sees either.
  */
 export default function OnboardingDone() {
   const router = useRouter();
@@ -39,8 +69,13 @@ export default function OnboardingDone() {
   const updateMe = useUpdateMe();
   const uploadAvatar = useUploadAvatar();
   const acceptInvite = useAcceptInviteLink();
+  const createGroup = useCreateGroup();
+  const createTask = useCreateTask();
+  const startTask = useStartTask();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
+  const [desk, setDesk] = useState<Desk | null>(null);
+  const [deskFailed, setDeskFailed] = useState(false);
 
   /**
    * Only for the signed-in-but-handle-less case above. Everyone who came
@@ -73,6 +108,8 @@ export default function OnboardingDone() {
 
   const level = labelFor(EDUCATION_LEVELS, draft.educationLevel);
   const major = draft.majorText.trim() || labelFor(MAJORS, draft.majorKey);
+  const displayName = draft.displayName || me.data?.displayName || 'You';
+  const firstName = displayName.trim().split(/\s+/)[0] ?? displayName;
 
   const save = () => updateMe.mutate(draftToPatch(draft), { onSuccess: () => setSaved(true) });
 
@@ -89,57 +126,107 @@ export default function OnboardingDone() {
     save();
   }, [me.data, needsHandle, saved, save]);
 
-  const enter = () => {
-    const token = draft.inviteToken;
+  /** Once, after the save — same guard, same reason. */
+  const deskBuilt = useRef(false);
+  useEffect(() => {
+    if (!saved || deskBuilt.current) return;
+    deskBuilt.current = true;
 
-    /**
-     * Someone who arrived on a join link is redeemed here, at the end of a flow
-     * that began several screens and one email round trip ago, and lands in the
-     * group they were actually invited to.
-     *
-     * A failure is not worth blocking on: the account is real and the profile is
-     * saved, so the worst case is landing on the groups tab with the link still
-     * in the message that brought them — which is recoverable. Being stuck on a
-     * "you're all set" screen would not be.
-     */
-    if (token) {
-      acceptInvite.mutate(token, {
-        onSuccess: (result) => {
-          draft.reset();
-          router.replace(`/groups/${result.group.id}`);
-        },
-        onError: () => {
-          draft.reset();
-          router.replace('/groups');
-        },
-      });
+    const build = async () => {
+      // A refresh: the desk exists, and so does the task if there was one.
+      if (draft.dayOneGroupId) {
+        setDesk({
+          groupId: draft.dayOneGroupId,
+          groupName: null,
+          taskId: null,
+          solo: !draft.inviteToken,
+        });
+        return;
+      }
+
+      let groupId: string;
+      let groupName: string;
+      let solo: boolean;
+      try {
+        if (draft.inviteToken) {
+          const result = await acceptInvite.mutateAsync(draft.inviteToken);
+          groupId = result.group.id;
+          groupName = result.group.name;
+          solo = false;
+        } else {
+          const result = await createGroup.mutateAsync({
+            name: `${firstName}’s desk`,
+            emoji: '🎯',
+          });
+          groupId = result.group.id;
+          groupName = result.group.name;
+          solo = true;
+        }
+      } catch {
+        setDeskFailed(true);
+        return;
+      }
+      // Remembered before the task is attempted, so a failure there cannot
+      // leave a group that a retry would duplicate.
+      draft.set({ dayOneGroupId: groupId });
+
+      let taskId: string | null = null;
+      if (draft.firstTask.trim().length > 0) {
+        try {
+          const result = await createTask.mutateAsync({
+            groupId,
+            title: draft.firstTask.trim(),
+            dueDate: localToday(),
+            estimatedMinutes: draft.firstTaskMinutes,
+          });
+          taskId = result.task.id;
+        } catch {
+          // The desk is there; the task can be typed again in ten seconds.
+        }
+      }
+      setDesk({ groupId, groupName, taskId, solo });
+    };
+
+    void build();
+  }, [saved, draft, firstName, acceptInvite, createGroup, createTask]);
+
+  const building = saved && desk === null && !deskFailed;
+
+  /**
+   * Leaving clears the draft, and only then: a failed write leaves the answers
+   * in place so the save can simply be retried, and the desk id has to survive
+   * until the screen is actually done with it.
+   */
+  const leave = (href: string) => {
+    draft.reset();
+    router.replace(href);
+  };
+
+  const deskHref = desk ? `/groups/${desk.groupId}` : '/groups';
+
+  const startClock = () => {
+    if (!desk?.taskId) {
+      leave(deskHref);
       return;
     }
-
-    // Cleared only once the server has the answers: a failed write leaves them
-    // in place so the save can simply be retried.
-    draft.reset();
-    /**
-     * Groups, not Buddies. The first real thing to do in Buddy is to write down
-     * what you are going to finish today and start the clock on it — and a
-     * group is where a task lives. Finding a buddy matters, but it is the
-     * second move, and sending a request to a stranger is a worse first
-     * experience than doing one thing you said you would do.
-     */
-    router.replace('/groups');
+    // Either way they land on the desk; if the start failed, the button to
+    // try again is the first thing on it.
+    startTask.mutate(desk.taskId, { onSettled: () => leave(deskHref) });
   };
 
   const summary = [level, major, draft.institution.trim()].filter(Boolean).join(' · ');
   const saving = updateMe.isPending;
+  const busy = !saved || building || uploadAvatar.isPending || startTask.isPending;
 
   return (
     <Screen>
       <div className="flex flex-col gap-5 pb-8 pt-6">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold text-ink">You&rsquo;re all set</h1>
-          <p className="text-base text-ink-muted">
-            {summary || 'Your profile is ready.'}
-          </p>
+          <span className="eyebrow">Day one</span>
+          <h1 className="text-3xl font-bold leading-tight text-ink">
+            {firstName}, your desk is ready
+          </h1>
+          <p className="text-base text-ink-muted">{summary || 'Your profile is saved.'}</p>
         </div>
 
         {needsHandle && !saved ? (
@@ -166,49 +253,26 @@ export default function OnboardingDone() {
           </Card>
         ) : null}
 
-        <Card>
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Avatar
-              avatarKey={me.data?.avatarKey ?? null}
-              displayName={draft.displayName || me.data?.displayName || 'You'}
-              size={88}
-            />
-            <div className="flex flex-col gap-1">
-              <p className="text-lg font-semibold text-ink">
-                {uploadAvatar.isSuccess ? 'Looking good' : 'Add a photo'}
-              </p>
-              <p className="text-sm text-ink-muted">
-                Optional — but a directory of blank circles is harder to choose from.
-              </p>
-            </div>
-            <Button
-              label={
-                uploadAvatar.isPending
-                  ? 'Uploading…'
-                  : uploadAvatar.isSuccess
-                    ? 'Choose another'
-                    : 'Choose a photo'
-              }
-              variant="secondary"
-              disabled={uploadAvatar.isPending || (!saved && !uploadAvatar.isSuccess)}
-              onClick={() => fileInputRef.current?.click()}
-            />
-          </div>
+        <DayOneCard
+          task={draft.firstTask}
+          minutes={draft.firstTaskMinutes}
+          goalKeys={draft.goalKeys}
+          goalText={draft.goalText}
+          checkedBy={
+            desk && !desk.solo
+              ? (desk.groupName ?? 'Your group')
+              : draft.inviteToken
+                ? 'The group you were invited to'
+                : null
+          }
+        />
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              // Reset so choosing the same file twice fires change again.
-              event.target.value = '';
-              if (file) uploadAvatar.mutate(file);
-            }}
-          />
-          <ErrorText message={uploadAvatar.error?.message} />
-        </Card>
+        {building ? (
+          <p className="flex flex-row items-center gap-2 text-sm text-ink-subtle">
+            <Spinner size={14} />
+            Setting up your desk…
+          </p>
+        ) : null}
 
         {/*
           The save is silent when it works, so it only ever speaks up to say it
@@ -225,24 +289,97 @@ export default function OnboardingDone() {
           </Card>
         ) : null}
 
-        <div className="mt-1 flex flex-col gap-2">
+        {deskFailed ? (
+          <Card className="border-warning">
+            <p className="text-sm text-ink">
+              Your profile is saved, but the desk didn&rsquo;t get made. You can create a group
+              from the next screen.
+            </p>
+          </Card>
+        ) : null}
+
+        <div className="flex flex-col gap-2">
           <Button
-            label={draft.inviteToken ? 'Go to the group' : "Let's start"}
-            onClick={enter}
-            loading={acceptInvite.isPending}
-            disabled={!saved || uploadAvatar.isPending || acceptInvite.isPending}
+            label={
+              desk?.taskId
+                ? 'Start the clock'
+                : desk
+                  ? 'Go to my desk'
+                  : deskFailed
+                    ? 'Go to groups'
+                    : 'Start the clock'
+            }
+            onClick={startClock}
+            loading={startTask.isPending}
+            disabled={busy}
           />
-          {/*
-            Skipping the photo is the same action as finishing with one, so it
-            is the same button — named for where it goes, not for what it
-            declines. The line below is what makes the choice visible.
-          */}
-          {!uploadAvatar.isSuccess ? (
-            <p className="text-center text-xs text-ink-subtle">
-              You can add a photo later from your profile.
+          {desk?.taskId ? (
+            <Button
+              label="Not yet — show me my desk"
+              variant="ghost"
+              onClick={() => leave(deskHref)}
+              disabled={busy}
+            />
+          ) : null}
+          {desk?.solo ? (
+            <Button
+              label="Find a buddy first"
+              variant="ghost"
+              onClick={() => leave('/buddies')}
+              disabled={busy}
+            />
+          ) : null}
+          {desk?.solo ? (
+            <p className="text-center text-xs leading-relaxed text-ink-subtle">
+              Nothing earns points until a buddy checks it. Finish it anyway — the day still
+              counts toward your streak.
             </p>
           ) : null}
         </div>
+
+        {/*
+          The photo, last and small. It used to be the centrepiece of this
+          screen; it is the least important thing on it, and a directory of
+          blank circles is a problem for the directory screen to nag about.
+        */}
+        <Card>
+          <div className="flex flex-row items-center gap-3">
+            <Avatar avatarKey={me.data?.avatarKey ?? null} displayName={displayName} size={48} />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <p className="text-sm font-semibold text-ink">
+                {uploadAvatar.isSuccess ? 'Looking good' : 'Add a photo'}
+              </p>
+              <p className="text-xs text-ink-subtle">Optional. Buddies pick faces over circles.</p>
+            </div>
+            {/*
+              Not `Button`: its base classes fix the height at h-12, and a
+              smaller `h-9` passed in loses to it on stylesheet order (see
+              buttonStyles.ts). A compact control needs its own element.
+            */}
+            <button
+              type="button"
+              disabled={uploadAvatar.isPending || (!saved && !uploadAvatar.isSuccess)}
+              onClick={() => fileInputRef.current?.click()}
+              className="h-9 shrink-0 cursor-pointer rounded-md bg-brand-muted px-3 text-sm font-semibold text-brand transition-colors hover:bg-brand-muted/70 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {uploadAvatar.isPending ? '…' : uploadAvatar.isSuccess ? 'Change' : 'Choose'}
+            </button>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // Reset so choosing the same file twice fires change again.
+              event.target.value = '';
+              if (file) uploadAvatar.mutate(file);
+            }}
+          />
+          <ErrorText message={uploadAvatar.error?.message} />
+        </Card>
       </div>
     </Screen>
   );

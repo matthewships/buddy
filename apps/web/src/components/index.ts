@@ -6,6 +6,7 @@ export { Button } from './Button';
 export { Card } from './Card';
 export { Chips, type ChipOption } from './Chips';
 export { ConfirmSheet } from './ConfirmSheet';
+export { DayOneCard } from './DayOneCard';
 export { DurationInput, durationError } from './DurationInput';
 export { ErrorText } from './ErrorText';
 export { Field } from './Field';

@@ -129,8 +129,12 @@ export default function GroupDetailPage() {
           {info.name}
         </h1>
         <p className="text-sm text-ink-subtle">
-          {members.length} {members.length === 1 ? 'member' : 'members'} · checked by{' '}
-          {verifierFor(info, members, viewerId)}
+          {members.length === 1
+            ? // A desk of one (§2.9): nothing here is checked until somebody
+              // else is in the room, and the line should say so rather than
+              // promise "anyone in the group" to a group that is only you.
+              'Just you · nobody checks your work yet'
+            : `${members.length} members · checked by ${verifierFor(info, members, viewerId)}`}
         </p>
       </div>
 

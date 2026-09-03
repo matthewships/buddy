@@ -62,6 +62,20 @@ interface DraftValues {
   headline: string;
   about: string;
   availability: string;
+  /**
+   * The first task (§2.9): what they said they would finish today, and how
+   * long it will take. Not a profile field — `draftToPatch` never sends it —
+   * but the reason the rest of the draft is worth writing. It is created on
+   * the desk at `/onboarding/done`, the moment there is a group to hold it.
+   */
+  firstTask: string;
+  firstTaskMinutes: number;
+  /**
+   * The group `/onboarding/done` created (or joined) for day one. Remembered
+   * so a refresh of that screen finds the desk it already made rather than
+   * making a second one — the same reason the profile save guards itself.
+   */
+  dayOneGroupId: string | null;
 }
 
 interface OnboardingDraft extends DraftValues {
@@ -92,6 +106,10 @@ const initial: DraftValues = {
   headline: '',
   about: '',
   availability: '',
+  firstTask: '',
+  // Matches the group screen's own default for a new task.
+  firstTaskMinutes: 30,
+  dayOneGroupId: null,
 };
 
 /**
@@ -113,7 +131,8 @@ export const useDraft = create<OnboardingDraft>()(
       reset: () => set({ ...initial, timezone: detectedTimezone() }),
     }),
     {
-      name: 'buddy.signup.v1',
+      // v2 on 2026-09-03: the first-task fields arrived and four questions left.
+      name: 'buddy.signup.v2',
       // Bumping `name` is how a shape change is handled: a stale draft from an
       // older version of the questions is simply not found, and the user starts
       // the current ones rather than resuming a half-answered older set.

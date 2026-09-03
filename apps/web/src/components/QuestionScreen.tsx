@@ -17,6 +17,10 @@ import { Screen } from './Frame';
  * this: a progress bar that appears partway through, so the user cannot tell
  * how much is left until they are already committed.)
  *
+ * The progress is drawn as one block per step rather than a single bar. Six
+ * blocks say "six questions" at a glance, which a bar at 33% does not, and
+ * they are square because the direction is (§5.8).
+ *
  * `onContinue` is optional: most steps just save to the draft as the user types
  * and need nothing more than navigation.
  */
@@ -46,7 +50,9 @@ export function QuestionScreen({
 
   const index = stepIndex(pathname);
   const total = SIGNUP_STEPS.length;
-  const previous = index > 0 ? SIGNUP_STEPS[index - 1]!.path : '/welcome';
+  // Back from the first question is the landing page — where the visitor came
+  // from — not the compact /welcome, which exists for a signed-out session.
+  const previous = index > 0 ? SIGNUP_STEPS[index - 1]!.path : '/';
   const next = nextStep(pathname);
 
   const go = () => {
@@ -58,7 +64,7 @@ export function QuestionScreen({
   return (
     <Screen>
       <div className="flex flex-col gap-4 pb-8">
-        <div className="mt-2 flex flex-col gap-2">
+        <div className="mt-2 flex flex-col gap-3">
           <div className="flex flex-row items-center justify-between">
             <Link
               href={previous}
@@ -66,25 +72,29 @@ export function QuestionScreen({
             >
               ← Back
             </Link>
-            <span className="text-xs text-ink-subtle">
-              {index + 1} of {total}
+            <span className="eyebrow">
+              Step {index + 1} of {total}
             </span>
           </div>
           {/*
             `aria-hidden`, with the same information in the text above: a
-            progressbar role announces a percentage, and "3 of 9" is what the
-            user actually wants to hear.
+            progressbar role announces a percentage, and "step 3 of 6" is what
+            the user actually wants to hear.
           */}
-          <div aria-hidden="true" className="h-1 w-full rounded-full bg-surface-muted">
-            <div
-              className="h-1 rounded-full bg-brand transition-[width] duration-300"
-              style={{ width: `${((index + 1) / total) * 100}%` }}
-            />
+          <div aria-hidden="true" className="flex flex-row gap-1">
+            {SIGNUP_STEPS.map((step, i) => (
+              <span
+                key={step.path}
+                className={`h-1.5 flex-1 transition-colors duration-300 ${
+                  i <= index ? 'bg-brand' : 'bg-surface-border'
+                }`}
+              />
+            ))}
           </div>
         </div>
 
-        <h1 className="mt-2 text-3xl font-bold text-ink">{title}</h1>
-        {subtitle ? <p className="text-base text-ink-muted">{subtitle}</p> : null}
+        <h1 className="mt-3 text-3xl font-bold leading-tight text-ink">{title}</h1>
+        {subtitle ? <p className="text-base leading-relaxed text-ink-muted">{subtitle}</p> : null}
 
         {children}
 

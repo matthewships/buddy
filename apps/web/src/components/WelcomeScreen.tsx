@@ -31,9 +31,12 @@ export function WelcomeScreen() {
   return (
     <Screen>
       <div className="flex flex-1 flex-col justify-center gap-3">
-        <h1 className="text-4xl font-bold text-ink">Buddy</h1>
-        <p className="text-base text-ink-muted">
-          For students. Plan your day, get it approved by a buddy, build the streak.
+        <span className="eyebrow">For students</span>
+        <h1 className="text-4xl font-bold leading-none text-ink">
+          Buddy<span className="text-accent">.</span>
+        </h1>
+        <p className="text-base leading-relaxed text-ink-muted">
+          Plan what you will finish today. Have a buddy check it. Keep the streak.
         </p>
         <div className="mt-8 flex flex-col gap-3">
           {/*
@@ -41,11 +44,11 @@ export function WelcomeScreen() {
             create an account before they have seen what the product is for —
             the account comes last, once the answers are already theirs.
           */}
-          <Link href={FIRST_STEP} className={linkButtonClass('primary')}>
-            Get started
+          <Link href="/login" className={linkButtonClass('primary')}>
+            Sign back in
           </Link>
-          <Link href="/login" className={linkButtonClass('ghost')}>
-            I already have an account
+          <Link href={FIRST_STEP} className={linkButtonClass('ghost')}>
+            I&rsquo;m new here
           </Link>
         </div>
       </div>

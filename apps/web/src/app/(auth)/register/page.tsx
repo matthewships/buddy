@@ -3,14 +3,19 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { MAX_HANDLE, MIN_HANDLE, PASSWORD_MIN_LENGTH } from '@buddy/shared';
+import { EMAIL_CODE_LENGTH, MAX_HANDLE, MIN_HANDLE, PASSWORD_MIN_LENGTH } from '@buddy/shared';
 
 import { useRegister } from '@/api/auth';
-import { Button, ErrorText, Field, Screen } from '@/components';
+import { Button, DayOneCard, ErrorText, Field, Screen } from '@/components';
 import { useDraft } from '@/onboarding/draft';
 
 /**
  * The last step of signup rather than the first.
+ *
+ * It opens with the plan (§2.9): the task they typed three screens ago, the
+ * goal, and who will check it. An account is the thing that holds that plan,
+ * and the screen says so in that order — reason, then form. Every field below
+ * the card is the price; the card is what it buys.
  *
  * The handle is claimed here, not later. It is the one answer that has to be
  * checked against everyone else's, and asking for it on the screen where the
@@ -36,6 +41,11 @@ export default function Register() {
   */
   const displayName = useDraft((d) => d.displayName);
   const handle = useDraft((d) => d.handle);
+  const firstTask = useDraft((d) => d.firstTask);
+  const firstTaskMinutes = useDraft((d) => d.firstTaskMinutes);
+  const goalKeys = useDraft((d) => d.goalKeys);
+  const goalText = useDraft((d) => d.goalText);
+  const inviteToken = useDraft((d) => d.inviteToken);
   const setDraft = useDraft((d) => d.set);
 
   const [email, setEmail] = useState('');
@@ -80,10 +90,25 @@ export default function Register() {
   return (
     <Screen>
       <div className="flex flex-col gap-4 pb-8">
-        <h1 className="mt-4 text-3xl font-bold text-ink">Last thing — your account</h1>
-        <p className="text-base text-ink-muted">
-          Your answers are saved. This is what signs you back in.
-        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          <span className="eyebrow">Last step</span>
+          <h1 className="text-3xl font-bold leading-tight text-ink">Lock it in</h1>
+          <p className="text-base leading-relaxed text-ink-muted">
+            {firstTask.trim()
+              ? 'Your first day is planned. This is the account that holds it.'
+              : 'Your answers are saved. This is the account that holds them.'}
+          </p>
+        </div>
+
+        <DayOneCard
+          task={firstTask}
+          minutes={firstTaskMinutes}
+          goalKeys={goalKeys}
+          goalText={goalText}
+          // An invitee's task lands in the group they were invited to, so it
+          // will be checked — by whom is not known until they are in.
+          checkedBy={inviteToken ? 'The group you were invited to' : null}
+        />
 
         <Field
           label="Your name"
@@ -129,6 +154,9 @@ export default function Register() {
           disabled={!canSubmit}
           loading={register.isPending}
         />
+        <p className="text-center text-xs text-ink-subtle">
+          A {EMAIL_CODE_LENGTH}-digit code goes to your email. Your desk is on the other side of it.
+        </p>
       </div>
     </Screen>
   );

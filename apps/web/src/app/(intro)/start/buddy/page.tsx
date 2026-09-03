@@ -27,7 +27,7 @@ export default function BuddyStep() {
       title="Will you be someone's buddy?"
       subtitle="Buddies review each other's tasks. You can change this whenever you like."
       canContinue
-      continueLabel={signedIn ? 'Finish' : 'Create your account'}
+      continueLabel={signedIn ? 'Finish' : 'Lock it in'}
       nextHref={signedIn ? '/onboarding/done' : '/register'}
     >
       <Card>

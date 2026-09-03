@@ -1,4 +1,5 @@
 import { AppFrame, RedirectIfOnboarded } from '@/components';
+import { TaskFromQuery } from '@/onboarding/TaskFromQuery';
 
 /**
  * The signup questionnaire's shell.
@@ -12,11 +13,14 @@ import { AppFrame, RedirectIfOnboarded } from '@/components';
  * finished onboarding has no business here and is sent to the app;
  * `RedirectIfOnboarded` does only that, and lets a signed-in but *unonboarded*
  * user through, since these are the screens that would finish the job.
+ *
+ * `TaskFromQuery` is the other half of the landing page's hero form (§2.9).
  */
 export default function IntroLayout({ children }: { children: React.ReactNode }) {
   return (
     <AppFrame>
       <RedirectIfOnboarded />
+      <TaskFromQuery />
       {children}
     </AppFrame>
   );
