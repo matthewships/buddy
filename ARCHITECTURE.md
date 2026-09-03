@@ -37,6 +37,11 @@ Backend cost: Workers **Paid plan ($5/mo)** covers everything at early scale. Ex
 ### 2.1 Registration & profile
 
 **Revised 2026-08-31 — students only, and questions before the account.**
+**Revised again 2026-09-03 — six screens, the first task in the middle of them,
+and a desk waiting at the end; see §2.9.** The list below is the 2026-08-31
+questionnaire, kept because the data model it describes is unchanged: every
+column is still written by `PATCH /me`, and the four questions that left the
+signup gate are asked again from the directory (§2.9).
 
 Buddy is now a student product (school through PhD). Signup asks nine questions
 *before* an account exists, and creates the account last:
@@ -275,6 +280,162 @@ in and is now what makes any future change to the list an edit to
 `EDUCATION_LEVELS` and nothing else — no migration, no rebuild. The column stays
 for that reason even though the shared list and the frozen CHECK currently
 agree.
+
+---
+
+## 2.9 Onboarding, revised — the day before the account — added 2026-09-03
+
+**The problem, stated the way it was stated.** The questionnaire asked ten
+things about a person and nothing about their day. Someone arriving from the
+landing page answered age, level, institution, field, country, goal, topics,
+interests, a bio and whether they would be a buddy, then created an account,
+then fetched a code from their email, then were offered a photo, and *then*
+landed on an empty groups tab where the first task they could write was behind
+"create a group" and a name field. Every screen on that path asked for
+something and none of them gave anything back. That is the shape of an
+onboarding people close.
+
+**The measure this section is built to.** Not "is it short" — Finch's is long
+and works — but: *would somebody pay to keep going?* Which is another way of
+asking whether, at the moment the product asks for a commitment, the person
+already has something in the product they do not want to lose. The changes
+below are all in service of putting that something there before the password.
+
+### What changed
+
+1. **Six screens, not ten.** Age (§2.8, still first — it is the only answer
+   that can end the signup), level, goal, **what will you finish today**,
+   campus-and-field on one screen, and the buddy toggle. Then registration.
+   `SIGNUP_STEPS` in `apps/web/src/onboarding/steps.ts` is the list.
+
+2. **The product's own act, in the middle.** `/start/today` asks for one task
+   and a time estimate and stores them in the draft (`firstTask`,
+   `firstTaskMinutes`). Nothing touches the server; it is a question like the
+   others, except that it is the only one about doing rather than being.
+   Skippable — someone signing up at midnight has no today left, and a forced
+   answer is a fake one a buddy is then asked to check.
+
+3. **The plan, shown back, as the reason to register.** `/register` opens with
+   `DayOneCard`: the task, the estimate, the goal, who will check it, and the
+   first rung of the streak ladder with a zero on it. The form is underneath.
+   The card is what the account buys; the fields are the price; the screen
+   says them in that order.
+
+4. **The desk, built for you.** `/onboarding/done` saves the profile as before,
+   then creates a group of one named after you (`🎯 Ana's desk`) — or joins the
+   group you were invited to — puts the task on it, and offers **Start the
+   clock**. The three things a new account used to have to discover (make a
+   group, open it, add a task) happen while the screen is loading. The group
+   id is written to the draft the moment it exists (`dayOneGroupId`), so a
+   refresh finds the desk rather than making a second one.
+
+   A group of one is honest, not a hack: §2.4's rollover approves an
+   unreviewed task at rating 0 after a full extra day. The day counts, the
+   streak survives, and it earns nothing because nobody looked. The card and
+   the group header both say so — "nobody checks your work yet" — because that
+   sentence is what sends people to the directory, and a promise of "anyone in
+   the group" to a group that is only you would be a lie.
+
+5. **The landing page asks the question.** The hero is a `<form method="get">`
+   — what will you finish today? — posting to `SIGNUP_STEPS[0]` as `?task=`.
+   `TaskFromQuery` in the intro layout writes it into the draft on whichever
+   step it lands on and removes it from the URL. The page stays a server
+   component with no script (§5.7).
+
+6. **Four questions left the gate and are asked where they matter.** Country,
+   topics, interests and bio were never needed to be *onboarded* (a handle, a
+   goal and a level are — §2.1), and none of them changes anything until the
+   directory is on screen. `profileStrength()` in `packages/shared` scores a
+   profile with the match score's own weights (§2.2: institution 64, field 32,
+   level 8, topic 4, country 2; a photo at 16 because it decides who gets the
+   tap without ranking anyone), and `GetFoundCard` shows the heaviest gap as an
+   action above the directory and on the profile. It renders nothing at 100%.
+   Institution and field stayed in signup, sharing a screen, because 64 and 32
+   are too heavy to leave.
+
+7. **The draft is `buddy.signup.v2`.** Its shape changed, and the store's own
+   comment says bumping the name is how that is handled: a v1 draft from the
+   old questions is simply not found.
+
+### Where each idea came from
+
+The brief was to look outside the category. These are the sources, and what
+was taken from each — and, where it matters, what was *not*.
+
+| Borrowed from | The idea | Where it landed |
+| --- | --- | --- |
+| **Duolingo** | The first lesson happens before the email. You have a streak of one before you have an account. | `/start/today`; the streak rung on `DayOneCard`; "Start the clock" on the last screen. |
+| **Airbnb, Uber** | The first screen is the product's search box, not a pitch. | The hero form on `/`. |
+| **Noom, Finch** | After the questions, a "your plan" screen built from the answers — the moment the questionnaire pays off. | `DayOneCard` on `/register` and `/onboarding/done`. Nothing on it is a forecast; it is the task they typed and the rules that apply to it. |
+| **Strava** | Record something on day one and the app has a reason to exist tomorrow. | The desk with the task already on it. |
+| **LinkedIn** | A profile-strength meter that says what to add and why. | `profileStrength()` + `GetFoundCard`, with weights from the match score rather than invented. |
+| **Tinder, Hinge** | Progressive profiling: ask for the tiebreak details once there is a list of people they would break ties between. | Country, topics, interests, bio moved from signup to the directory. |
+| **Focusmate** | Commitment is a *time*, not a resolution. | The estimate on the first task; the clock. Already in the product, now on screen four instead of screen fourteen. |
+| **Finch** (what was *not* taken) | Its most-cited flaw is a progress bar that appears partway through. | The step blocks are on every screen from the first, and there are six of them because there are six questions. |
+| **Every subscription app** (what was *not* taken) | A paywall between the plan reveal and the product. | Deliberately absent. §2.1 already parks "a subscription step would sit between verification and the write"; this section is about making it *worth* paying, which has to come first. |
+
+### The other journeys — ideas, and where each one stands
+
+The same exercise for every path through the app. Each row says what it is
+borrowed from and whether it shipped in this change, is a web-only follow-up,
+or needs `apps/api`. Nothing here is typed into the landing page until it
+exists.
+
+**Finding a buddy (§2.2)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Tell people what would move them up the list, above the list. | LinkedIn | **Shipped** — `GetFoundCard`. |
+| "N people working toward *your* goal are active now", on the landing page and the empty directory. The single strongest social-proof line the product can honestly say. | Tinder ("people near you"), Peloton (live class counts) | **Needs `apps/api`**: an unauthenticated count endpoint, bucketed and cached, that returns nothing below a floor so an empty product does not print "2". |
+| A request composer that suggests the opening line from what you share ("You're both doing IELTS — ask what band they're aiming for"). | Hinge prompts | Web-only, next. The card already knows the shared terms. |
+| Reciprocal ask: when a request lapses, offer the *other* person's pending requests to the requester. | Bumble's "expiring" queue | Needs `apps/api`. |
+
+**The desk — tasks and the review loop (§2.4)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| The first task exists before the first visit to the group screen. | Duolingo, Strava | **Shipped** — `/onboarding/done`. |
+| A group of one is a real place, and says what it is missing. | Forest (solo timer that still counts) | **Shipped** — the header line. |
+| A finished-task card designed to be screenshotted and shared (task, time, rating, streak), so the proof of work is also the invitation. | Strava's activity card, Spotify Wrapped | Web-only, next: a static card on approval, `SharePanel` already exists for links. |
+| The 8am nudge names *yesterday's* task ("Yesterday: methods section, 4★. Today?") rather than a generic prompt. | Duolingo's streak reminders, which name the streak | Needs `apps/api` — the reminder job would read one more row. |
+| A daily "moment" — everybody in a group plans at the same hour, and the chat opens for ten minutes around it. | BeReal | Not planned. It fights the timezone rule (§2.4) and the focus lock (§2.6); recorded so it is not re-proposed as new. |
+
+**Groups and chat (§2.3, §2.6)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| The invite link is the first thing the desk offers, because a desk of one is the product half-built. | WhatsApp group links, Discord | Web-only, next: the invite affordance already hangs off the member strip; on a solo desk it should be the empty state, not a control. |
+| Status verbs with a suggested reply for groupmates. | — (already in the product, §2.6) | Shipped earlier. |
+| Read-receipt-free chat. | Signal's defaults | Shipped earlier, by omission. |
+
+**Feed (§2.7)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Reactions only, no comments, no dislike. | Strava kudos | Shipped earlier. |
+| Post the *approved task* as a card, not only a photo — one tap from the approval sheet. | Strava again: the activity is the post | Web-only, next; the API takes a caption already. |
+| Show a brand-new account the feed first, because it is the one screen that is never empty. | Instagram's explore for new accounts | Partly true today (§2.7); the tab order still leads with Buddies. Worth an A/B, not a decision. |
+
+**Board and badges (§2.5)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Ladders with the next rung always visible. | Duolingo, Headspace | Shipped earlier (`nextBadge`). |
+| Leagues — a weekly board of ~30 people at your level, promotion and relegation — rather than one global board where a new account is 4,312th. | Duolingo leagues | Needs `apps/api`: cohort assignment and a weekly job. The most likely single change to move retention, and the one that needs the most people to exist first. |
+| Per-group standings. | — | Shipped earlier as the sheet on the group screen. |
+
+**Profile (§2.1)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| The meter, on the profile, linking to the editor. | LinkedIn | **Shipped** — `GetFoundCard compact`. |
+| "Member since" and a best-streak line as the profile's own proof of work. | Strava, GitHub's contribution graph | Shipped earlier in `ProfileView`. |
+
+**Commitment (the "willing to pay" question)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Stakes: put a small amount on a week's plan, forfeited to the group's pot on a missed day. | StickK, Beeminder, Forest's real-tree purchase | Needs `apps/api` and a payment provider, and a decision about whether Buddy wants to be that kind of product. Recorded because it is the direct answer to the brief's question; not proposed as the *first* answer, because a stake on a product you have not used yet is a bet on a stranger. Day one has to be worth it first. |
 
 ---
 
@@ -858,6 +1019,12 @@ and it is why the constraint above is enforceable rather than a good intention.
 `START` constant — because the web app is where Buddy runs today. The closing
 panel and the footer both say the phone apps are still coming, rather than
 putting two dead store badges on the page.
+
+**2026-09-03 — the hero became a form.** The page's first act is now the
+product's: a text box asking what you will finish today, submitted as a plain
+`GET` to `SIGNUP_STEPS[0]` with `?task=`, which `TaskFromQuery` in the intro
+layout writes into the draft. No script on the page, the same rule as before;
+the reasoning is in §2.9. The look changed with it — §5.8.
 
 ---
 
