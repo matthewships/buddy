@@ -869,7 +869,7 @@ function Questions() {
     },
     {
       q: 'What happens to the task I type at the top?',
-      a: 'It goes on your desk the moment your account exists — a group of one, named after you — and you can start the clock on it from the last screen of signup. Nothing counts for points until a buddy checks it, and the page says so rather than letting you find out.',
+      a: 'It goes on your desk the moment your account exists — a group of one, named after you — and you can start the clock on it from the last screen of signup. It earns points once someone you invite to the desk checks it; finished alone, it still counts toward your streak, and the app says so rather than letting you find out.',
     },
     {
       q: 'What if my group never reviews my work?',

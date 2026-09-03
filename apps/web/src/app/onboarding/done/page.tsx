@@ -323,16 +323,24 @@ export default function OnboardingDone() {
           ) : null}
           {desk?.solo ? (
             <Button
-              label="Find a buddy first"
+              label="Find a buddy"
               variant="ghost"
               onClick={() => leave('/buddies')}
               disabled={busy}
             />
           ) : null}
+          {/*
+            Precise about *who* can make this task count. A matched buddy lands
+            in a new two-person group (§2.2), not on this desk, so "find a buddy
+            so it counts" would send someone to do the right thing for the wrong
+            task. What makes the desk task count is somebody else at the desk —
+            the invite hangs off the member strip there.
+          */}
           {desk?.solo ? (
             <p className="text-center text-xs leading-relaxed text-ink-subtle">
-              Nothing earns points until a buddy checks it. Finish it anyway — the day still
-              counts toward your streak.
+              It earns points only when someone else at your desk checks it — invite a friend
+              from the desk. Or find a buddy and plan tomorrow together. Either way, finish it:
+              the day still counts toward your streak.
             </p>
           ) : null}
         </div>

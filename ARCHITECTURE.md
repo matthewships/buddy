@@ -766,7 +766,8 @@ apps/mobile/
 ## 5.4 Web client (Next.js on Cloudflare) — added after Phase 6
 
 A browser front end at parity with the Expo app: the same 21 screens, the
-same flows, the same palette. It is a second client onto the *same* Worker,
+same flows, the same palette (until 2026-09-03 — the web client now has its
+own direction, §5.8, and its own signup, §2.9). It is a second client onto the *same* Worker,
 not a second backend — `apps/api` was not changed to accommodate it.
 
 **Stack.** Next 16 App Router, every screen a client component, Tailwind 3.4
