@@ -1,7 +1,9 @@
 import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { del, get, onboard, pair, patch, post, put, resetRateLimits, signUp } from './helpers.js';
+import { SELF } from 'cloudflare:test';
+
+import { BASE, del, get, onboard, pair, patch, post, resetRateLimits, signUp } from './helpers.js';
 import { dropQuietRecipients } from '../src/services/push.js';
 import { db } from '../src/db/client.js';
 
@@ -190,8 +192,40 @@ describe('muting and leaving (PRODUCT.md §6.1)', () => {
 
   it('still accepts leaving with no body, as the mobile app sends it', async () => {
     const { buddy, groupId } = await pair('leave-plain');
-    const res = await post(`/api/groups/${groupId}/leave`, {}, buddy.accessToken);
+    // Exactly what the Expo client sends: no body, no content-type, only auth.
+    const res = await SELF.fetch(`${BASE}/api/groups/${groupId}/leave`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${buddy.accessToken}` },
+    });
     expect(res.status).toBe(200);
+  });
+
+  it('records a departure when a block leaves a shared matched group', async () => {
+    const a = await signUp('block-matched-a@example.com');
+    await onboard(a, 'blockmatcheda');
+    const b = await signUp('block-matched-b@example.com');
+    await onboard(b, 'blockmatchedb');
+    await openBuddy(b.accessToken);
+    await post('/api/buddy-requests', { toUserId: b.userId }, a.accessToken);
+    const incoming = (await (await get('/api/buddy-requests/incoming', b.accessToken)).json()) as {
+      requests: { id: string }[];
+    };
+    const accepted = await post(`/api/buddy-requests/${incoming.requests[0]!.id}/accept`, {}, b.accessToken);
+    expect(accepted.status).toBe(201);
+    const { group } = (await accepted.json()) as { group: { id: string } };
+
+    const blocked = (await (await post('/api/users/blockmatchedb/block', {}, a.accessToken)).json()) as {
+      leftGroups: number;
+    };
+    expect(blocked.leftGroups).toBe(1);
+    expect((await get(`/api/groups/${group.id}`, a.accessToken)).status).toBe(403);
+
+    const { results } = await env.DB.prepare(
+      'SELECT reason FROM group_departures WHERE group_id = ? AND user_id = ?',
+    )
+      .bind(group.id, a.userId)
+      .all<{ reason: string }>();
+    expect(results[0]?.reason).toBe('person');
   });
 });
 
@@ -231,6 +265,3 @@ describe('quiet hours (PRODUCT.md §5.3)', () => {
     expect(out[1]!.userIds).toEqual([a.userId]);
   });
 });
-
-/** `put` is imported for symmetry with the other suites; status is not under test here. */
-void put;

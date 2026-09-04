@@ -7,6 +7,7 @@ import { db } from '../db/client.js';
 import {
   buddyProfiles,
   buddyRequests,
+  groupDepartures,
   groupMembers,
   groups,
   userBadges,
@@ -16,6 +17,7 @@ import {
 } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, notFound } from '../lib/errors.js';
+import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { isBlockedPair } from '../services/blocks.js';
@@ -146,6 +148,14 @@ export const userRoutes = new Hono<AppEnv>()
         ),
       );
     for (const { groupId } of sharedMatched) {
+      // A departure like any other, with the reason the block already is.
+      await client.insert(groupDepartures).values({
+        id: newId(),
+        groupId,
+        userId: blockerId,
+        reason: 'person',
+        note: null,
+      });
       await client
         .delete(groupMembers)
         .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, blockerId)));
