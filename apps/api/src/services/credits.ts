@@ -1,16 +1,11 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 
-import {
-  CREDITS_PER_RATING_POINT,
-  DAILY_COMPLETION_BONUS,
-  abandonPenalty,
-  creditsForRating,
-} from '@buddy/shared';
+import { CREDITS_PER_RATING_POINT, DAILY_COMPLETION_BONUS, verifiedTopUp } from '@buddy/shared';
 
 import type { Db } from '../db/client.js';
 import { creditLedger, tasks, userStats } from '../db/schema.js';
 import { newId } from '../lib/ids.js';
-import { isoWeekKey, nowIso, previousLocalDate } from '../lib/time.js';
+import { isoWeekKey, nowIso } from '../lib/time.js';
 
 /**
  * Credits, streaks and the daily bonus (§2.5).
@@ -60,15 +55,25 @@ export async function awardApproval(
     taskId: string;
     dueDate: string;
     rating: number;
+    /**
+     * Minutes the task had on a clock (PRODUCT.md §3.6, slice 1). An approval
+     * pays the *verified* half of those minutes; the unverified half was paid
+     * when the clock stopped. The rating is recorded and shown to the owner,
+     * and moves no credits — that is what closed the mutual-five-star loophole.
+     */
+    actualMinutes?: number;
   },
 ): Promise<ApprovalAward> {
   const { ownerId, reviewerId, taskId, dueDate, rating } = params;
-  const credits = creditsForRating(rating);
+  void rating;
+  // Nobody looked, nothing is verified: an unreviewed close pays no top-up.
+  const credits = reviewerId ? verifiedTopUp(params.actualMinutes ?? 0) : 0;
   const weekKey = isoWeekKey();
 
   const statements: Parameters<Db['batch']>[0] = [
-    // A 0-rating approval still closes the task and still counts as approved;
-    // it simply earns nothing. There is no rejected state (§2.4).
+    // Recorded in the ledger under the reason that already exists for an
+    // approval; the amount is the verified top-up. There is no rejected state
+    // (§2.4): a 0-rating approval still closes the task.
     db
       .insert(creditLedger)
       .values({
@@ -108,7 +113,16 @@ export async function awardApproval(
         ]
       : []),
 
-    ...streakStatements(db, ownerId, dueDate),
+    // The streak is no longer moved here: it counts days with a session
+    // (services/sessions.ts). `last_approved_date` is still kept, for the
+    // profile's "last approved" line.
+    db
+      .update(userStats)
+      .set({
+        lastApprovedDate: sql`MAX(COALESCE(${userStats.lastApprovedDate}, ''), ${dueDate})`,
+        updatedAt: nowIso(),
+      })
+      .where(eq(userStats.userId, ownerId)),
   ];
 
   await db.batch(statements as never);
@@ -123,45 +137,6 @@ export async function awardApproval(
   const stats = await db.query.userStats.findFirst({ where: eq(userStats.userId, ownerId) });
 
   return { credits, dailyBonus: bonus, streak: stats?.currentStreak ?? 0 };
-}
-
-/**
- * Extends the streak in a single statement.
- *
- * Three cases, all expressed as SQL so no read is involved:
- * - the same local day already counted → unchanged
- * - the day before the last counted day → +1
- * - anything older → the chain broke, restart at 1
- *
- * A late review of an *older* day is ignored entirely: approving Monday's task
- * on Wednesday must not rewrite a streak that has already moved past it.
- */
-function streakStatements(db: Db, userId: string, dueDate: string) {
-  const previous = previousLocalDate(dueDate);
-
-  return [
-    db
-      .update(userStats)
-      .set({
-        currentStreak: sql`CASE
-          WHEN ${userStats.lastApprovedDate} = ${dueDate} THEN ${userStats.currentStreak}
-          WHEN ${userStats.lastApprovedDate} = ${previous} THEN ${userStats.currentStreak} + 1
-          ELSE 1 END`,
-        bestStreak: sql`MAX(${userStats.bestStreak}, CASE
-          WHEN ${userStats.lastApprovedDate} = ${dueDate} THEN ${userStats.currentStreak}
-          WHEN ${userStats.lastApprovedDate} = ${previous} THEN ${userStats.currentStreak} + 1
-          ELSE 1 END)`,
-        lastApprovedDate: sql`MAX(COALESCE(${userStats.lastApprovedDate}, ''), ${dueDate})`,
-        updatedAt: nowIso(),
-      })
-      .where(
-        and(
-          eq(userStats.userId, userId),
-          // Only move the streak forward.
-          sql`(${userStats.lastApprovedDate} IS NULL OR ${userStats.lastApprovedDate} <= ${dueDate})`,
-        ),
-      ),
-  ];
 }
 
 /**
@@ -241,67 +216,4 @@ export async function creditBalance(db: Db, userId: string): Promise<number> {
     .from(creditLedger)
     .where(and(eq(creditLedger.userId, userId), ne(creditLedger.amount, 0)));
   return Number(row?.total ?? 0);
-}
-
-/**
- * Charges the penalty for abandoning a started task (§2.4).
- *
- * Two details carry the weight here.
- *
- * **The `refId` is the task *and the start time*, not the task.** The ledger's
- * unique index is `(user, reason, ref_type, ref_id)`, which exists to make
- * awards exactly-once. Keying on the task alone would make the *penalty*
- * exactly-once too: start, abandon, restart, abandon again, and the second
- * insert collides with the first and either errors or is silently swallowed.
- * Each start is its own commitment, so each start is its own ledger key.
- *
- * **The charge is capped at the balance.** A leaderboard with negative scores
- * invites a reading the product does not intend, and someone who abandons their
- * very first task should land on zero rather than in debt.
- *
- * Returns the amount actually deducted, as a negative number (0 if the user had
- * nothing to lose, or if this exact start was already charged).
- */
-export async function chargeAbandon(
-  db: Db,
-  userId: string,
-  taskId: string,
-  startedAt: string,
-): Promise<number> {
-  const balance = await creditBalance(db, userId);
-  const amount = abandonPenalty(balance);
-  if (amount === 0) return 0;
-
-  const inserted = await db
-    .insert(creditLedger)
-    .values({
-      id: newId(),
-      userId,
-      amount,
-      reason: 'task_abandoned',
-      refType: 'task_start',
-      refId: `${taskId}:${startedAt}`,
-    })
-    .onConflictDoNothing()
-    .returning({ id: creditLedger.id });
-
-  // Already charged for this start: the unique index absorbed it.
-  if (inserted.length === 0) return 0;
-
-  const weekKey = isoWeekKey();
-  await db
-    .update(userStats)
-    .set({
-      // Clamped in SQL as well as above, because the balance is read before the
-      // write and a concurrent approval could land in between.
-      totalCredits: sql`MAX(0, ${userStats.totalCredits} + ${amount})`,
-      weeklyCredits: sql`CASE WHEN ${userStats.weekKey} = ${weekKey}
-                              THEN MAX(0, ${userStats.weeklyCredits} + ${amount})
-                              ELSE 0 END`,
-      weekKey,
-      updatedAt: nowIso(),
-    })
-    .where(eq(userStats.userId, userId));
-
-  return amount;
 }

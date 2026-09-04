@@ -35,7 +35,7 @@ function compactClock(ms: number): string {
  * Overrun is shown, not punished: the ring completes, turns red and counts up,
  * and the task stays open and finishable. Waiting it out is deliberately not an
  * escape from the chat lock either — the only ways out are finishing or
- * abandoning, and one of those costs points.
+ * abandoning; neither costs points since slice 1.
  *
  * Time comes from `serverNow()`, the offset measured against the server's
  * clock, so a device whose time is wrong by an hour still shows the right

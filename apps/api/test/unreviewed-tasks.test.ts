@@ -102,40 +102,31 @@ describe('tasks nobody ever reviewed', () => {
    * fire in between, zeroing the streak of the one person who had done
    * everything asked of them.
    */
-  it('does not break a streak while a reviewer still has work in front of them', async () => {
-    const { owner, ownerHandle, buddy, groupId } = await pair('streakheld');
-
-    // A real approval yesterday, so there is a live streak to protect. The
-    // API refuses a task dated in the past, so it is created today and moved.
-    const yesterday = await createTask(owner, groupId, 'Yesterday', undefined, 20);
-    await backdate(yesterday, dayOffset(-1));
-    await post(`/api/tasks/${yesterday}/done`, {}, owner.accessToken);
-    await post(
-      `/api/tasks/${yesterday}/review`,
-      { action: 'approve', rating: 3 },
-      buddy.accessToken,
-    );
-    expect((await stats(owner, ownerHandle)).currentStreak).toBeGreaterThan(0);
-
-    // Today's work is done and waiting on the buddy, who has not looked.
-    const todays = await createTask(owner, groupId, 'Today', undefined, 20);
-    await post(`/api/tasks/${todays}/done`, {}, owner.accessToken);
+  /**
+   * Since slice 1 the streak counts session days, not approvals, so a silent
+   * reviewer cannot break it at all: the day was earned on the clock. What
+   * holds a streak over a quiet day is a rest day or a freeze
+   * (rollover.test.ts, sessions.test.ts).
+   */
+  it('does not break a streak earned on the clock, whatever the reviewer does', async () => {
+    const { owner, ownerHandle } = await pair('streakheld');
+    await env.DB.prepare('UPDATE user_stats SET current_streak = 2, last_session_date = ? WHERE user_id = ?')
+      .bind(dayOffset(-1), owner.userId)
+      .run();
 
     await runRollover(db(env.DB));
 
-    expect((await stats(owner, ownerHandle)).currentStreak).toBeGreaterThan(0);
+    expect((await stats(owner, ownerHandle)).currentStreak).toBe(2);
   });
 
-  it('still breaks a streak for someone who simply stopped', async () => {
-    const { owner, ownerHandle, buddy, groupId } = await pair('streakbroken');
+  it('still breaks a streak for someone who simply stopped, once the freezes are gone', async () => {
+    const { owner, ownerHandle } = await pair('streakbroken');
+    await env.DB.prepare(
+      'UPDATE user_stats SET current_streak = 2, last_session_date = ?, freezes_available = 0, freezes_month = ? WHERE user_id = ?',
+    )
+      .bind(dayOffset(-4), dayOffset(0).slice(0, 7), owner.userId)
+      .run();
 
-    const old = await createTask(owner, groupId, 'Long ago', undefined, 20);
-    await backdate(old, dayOffset(-4));
-    await post(`/api/tasks/${old}/done`, {}, owner.accessToken);
-    await post(`/api/tasks/${old}/review`, { action: 'approve', rating: 3 }, buddy.accessToken);
-    expect((await stats(owner, ownerHandle)).currentStreak).toBeGreaterThan(0);
-
-    // Nothing since, and nothing waiting on anyone else.
     await runRollover(db(env.DB));
 
     expect((await stats(owner, ownerHandle)).currentStreak).toBe(0);

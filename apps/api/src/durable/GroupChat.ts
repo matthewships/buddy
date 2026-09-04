@@ -10,6 +10,7 @@ import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';
 import { blockedIdsFor, mutedIdsFor } from '../services/blocks.js';
 import { enqueuePush } from '../services/push.js';
+import { presentInLiveSession } from '../services/sessions.js';
 
 /**
  * One chat room per group (§4.7).
@@ -170,6 +171,17 @@ export class GroupChat extends DurableObject<Env> {
       this.send(ws, {
         type: 'error',
         message: `You are working on "${running.title}" — finish or drop it to chat`,
+      });
+      return;
+    }
+
+    // The lock's second clause (PRODUCT.md §3.4): present in the group's live
+    // session, with or without a task on the clock. Read from D1 for the same
+    // reason the first clause is.
+    if (await presentInLiveSession(client, groupId, identity.userId)) {
+      this.send(ws, {
+        type: 'error',
+        message: 'You are in a session — chat opens when it ends, or when you leave it',
       });
       return;
     }

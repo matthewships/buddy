@@ -1,9 +1,12 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
 
+import { SESSION_OVERRUN_FACTOR } from '@buddy/shared';
+
 import type { Db } from '../db/client.js';
-import { tasks, userStats, users } from '../db/schema.js';
+import { restDays, sessions, tasks, userStats, users } from '../db/schema.js';
 import { localDate, nowIso, previousLocalDate } from '../lib/time.js';
 import { awardApproval } from '../services/credits.js';
+import { endSession, freezesFor } from '../services/sessions.js';
 
 /**
  * The hourly day-rollover job (§4.9).
@@ -64,12 +67,36 @@ export async function runRollover(db: Db, now: Date = new Date()): Promise<Rollo
     missed += result.length;
   }
 
+  // Before the streak check, so a session that ran overnight is settled —
+  // and its day recorded — before the day is judged.
+  await endStaleSessions(db, now);
+
   const closedUnreviewed = await closeUnreviewed(db, now);
-  // After the closures, so a task closed on this run still counts as an
-  // approval for its own day and cannot break the streak it just earned.
   const streaksReset = await resetLapsedStreaks(db, now);
 
   return { timezones: zones.length, missed, streaksReset, closedUnreviewed };
+}
+
+/**
+ * A live session left running well past its plan is ended by the clock, not
+ * by a person (PRODUCT.md §3.1). The margin is the overrun the minutes are
+ * capped at anyway plus an hour, so nobody mid-session is cut off; what this
+ * catches is a laptop closed on a running clock.
+ */
+export async function endStaleSessions(db: Db, now: Date): Promise<number> {
+  const live = await db.query.sessions.findMany({
+    where: eq(sessions.state, 'live'),
+    columns: { id: true, startedAt: true, plannedMinutes: true },
+  });
+  let ended = 0;
+  for (const session of live) {
+    if (!session.startedAt) continue;
+    const limitMs = (session.plannedMinutes * SESSION_OVERRUN_FACTOR + 60) * 60_000;
+    if (now.getTime() - Date.parse(session.startedAt) < limitMs) continue;
+    await endSession(db, session.id, now.toISOString());
+    ended += 1;
+  }
+  return ended;
 }
 
 /**
@@ -144,21 +171,14 @@ async function closeUnreviewed(db: Db, now: Date): Promise<number> {
 }
 
 /**
- * Zeroes the streak of anyone whose last approved day is now more than one day
- * behind their own local yesterday.
+ * Breaks the streak of anyone whose last session day is now more than one day
+ * behind their own local yesterday — unless yesterday was a rest day they
+ * declared, or they have a freeze left this month, in which case the freeze
+ * is spent for them and yesterday becomes a rest day (PRODUCT.md §3.6).
  *
- * Streaks are *extended* at approval time (services/credits.ts); only breaking
- * one needs a clock, because nothing happens when a user simply stops. The
- * comparison is against their local yesterday, so someone whose day is still in
- * progress is never punished early.
- *
- * Anyone with work still waiting on a reviewer is held rather than broken.
- * `closeUnreviewed` deliberately gives a reviewer a full extra day, which means
- * an approval can arrive up to two days after the day it belongs to — and
- * without this the streak would be zeroed in the gap, every time, for the one
- * user who did everything right. Their chain is not broken; it is unconfirmed,
- * and those are different. Only `done` counts: a task sent back for more proof
- * is waiting on its owner, not on anybody else.
+ * Streaks are *extended* when a session ends (services/sessions.ts); only
+ * breaking one needs a clock. The comparison is against the user's local
+ * yesterday, so someone whose day is still in progress is never judged early.
  */
 async function resetLapsedStreaks(db: Db, now: Date): Promise<number> {
   const zones = await db
@@ -176,22 +196,40 @@ async function resetLapsedStreaks(db: Db, now: Date): Promise<number> {
       continue;
     }
 
-    const result = await db
-      .update(userStats)
-      .set({ currentStreak: 0, updatedAt: nowIso() })
+    const lapsed = await db
+      .select({ userId: userStats.userId })
+      .from(userStats)
       .where(
         and(
           sql`${userStats.currentStreak} > 0`,
-          // Nothing approved yesterday or today, so the chain is broken.
-          sql`(${userStats.lastApprovedDate} IS NULL OR ${userStats.lastApprovedDate} < ${yesterday})`,
-          // ...unless they are waiting on somebody else to look at it.
-          sql`NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.user_id = ${userStats.userId} AND tasks.status = 'done')`,
+          // No session yesterday or today, so the chain would break here.
+          sql`(${userStats.lastSessionDate} IS NULL OR ${userStats.lastSessionDate} < ${yesterday})`,
+          // ...unless yesterday was already excused.
+          sql`NOT EXISTS (SELECT 1 FROM ${restDays} WHERE ${restDays.userId} = ${userStats.userId} AND ${restDays.date} = ${yesterday})`,
           sql`${userStats.userId} IN (SELECT id FROM users WHERE timezone = ${timezone} AND deleted_at IS NULL)`,
         ),
-      )
-      .returning({ userId: userStats.userId });
+      );
 
-    reset += result.length;
+    for (const { userId } of lapsed) {
+      const freezes = await freezesFor(db, userId, yesterday);
+      if (freezes > 0) {
+        // Spent on their behalf: the chain holds, and the day is written down
+        // as excused so the next firing does not spend another.
+        await db.batch([
+          db.insert(restDays).values({ userId, date: yesterday, source: 'freeze' }).onConflictDoNothing(),
+          db
+            .update(userStats)
+            .set({ freezesAvailable: sql`MAX(0, ${userStats.freezesAvailable} - 1)`, updatedAt: nowIso() })
+            .where(eq(userStats.userId, userId)),
+        ]);
+        continue;
+      }
+      await db
+        .update(userStats)
+        .set({ currentStreak: 0, updatedAt: nowIso() })
+        .where(and(eq(userStats.userId, userId), sql`${userStats.currentStreak} > 0`));
+      reset += 1;
+    }
   }
 
   return reset;

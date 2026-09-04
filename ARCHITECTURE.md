@@ -488,6 +488,62 @@ bubbles in chat. Tests: `apps/api/test/safety.test.ts`.
 
 ---
 
+## 2.11 The Session — added 2026-09-04 (PRODUCT.md slice 1)
+
+The clock the app already had (§2.4: an estimate, Start, a countdown, the
+chat lock) became an object the group can see. Migration `0012_sessions` is
+hand-written, `ADD COLUMN` and `CREATE TABLE` only, and every enum-shaped
+column on the new tables is deliberately without a CHECK — `SESSION_KINDS`,
+`SESSION_STATES` and `PARTICIPANT_STATES` in `packages/shared` are the lists
+and Zod is the gate.
+
+- **A solo session is Start.** `POST /tasks/:id/start` creates a `sessions`
+  row of kind `solo` around the task (planned minutes = the estimate), with
+  the owner present and the task attached (`tasks.session_id`). Done and
+  abandon settle the clock — the minutes go on `tasks.actual_minutes` — and
+  end the session. Nothing about the button changed.
+- **A group session is one clock for the room.** `POST /groups/:id/sessions`
+  opens one, live now or `scheduled_for` later; members `join` (with a task
+  or without), `heartbeat`, `leave`; the host `start`s a scheduled one and
+  `end`s a live one. One live group session per group. Presence is a
+  heartbeat over REST rather than a second Durable Object: the chat room
+  already reads D1 per message, and the lock's second clause — *present in
+  the group's live session* — is one more indexed read there.
+- **Credits come from minutes, not ratings** (PRODUCT.md §3.6). Half a
+  credit per minute when the clock stops (`unverified_minutes`, capped at
+  `DAILY_MINUTE_CREDIT_CAP` per local day), the other half when a reviewer
+  approves the task those minutes went into (`verified_top_up`). A group
+  session where everyone present stayed to the end pays each of them
+  `COOP_SESSION_BONUS`. The daily bonus stands. **Credits never go down**:
+  the abandon penalty is gone, and `chargeAbandon` with it. The rating is
+  still recorded and still shown to the owner; it moves no credits, which is
+  what closed the mutual-five-star loophole. **Supersedes** the 2026-08-27
+  decisions *credits = rating × 10* and *abandon costs 10*.
+- **Why `session_credits` is its own table.** `credit_ledger.reason` carries
+  a CHECK over `CREDIT_REASONS`, and widening it means the rebuild 0009
+  documents. `user_stats.total_credits` remains the balance everybody reads;
+  the new table is the append-only, unique-indexed record that makes every
+  minute award exactly-once, the same job the ledger does for approvals.
+- **The streak counts session days.** `recordSessionDay` extends it once
+  `SESSION_STREAK_MINUTES` were on a clock, in one statement with the same
+  three cases the approval streak had; `last_session_date` is what the
+  rollover reads. **Forgiveness:** declared rest days (`PUT /me/rest-days`,
+  at most `MAX_REST_DAYS_PER_WEEK`, never in arrears) and
+  `STREAK_FREEZES_PER_MONTH` freezes the rollover spends for you, writing the
+  excused day into `rest_days` so it is not spent twice. The "held while a
+  reviewer has work in front of them" rule is gone: a day earned on the clock
+  cannot be broken by somebody else's silence. **Supersedes** *streak =
+  consecutive days with an approved task* (§2.5).
+- **Stale sessions** — a laptop closed on a running clock — are ended by the
+  rollover once they pass the plan's overrun cap plus an hour, so the day is
+  settled before it is judged.
+
+Tests: `apps/api/test/sessions.test.ts`; the streak, bonus and abandon tests
+in `rollover`, `tasks`, `group-buddy` and `unreviewed-tasks` were rewritten to
+the new rules.
+
+---
+
 ## 3. System diagram
 
 ```

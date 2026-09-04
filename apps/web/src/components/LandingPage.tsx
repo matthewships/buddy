@@ -4,9 +4,8 @@ import { FIRST_STEP, TASK_PARAM } from '@/onboarding/steps';
 import type { ReactNode } from 'react';
 
 import {
-  ABANDON_PENALTY,
   BUDDY_REQUEST_TTL_MS,
-  CREDITS_PER_RATING_POINT,
+  CREDITS_PER_VERIFIED_MINUTE,
   DAILY_COMPLETION_BONUS,
   EDUCATION_LEVELS,
   GOALS,
@@ -16,7 +15,11 @@ import {
   MIN_AGE_YEARS,
   MIN_TASK_MINUTES,
   REACTIONS,
+  SESSION_STREAK_MINUTES,
   STATUSES,
+  STREAK_FREEZES_PER_MONTH,
+  UNVERIFIED_MINUTE_FACTOR,
+  verifiedTopUp,
 } from '@buddy/shared';
 
 import { BUTTON_BASE, BUTTON_VARIANT, type ButtonVariant } from './buttonStyles';
@@ -464,7 +467,7 @@ function Tuesday() {
     {
       time: '12:14',
       title: 'Sam approves it.',
-      body: `Four stars out of ${MAX_RATING}, and a note. Nobody marks their own homework; a stranger who is doing the same reading does.`,
+      body: `Four stars out of ${MAX_RATING}, and a note. Nobody marks their own homework; a stranger who is doing the same reading does, and that is when the ninety minutes are paid in full.`,
     },
     {
       time: '23:59',
@@ -511,7 +514,7 @@ function Tuesday() {
               <div className="flex flex-row items-baseline justify-between gap-4">
                 <span className="text-lg font-semibold">Problem set 7, Q1–Q4 · approved</span>
                 <span className="font-display text-2xl font-bold tabular-nums leading-none text-brand">
-                  +{4 * CREDITS_PER_RATING_POINT}
+                  +{verifiedTopUp(90)}
                 </span>
               </div>
               <div className="flex flex-row items-center gap-3">
@@ -581,8 +584,8 @@ function Tuesday() {
 function Rules() {
   const rules = [
     {
-      title: 'A star is worth ten points, and a clean day twenty more.',
-      body: 'Five stars, fifty. The bonus is for every task of the day signed off, not for volume: ten tiny tasks do not beat one real one.',
+      title: `A minute on the clock is ${CREDITS_PER_VERIFIED_MINUTE === 1 ? 'a point' : `${CREDITS_PER_VERIFIED_MINUTE} points`}, and a clean day ${DAILY_COMPLETION_BONUS} more.`,
+      body: `${Math.round(UNVERIFIED_MINUTE_FACTOR * 100)}% when the clock stops, the rest when a buddy confirms the work. Stars are for you, not for points: ten tiny tasks do not beat one real hour.`,
     },
     {
       title: 'A nudge at 8am, only if you need one.',
@@ -593,8 +596,8 @@ function Rules() {
       body: 'An unchecked task closes itself after a full extra day. Your streak survives; it earns nothing, because nobody looked.',
     },
     {
-      title: 'Walking away costs something, never everything.',
-      body: `Abandoning a started task costs ${ABANDON_PENALTY} points, capped at what you have. Nobody goes into debt.`,
+      title: 'Nothing is ever deducted.',
+      body: `Drop a task and the minutes you worked still count. A day with ${SESSION_STREAK_MINUTES} minutes on a clock keeps the streak; a quiet one is covered by a rest day or one of ${STREAK_FREEZES_PER_MONTH} freezes a month, never by a fine.`,
     },
     {
       title: 'A status says what is happening to the work, not how you feel.',

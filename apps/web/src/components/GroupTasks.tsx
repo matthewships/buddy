@@ -43,6 +43,7 @@ import { ReportSheet } from './ReportSheet';
 import { Sheet } from './Sheet';
 import { Spinner } from './Spinner';
 import { formatEstimate } from './TaskClock';
+import { SessionPanel } from './SessionPanel';
 import { TaskRing } from './TaskRing';
 import { StatusPill } from './TaskRow';
 
@@ -224,6 +225,9 @@ export function GroupTasks({
         onClose={() => setPickingStatus(false)}
         current={members.find((m) => m.id === viewerId)?.statusKey ?? null}
       />
+
+      {/* The room's shared clock (PRODUCT.md §3.1), above the work it is for. */}
+      <SessionPanel groupId={group.id} viewerId={viewerId} memberCount={members.length} />
 
       {waitingOnMe.length > 0 ? (
         <section className="flex flex-col gap-2">
@@ -776,7 +780,7 @@ function MyTask({ task }: { task: Task }) {
           <p className="text-xs text-ink-muted">
             {overrun
               ? 'Past your estimate — which happens. Finish it, or give yourself more time.'
-              : 'Group chat is closed to you until this task ends. Finishing costs nothing; dropping it costs 10 points.'}
+              : 'Group chat is closed to you until this task ends. Finishing or dropping it opens the chat again, and the minutes you worked count either way.'}
           </p>
 
           {/* Surfaced inline only while overrunning: that is the minute someone

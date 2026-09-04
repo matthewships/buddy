@@ -593,6 +593,15 @@ export const tasks = sqliteTable(
      * and out of every existing transition.
      */
     startedAt: text('started_at'),
+    /**
+     * The session this task's clock belongs to (PRODUCT.md §3.2, slice 1). A
+     * solo session is created by Start; joining a group session with a task
+     * points it here instead. Nullable: the mobile app's tasks have no
+     * sessions until it is ported, and a planned task has none yet.
+     */
+    sessionId: text('session_id'),
+    /** Minutes this task has had on a clock, across every session it was in. */
+    actualMinutes: integer('actual_minutes').notNull().default(0),
     status: text('status').notNull().default('planned'),
     proofText: text('proof_text'),
     proofImageKey: text('proof_image_key'),
@@ -686,6 +695,17 @@ export const userStats = sqliteTable(
     tasksApproved: integer('tasks_approved').notNull().default(0),
     reviewsGiven: integer('reviews_given').notNull().default(0),
     lastApprovedDate: text('last_approved_date'),
+    /**
+     * Slice 1 (PRODUCT.md §3.6): the streak counts days with a session, not
+     * days with an approval. `last_session_date` is what the rollover reads.
+     */
+    lastSessionDate: text('last_session_date'),
+    /** Minutes credited on `session_minutes_date`, for the daily cap. */
+    sessionMinutesToday: integer('session_minutes_today').notNull().default(0),
+    sessionMinutesDate: text('session_minutes_date'),
+    /** Streak freezes left this month, and the month they belong to. */
+    freezesAvailable: integer('freezes_available').notNull().default(2),
+    freezesMonth: text('freezes_month'),
     updatedAt: text('updated_at').notNull().default(now),
   },
   (t) => [
@@ -708,6 +728,134 @@ export const userBadges = sqliteTable(
     awardedAt: text('awarded_at').notNull().default(now),
   },
   (t) => [primaryKey({ columns: [t.userId, t.badgeKey] })],
+);
+
+/* ------------------------------------------------------------------ *
+ * Sessions (PRODUCT.md §3.1, slice 1)
+ * ------------------------------------------------------------------ */
+
+/**
+ * A clock with people around it. `kind` is `solo` for the session Start
+ * creates around one task, `group` for one the host opens for the room.
+ * `scheduled_for` is set only for group sessions agreed in advance. No CHECK
+ * constraints on the enum columns — `SESSION_KINDS` and `SESSION_STATES` in
+ * packages/shared are the lists and Zod is the gate — so widening either is
+ * a config change, not a rebuild.
+ */
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    hostId: text('host_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    state: text('state').notNull().default('live'),
+    plannedMinutes: integer('planned_minutes').notNull(),
+    breakMinutes: integer('break_minutes').notNull().default(0),
+    scheduledFor: text('scheduled_for'),
+    startedAt: text('started_at'),
+    endedAt: text('ended_at'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    // "Is there a live or upcoming session in this group?" — the group screen's read.
+    index('sessions_group_state_idx').on(t.groupId, t.state),
+    // The rollover sweeps live sessions that ran past their plan.
+    index('sessions_state_started_idx').on(t.state, t.startedAt),
+  ],
+);
+
+/**
+ * Who is in a session and what happened to them. `present_minutes` is written
+ * once, when the session ends or they leave; `last_seen_at` is the heartbeat
+ * that decides presence while it runs.
+ */
+export const sessionParticipants = sqliteTable(
+  'session_participants',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    state: text('state').notNull().default('present'),
+    joinedAt: text('joined_at'),
+    leftAt: text('left_at'),
+    lastSeenAt: text('last_seen_at'),
+    presentMinutes: integer('present_minutes').notNull().default(0),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.userId] }),
+    // "Is this member present in a live session?" — read by the chat room per message.
+    index('session_participants_user_idx').on(t.userId, t.state),
+  ],
+);
+
+/** The tasks a participant brought, and the minutes each got in this session. */
+export const sessionTasks = sqliteTable(
+  'session_tasks',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    minutes: integer('minutes').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.taskId] }), index('session_tasks_task_idx').on(t.taskId)],
+);
+
+/**
+ * Credits earned from minutes (PRODUCT.md §3.6). Its own table rather than
+ * rows in `credit_ledger`, because that table's `reason` column carries a
+ * CHECK over `CREDIT_REASONS` and widening it means the table rebuild that
+ * 0009 documents. `user_stats.total_credits` is still the balance everybody
+ * reads; this is the append-only record that makes each award exactly-once.
+ */
+export const sessionCredits = sqliteTable(
+  'session_credits',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** What earned it: a session id, or a task id for the verified top-up. */
+    refType: text('ref_type').notNull(),
+    refId: text('ref_id').notNull(),
+    reason: text('reason').notNull(),
+    minutes: integer('minutes').notNull(),
+    amount: integer('amount').notNull(),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex('session_credits_award_unique').on(t.userId, t.reason, t.refType, t.refId),
+    index('session_credits_user_idx').on(t.userId, t.createdAt),
+  ],
+);
+
+/**
+ * Days the streak does not count against someone (PRODUCT.md §3.6): declared
+ * rest days, and the freezes the rollover spends on their behalf. One row per
+ * (user, local day); `source` says which it was.
+ */
+export const restDays = sqliteTable(
+  'rest_days',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    date: text('date').notNull(),
+    source: text('source').notNull().default('declared'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.date] })],
 );
 
 /* ------------------------------------------------------------------ *
@@ -954,5 +1102,7 @@ export type UserStats = typeof userStats.$inferSelect;
 export type UserBadge = typeof userBadges.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type UserBlock = typeof userBlocks.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
+export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type GroupMute = typeof groupMutes.$inferSelect;
 export type Report = typeof reports.$inferSelect;

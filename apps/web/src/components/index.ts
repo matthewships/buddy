@@ -21,6 +21,7 @@ export { RefreshButton } from './RefreshButton';
 export { ReportSheet } from './ReportSheet';
 export { RequestBanner } from './RequestBanner';
 export { Segmented } from './Segmented';
+export { SessionPanel } from './SessionPanel';
 export { SharePanel } from './SharePanel';
 export { ProfileView } from './ProfileView';
 export { QuestionScreen } from './QuestionScreen';

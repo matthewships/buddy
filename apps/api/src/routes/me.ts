@@ -4,10 +4,12 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import {
+  MAX_REST_DAYS_PER_WEEK,
   handleSchema,
   normaliseInstitution,
   occupationForLevel,
   registerDeviceSchema,
+  restDaySchema,
   setStatusSchema,
   statusIsCurrent,
   unsubscribeWebPushSchema,
@@ -21,6 +23,7 @@ import {
   devices,
   posts,
   refreshTokens,
+  restDays,
   userBlocks,
   users,
   webPushSubscriptions,
@@ -32,6 +35,7 @@ import { newId } from '../lib/ids.js';
 import { localDateOrUtc, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { vapidKeysFrom } from '../services/push.js';
+import { declareRestDay, freezesFor, restDaysInWeek } from '../services/sessions.js';
 import { readTags, replaceTags } from '../services/tags.js';
 import { publicSelf } from './auth.js';
 
@@ -94,6 +98,53 @@ export const meRoutes = new Hono<AppEnv>()
           }
         : null,
     });
+  })
+
+  /**
+   * Rest days and freezes (PRODUCT.md §3.6): the days the streak forgives.
+   * Declared days are the caller's own choice, at most `MAX_REST_DAYS_PER_WEEK`
+   * per ISO week and never in arrears; freezes are spent by the rollover.
+   */
+  .get('/rest-days', async (c) => {
+    const client = db(c.env.DB);
+    const userId = currentUserId(c);
+    const user = await client.query.users.findFirst({ where: eq(users.id, userId), columns: { timezone: true } });
+    const today = localDateOrUtc(user?.timezone ?? 'UTC');
+    const [thisWeek, freezes, all] = await Promise.all([
+      restDaysInWeek(client, userId, today),
+      freezesFor(client, userId, today),
+      client.query.restDays.findMany({ where: eq(restDays.userId, userId), columns: { date: true, source: true } }),
+    ]);
+    return c.json({
+      today,
+      restDays: all.filter((d) => d.date >= today).map((d) => d.date),
+      spentByFreeze: all.filter((d) => d.source === 'freeze').map((d) => d.date),
+      usedThisWeek: thisWeek.length,
+      maxPerWeek: MAX_REST_DAYS_PER_WEEK,
+      freezesAvailable: freezes,
+    });
+  })
+
+  .put('/rest-days', zValidator('json', restDaySchema), async (c) => {
+    const client = db(c.env.DB);
+    const userId = currentUserId(c);
+    const { date } = c.req.valid('json');
+    const user = await client.query.users.findFirst({ where: eq(users.id, userId), columns: { timezone: true } });
+    const today = localDateOrUtc(user?.timezone ?? 'UTC');
+    if (date < today) throw badRequest('A rest day has to be declared before it, not after');
+    const ok = await declareRestDay(client, userId, date);
+    if (!ok) throw conflict(`That is ${MAX_REST_DAYS_PER_WEEK} rest days already this week`);
+    return c.json({ date, declared: true as const });
+  })
+
+  .delete('/rest-days/:date', async (c) => {
+    const client = db(c.env.DB);
+    const userId = currentUserId(c);
+    const date = c.req.param('date');
+    await client
+      .delete(restDays)
+      .where(and(eq(restDays.userId, userId), eq(restDays.date, date), eq(restDays.source, 'declared')));
+    return c.json({ date, declared: false as const });
   })
 
   /** Everyone the caller has blocked, so the list can be undone from settings. */

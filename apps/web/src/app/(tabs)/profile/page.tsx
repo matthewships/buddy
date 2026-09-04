@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { useUploadAvatar } from '@/api/avatar';
 import { useMe, useUpdateMe } from '@/api/auth';
 import { useDeleteAccount } from '@/api/board';
+import { useDeclareRestDay, useRestDays } from '@/api/sessions';
 import { useBlocks, useProfile, useUnblockUser } from '@/api/users';
 import { useSession } from '@/auth/store';
 import { useNotificationPreference } from '@/hooks/useNotificationPreference';
@@ -274,6 +275,8 @@ function SettingsSheet({
 
       <QuietHoursSettings value={quietHours} onChange={onQuietHoursChange} />
 
+      {open ? <RestDaySettings /> : null}
+
       {open ? <BlockedList /> : null}
     </Sheet>
   );
@@ -333,6 +336,58 @@ function QuietHoursSettings({
           </select>
         </label>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Rest days and freezes (PRODUCT.md §3.6): the days the streak forgives.
+ * Today and tomorrow are offered, because that is the horizon anyone plans a
+ * day off on; freezes are shown, not spent — the rollover spends them.
+ */
+function RestDaySettings() {
+  const rest = useRestDays();
+  const declare = useDeclareRestDay();
+  const data = rest.data;
+  if (!data) return null;
+
+  const tomorrow = (() => {
+    const t = new Date(`${data.today}T00:00:00Z`);
+    t.setUTCDate(t.getUTCDate() + 1);
+    return t.toISOString().slice(0, 10);
+  })();
+  const days = [
+    { date: data.today, label: 'Today' },
+    { date: tomorrow, label: 'Tomorrow' },
+  ];
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-surface-border pt-4">
+      <p className="text-base font-semibold text-ink">Rest days</p>
+      <p className="text-sm text-ink-muted">
+        A rest day does not break your streak. {data.maxPerWeek} a week, declared before the day.
+        You also have {data.freezesAvailable} freeze{data.freezesAvailable === 1 ? '' : 's'} this month,
+        spent for you on a day you miss.
+      </p>
+      <div className="flex flex-row gap-2">
+        {days.map((day) => {
+          const declared = data.restDays.includes(day.date);
+          return (
+            <Button
+              key={day.date}
+              label={declared ? `${day.label}: resting` : `Rest ${day.label.toLowerCase()}`}
+              variant={declared ? 'primary' : 'ghost'}
+              className="flex-1"
+              loading={declare.isPending && declare.variables?.date === day.date}
+              onClick={() => declare.mutate({ date: day.date, declared: !declared })}
+            />
+          );
+        })}
+      </div>
+      <p className="text-xs text-ink-subtle">
+        {data.usedThisWeek} of {data.maxPerWeek} used this week.
+      </p>
+      <ErrorText message={declare.error?.message} />
     </div>
   );
 }

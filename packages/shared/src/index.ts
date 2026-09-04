@@ -24,5 +24,6 @@ export * from './profile-strength';
 export * from './reactions';
 export * from './safety';
 export * from './schemas';
+export * from './sessions';
 export * from './statuses';
 export * from './topics';

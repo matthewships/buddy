@@ -13,7 +13,7 @@ import {
 } from '@buddy/shared';
 
 import { db, type Db } from '../db/client.js';
-import { groupMembers, groups, taskReviews, tasks, users } from '../db/schema.js';
+import { groupMembers, groups, sessions, taskReviews, tasks, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
@@ -21,9 +21,17 @@ import { localDate, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { syncBadges } from '../services/badges.js';
 import { mutedIdsFor } from '../services/blocks.js';
-import { awardApproval, chargeAbandon, countReview } from '../services/credits.js';
+import { awardApproval, countReview } from '../services/credits.js';
 import { enqueuePush } from '../services/push.js';
 import { reviewRightsFor } from '../services/review-rights.js';
+import {
+  attachTask,
+  endSession,
+  liveGroupSession,
+  presentInLiveSession,
+  settleTaskClock,
+  startSoloSession,
+} from '../services/sessions.js';
 import { assertMember } from './groups.js';
 
 /**
@@ -91,6 +99,8 @@ const taskColumns = {
   dueDate: tasks.dueDate,
   estimatedMinutes: tasks.estimatedMinutes,
   startedAt: tasks.startedAt,
+  sessionId: tasks.sessionId,
+  actualMinutes: tasks.actualMinutes,
   status: tasks.status,
   proofText: tasks.proofText,
   proofImageKey: tasks.proofImageKey,
@@ -379,6 +389,20 @@ export const taskRoutes = new Hono<AppEnv>()
     if (claimed.length === 0) throw conflict('That task has already moved on');
 
     /**
+     * The clock that was running is booked (PRODUCT.md §3.2): its minutes go
+     * on the task, and if this was the task's own solo session, the session
+     * ends with it. A task finished inside a group session leaves the session
+     * running for everyone else.
+     */
+    if (task.startedAt) {
+      await settleTaskClock(client, task, nowIso());
+      if (task.sessionId) {
+        const session = await client.query.sessions.findFirst({ where: eq(sessions.id, task.sessionId) });
+        if (session?.kind === 'solo') await endSession(client, session.id);
+      }
+    }
+
+    /**
      * Finishing stops the clock, so the room is told for the same reason
      * starting tells it: other members' screens would otherwise keep showing a
      * clock that is no longer running until their next refetch. Cosmetic only —
@@ -472,6 +496,23 @@ export const taskRoutes = new Hono<AppEnv>()
       .set({ startedAt, ...revive })
       .where(eq(tasks.id, id));
 
+    /**
+     * The clock becomes a session (PRODUCT.md §3.1). If the owner is already
+     * in the group's live session, the task joins it; otherwise Start creates
+     * a solo session around the task, which is what the button always did
+     * under a different name.
+     */
+    const live = await liveGroupSession(client, task.groupId);
+    if (live && (await presentInLiveSession(client, task.groupId, userId))) {
+      await attachTask(client, live.id, id);
+    } else {
+      await startSoloSession(
+        client,
+        { id, userId, groupId: task.groupId, estimatedMinutes: task.estimatedMinutes },
+        startedAt,
+      );
+    }
+
     // Best-effort: greys the composer immediately rather than on the next send.
     // Correctness does not depend on it — the room reads the truth per message.
     c.executionCtx.waitUntil(c.env.GROUP_CHAT.getByName(task.groupId).noteFocusChange(userId));
@@ -481,12 +522,14 @@ export const taskRoutes = new Hono<AppEnv>()
   })
 
   /**
-   * Dropping a started task — the way out of the chat lock, and the only action
-   * in Buddy that costs points.
+   * Dropping a started task — the way out of the chat lock.
    *
-   * The task itself is untouched apart from the clock: it goes back to being a
-   * plan, and can be started again later. What is charged is the broken
-   * commitment, not the task.
+   * It used to cost points (`ABANDON_PENALTY`); it no longer does
+   * (PRODUCT.md §5.2, slice 1). Credits never go down: a penalty currency
+   * made people not start at all, and the minutes already worked were real
+   * work. The task goes back to being a plan and can be started again; the
+   * minutes so far are booked on it, and the session around it ends.
+   * `credits` in the response is kept at 0 for the clients that read it.
    */
   .post('/:id/abandon', async (c) => {
     const id = c.req.param('id');
@@ -498,17 +541,16 @@ export const taskRoutes = new Hono<AppEnv>()
     if (task.userId !== userId) throw forbidden('That task is not yours');
     if (task.startedAt === null) throw conflict('That task is not running');
 
-    const startedAt = task.startedAt;
-    // Clear the clock first: the charge is idempotent on (task, start), so a
-    // failure after this point cannot double-charge, while the reverse order
-    // could leave someone charged and still locked.
-    await client.update(tasks).set({ startedAt: null }).where(eq(tasks.id, id));
-    const charged = await chargeAbandon(client, userId, id, startedAt);
+    await settleTaskClock(client, task, nowIso());
+    if (task.sessionId) {
+      const session = await client.query.sessions.findFirst({ where: eq(sessions.id, task.sessionId) });
+      if (session?.kind === 'solo') await endSession(client, session.id);
+    }
 
     c.executionCtx.waitUntil(c.env.GROUP_CHAT.getByName(task.groupId).noteFocusChange(userId));
 
     const row = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
-    return c.json({ task: row, credits: charged });
+    return c.json({ task: row, credits: 0 });
   })
 
   /** Submitting or updating proof after a reviewer asked for it. */
@@ -638,6 +680,7 @@ export const taskRoutes = new Hono<AppEnv>()
       taskId: id,
       dueDate: task.dueDate,
       rating: review.rating,
+      actualMinutes: task.actualMinutes,
     });
 
     // Badges derive from stats, so they are synced after the award, outside its

@@ -17,7 +17,8 @@ import { serverNow } from '@/hooks/useCountdown';
  * Overrun is shown, not punished. The task stays open and can still be finished
  * and approved; the display turns red and counts up, and nothing else happens.
  * Waiting it out is deliberately not an escape from the chat lock either — the
- * only ways out are finishing or abandoning, and one of those costs points.
+ * only ways out are finishing or abandoning. Neither costs points (slice 1);
+ * both book the minutes worked.
  */
 export function TaskClock({
   startedAt,

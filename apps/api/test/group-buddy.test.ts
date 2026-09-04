@@ -216,7 +216,7 @@ describe('abandoning', () => {
       .run();
   }
 
-  it('deducts ten points and frees the user', async () => {
+  it('costs nothing and frees the user (PRODUCT.md §5.2)', async () => {
     const { owner, groupId } = await pair('abandon');
     await grant(owner.userId, 100);
 
@@ -225,9 +225,12 @@ describe('abandoning', () => {
 
     const res = await post(`/api/tasks/${taskId}/abandon`, {}, owner.accessToken);
     expect(res.status).toBe(200);
-    expect((await res.json() as { credits: number }).credits).toBe(-10);
+    const body = (await res.json()) as { credits: number; task: { startedAt: string | null } };
+    expect(body.credits).toBe(0);
+    expect(body.task.startedAt).toBeNull();
 
-    expect((await statsFor(owner.userId)).total_credits).toBe(90);
+    // Credits never go down. (Zero minutes elapsed, so none were added either.)
+    expect((await statsFor(owner.userId)).total_credits).toBe(100);
   });
 
   it('never takes someone below zero', async () => {
@@ -239,10 +242,7 @@ describe('abandoning', () => {
     expect((await statsFor(owner.userId)).total_credits).toBe(0);
   });
 
-  it('charges again when the same task is restarted and dropped', async () => {
-    // The ledger's unique (user, reason, ref_type, ref_id) index would make this
-    // a once-per-task penalty if the key were the task id alone. Each start is
-    // its own commitment, so each start is its own key.
+  it('can be restarted and dropped again, each start its own session', async () => {
     const { owner, groupId } = await pair('twice');
     await grant(owner.userId, 100);
     const taskId = await createTask(owner, groupId, 'On and off', undefined, 30);
@@ -253,7 +253,13 @@ describe('abandoning', () => {
       expect(res.status, `attempt ${i + 1}`).toBe(200);
     }
 
-    expect((await statsFor(owner.userId)).total_credits).toBe(80);
+    const { results } = await env.DB.prepare(
+      "SELECT count(*) AS n FROM session_tasks WHERE task_id = ?",
+    )
+      .bind(taskId)
+      .all<{ n: number }>();
+    expect(results[0]?.n).toBe(2);
+    expect((await statsFor(owner.userId)).total_credits).toBe(100);
   });
 
   it('refuses to abandon a task that is not running', async () => {

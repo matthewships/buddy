@@ -19,6 +19,10 @@ export interface Task {
   estimatedMinutes: number | null;
   /** When the clock was started, or null when it is not running. */
   startedAt: string | null;
+  /** The session the clock belongs to, when it is running (PRODUCT.md §3.2). */
+  sessionId: string | null;
+  /** Minutes this task has had on a clock, across every session. */
+  actualMinutes: number;
   status: TaskStatus;
   proofText: string | null;
   proofImageKey: string | null;

@@ -19,6 +19,7 @@ import { groupRoutes, inviteRoutes } from './routes/groups.js';
 import { inviteLinkRoutes } from './routes/invite-links.js';
 import { postRoutes } from './routes/posts.js';
 import { meRoutes } from './routes/me.js';
+import { sessionGroupRoutes, sessionRoutes } from './routes/sessions.js';
 import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
 import { runNudges } from './jobs/nudge.js';
@@ -81,6 +82,9 @@ const routes = app
   .route('/api/tasks', taskRoutes)
   // Group-scoped chat reads share the /api/groups prefix and its bearer auth.
   .route('/api/groups', chatRoutes)
+  // Group sessions (PRODUCT.md §3.1): opened under the group, driven by id.
+  .route('/api/groups', sessionGroupRoutes)
+  .route('/api/sessions', sessionRoutes)
   // The socket upgrade sits outside /api/groups: it authenticates with a
   // ticket, and that prefix's bearer middleware would reject it first.
   .route('/api/chat', chatSocketRoutes)
