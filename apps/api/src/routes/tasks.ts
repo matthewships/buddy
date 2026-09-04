@@ -698,12 +698,13 @@ export const taskRoutes = new Hono<AppEnv>()
       columns: { timezone: true, quietHoursStart: true, quietHoursEnd: true, displayName: true },
     });
     if (buddy) {
-      let hour: number | null = null;
-      try {
-        hour = localHour(buddy.timezone, new Date(at));
-      } catch {
-        hour = null;
-      }
+      const hour = ((): number | null => {
+        try {
+          return localHour(buddy.timezone, new Date(at));
+        } catch {
+          return null;
+        }
+      })();
       if (hour !== null && inQuietHours(hour, buddy.quietHoursStart, buddy.quietHoursEnd)) {
         throw badRequest(`That is inside ${buddy.displayName}'s quiet hours — pick an earlier time`);
       }
