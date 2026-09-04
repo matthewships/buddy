@@ -5,7 +5,8 @@ import { db } from '../src/db/client.js';
 import { runPressure } from '../src/jobs/pressure.js';
 import { localDayEnd } from '../src/lib/time.js';
 import { latestStart } from '../src/services/pressure.js';
-import { addMember, createTask, get, onboard, pair, patch, post, resetRateLimits, signUp, today } from './helpers.js';
+import { presentInLiveSession } from '../src/services/sessions.js';
+import { addMember, createTask, get, onboard, pair, patch, post, resetRateLimits, signUp, statsFor, today } from './helpers.js';
 
 beforeEach(resetRateLimits);
 
@@ -127,6 +128,10 @@ describe('a requested check-in', () => {
   it('is asked by the owner, sent when the time comes, and answered once', async () => {
     const { owner, buddy, groupId } = await pair('checkin');
     const id = await createTask(owner, groupId, 'Check on me', today(), 60);
+    // No quiet window for the buddy, so the time of day the suite runs at is irrelevant.
+    await env.DB.prepare('UPDATE users SET quiet_hours_start = 0, quiet_hours_end = 0 WHERE id = ?')
+      .bind(buddy.userId)
+      .run();
     const inTen = new Date(Date.now() + 10 * 60_000).toISOString();
     const yesterday = new Date(Date.now() - 86_400_000).toISOString();
 
@@ -191,6 +196,43 @@ describe('late, absent, and reliability (PRODUCT.md §3.6)', () => {
     };
     expect(seen.stats.reliability).toBe('new');
     expect(seen.stats.reliabilityPct).toBeNull();
+  });
+
+  it('treats a late member as not here: no chat lock, and leaving pays nothing', async () => {
+    const { owner, buddy, groupId } = await pair('late-not-here');
+    const at = new Date(Date.now() + 30 * 60_000).toISOString();
+    const opened = await post(`/api/groups/${groupId}/sessions`, { plannedMinutes: 50, scheduledFor: at }, owner.accessToken);
+    const { session } = (await opened.json()) as { session: { id: string } };
+    await post(`/api/sessions/${session.id}/join`, {}, buddy.accessToken);
+    await post(`/api/sessions/${session.id}/start`, {}, owner.accessToken);
+    await runPressure(db(env.DB), env, new Date(Date.now() + 6 * 60_000));
+
+    // Not in the room, so free to chat: the lock's second clause is `present` only.
+    expect(await presentInLiveSession(db(env.DB), groupId, buddy.userId)).toBe(false);
+
+    // Pulling out now is a no-show, and pays nothing for minutes they were not there.
+    expect((await post(`/api/sessions/${session.id}/leave`, {}, buddy.accessToken)).status).toBe(200);
+    const { results } = await env.DB.prepare(
+      'SELECT state, present_minutes FROM session_participants WHERE session_id = ? AND user_id = ?',
+    )
+      .bind(session.id, buddy.userId)
+      .all<{ state: string; present_minutes: number }>();
+    expect(results[0]).toMatchObject({ state: 'no_show', present_minutes: 0 });
+    expect((await statsFor(buddy.userId)).total_credits).toBe(0);
+  });
+
+  it('refuses a check-in inside the buddy’s quiet hours', async () => {
+    const { owner, buddy, groupId } = await pair('checkin-quiet');
+    const id = await createTask(owner, groupId, 'Quiet', today(), 60);
+    // A window covering the whole day, so the refusal does not depend on the clock.
+    await env.DB.prepare('UPDATE users SET quiet_hours_start = 0, quiet_hours_end = 23 WHERE id = ?')
+      .bind(buddy.userId)
+      .run();
+    const inTen = new Date(Date.now() + 10 * 60_000).toISOString();
+    if (new Date().getUTCHours() !== 23) {
+      const res = await post(`/api/tasks/${id}/checkin`, { buddyUserId: buddy.userId, at: inTen }, owner.accessToken);
+      expect(res.status).toBe(400);
+    }
   });
 
   it('pauses instant requests for somebody rebuilding, and says why', async () => {

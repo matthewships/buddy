@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import {
   createTaskSchema,
+  inQuietHours,
   localDateSchema,
   markTaskDoneSchema,
   nudgeTaskSchema,
@@ -19,7 +20,7 @@ import { groupMembers, groups, sessions, taskReviews, tasks, users } from '../db
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
-import { localDate, localDateOrUtc, nowIso } from '../lib/time.js';
+import { localDate, localDateOrUtc, localHour, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { syncBadges } from '../services/badges.js';
 import { mutedIdsFor } from '../services/blocks.js';
@@ -689,6 +690,23 @@ export const taskRoutes = new Hono<AppEnv>()
     const owner = await client.query.users.findFirst({ where: eq(users.id, ownerId), columns: { timezone: true } });
     if (localDateOrUtc(owner?.timezone ?? 'UTC', new Date(at)) !== localDateOrUtc(owner?.timezone ?? 'UTC')) {
       throw badRequest('A check-in is for today');
+    }
+    // The buddy's quiet hours are theirs (PRODUCT.md §5.3): a check-in that
+    // would be dropped at delivery is refused now, so the owner knows.
+    const buddy = await client.query.users.findFirst({
+      where: eq(users.id, buddyUserId),
+      columns: { timezone: true, quietHoursStart: true, quietHoursEnd: true, displayName: true },
+    });
+    if (buddy) {
+      let hour: number | null = null;
+      try {
+        hour = localHour(buddy.timezone, new Date(at));
+      } catch {
+        hour = null;
+      }
+      if (hour !== null && inQuietHours(hour, buddy.quietHoursStart, buddy.quietHoursEnd)) {
+        throw badRequest(`That is inside ${buddy.displayName}'s quiet hours — pick an earlier time`);
+      }
     }
 
     const result = await requestCheckin(client, { ownerId, buddyUserId, taskId: id, at });

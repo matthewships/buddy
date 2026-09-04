@@ -116,6 +116,8 @@ export const sessionGroupRoutes = new Hono<AppEnv>()
         state: live ? 'present' : 'committed',
         joinedAt: live ? now : null,
         lastSeenAt: live ? now : null,
+        // Whoever opens a live session is there for its start.
+        onTime: live ? 1 : null,
       }),
     ]);
     if (task && live) await bringTask(client, id, task, now);
@@ -245,7 +247,7 @@ export const sessionRoutes = new Hono<AppEnv>()
         and(
           eq(sessionParticipants.sessionId, id),
           eq(sessionParticipants.userId, userId),
-          inArray(sessionParticipants.state, ['present', 'late']),
+          eq(sessionParticipants.state, 'present'),
         ),
       );
     return c.json({ ok: true as const, serverNow: nowIso() });
@@ -336,7 +338,7 @@ export const sessionRoutes = new Hono<AppEnv>()
         where: and(eq(sessionParticipants.sessionId, id), eq(sessionParticipants.userId, toUserId)),
       }),
     ]);
-    if (!me || !['present', 'late'].includes(me.state)) throw forbidden('Join the session to nudge from it');
+    if (!me || me.state !== 'present') throw forbidden('Join the session to nudge from it');
     if (!them || !['committed', 'late'].includes(them.state)) throw conflict('They are not waiting to be nudged');
 
     const sender = await client.query.users.findFirst({ where: eq(users.id, fromUserId), columns: { displayName: true } });

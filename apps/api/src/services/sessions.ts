@@ -88,7 +88,9 @@ export async function presentInLiveSession(client: Db, groupId: string, userId: 
     .where(
       and(
         eq(sessionParticipants.userId, userId),
-        inArray(sessionParticipants.state, ['present', 'late']),
+        // `late` is somebody who committed and has not arrived (slice 2), not
+        // somebody here: only `present` is in the room.
+        eq(sessionParticipants.state, 'present'),
         eq(sessions.groupId, groupId),
         eq(sessions.kind, 'group'),
         eq(sessions.state, 'live'),
@@ -178,7 +180,19 @@ export async function leaveSession(client: Db, session: Session, userId: string,
   const participant = await client.query.sessionParticipants.findFirst({
     where: and(eq(sessionParticipants.sessionId, session.id), eq(sessionParticipants.userId, userId)),
   });
-  if (!participant || !['present', 'late'].includes(participant.state)) return 0;
+  // Only somebody who was actually here has minutes to settle. A `committed`
+  // or `late` member who leaves simply withdraws — and since the session has
+  // started, that is a no-show, which is what it was.
+  if (!participant) return 0;
+  if (participant.state !== 'present') {
+    if (participant.state === 'committed' || participant.state === 'late') {
+      await client
+        .update(sessionParticipants)
+        .set({ state: 'no_show', onTime: 0, leftAt: at })
+        .where(and(eq(sessionParticipants.sessionId, session.id), eq(sessionParticipants.userId, userId)));
+    }
+    return 0;
+  }
   return settleParticipant(client, session, participant, at, 'left_early');
 }
 
@@ -212,7 +226,7 @@ export async function endSession(client: Db, sessionId: string, at: string = now
     );
 
   const present = await client.query.sessionParticipants.findMany({
-    where: and(eq(sessionParticipants.sessionId, sessionId), inArray(sessionParticipants.state, ['present', 'late'])),
+    where: and(eq(sessionParticipants.sessionId, sessionId), eq(sessionParticipants.state, 'present')),
   });
   for (const participant of present) await settleParticipant(client, session, participant, at, 'completed');
 

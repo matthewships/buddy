@@ -119,6 +119,15 @@ async function markLateAndAbsent(db: Db, env: Env, now: Date): Promise<{ markedL
     if (!session.startedAt) continue;
     const sinceStart = now.getTime() - Date.parse(session.startedAt);
 
+    /**
+     * The cron ticks every quarter hour and the late window is minutes five to
+     * ten, so most sessions go straight from `committed` to `no_show` on the
+     * first tick after the start. The reminder therefore goes to everyone
+     * marked in this tick, late or absent — a state change is what makes it
+     * once — so nobody who committed is left uninformed.
+     */
+    const remind: string[] = [];
+
     if (sinceStart >= NO_SHOW_AFTER_MINUTES * 60_000) {
       const absent = await db
         .update(sessionParticipants)
@@ -127,12 +136,12 @@ async function markLateAndAbsent(db: Db, env: Env, now: Date): Promise<{ markedL
           and(
             eq(sessionParticipants.sessionId, session.id),
             inArray(sessionParticipants.state, ['committed', 'late']),
-            // A `late` row that has a join is somebody who arrived; only the never-joined are absent.
             isNull(sessionParticipants.joinedAt),
           ),
         )
         .returning({ userId: sessionParticipants.userId });
       markedAbsent += absent.length;
+      remind.push(...absent.map((p) => p.userId));
     }
 
     if (sinceStart >= LATE_AFTER_MINUTES * 60_000) {
@@ -142,14 +151,16 @@ async function markLateAndAbsent(db: Db, env: Env, now: Date): Promise<{ markedL
         .where(and(eq(sessionParticipants.sessionId, session.id), eq(sessionParticipants.state, 'committed')))
         .returning({ userId: sessionParticipants.userId });
       markedLate += late.length;
-      if (late.length > 0) {
-        await enqueuePush(env, {
-          userIds: late.map((p) => p.userId),
-          title: 'Your session started without you',
-          body: 'Tap to join. Late is fine; absent is not.',
-          data: { type: 'start_nudge', sessionId: session.id, groupId: session.groupId, url: `/groups/${session.groupId}` },
-        });
-      }
+      remind.push(...late.map((p) => p.userId));
+    }
+
+    if (remind.length > 0) {
+      await enqueuePush(env, {
+        userIds: remind,
+        title: 'Your session started without you',
+        body: 'Tap to join. Late is fine; absent is not.',
+        data: { type: 'start_nudge', sessionId: session.id, groupId: session.groupId, url: `/groups/${session.groupId}` },
+      });
     }
   }
   return { markedLate, markedAbsent };

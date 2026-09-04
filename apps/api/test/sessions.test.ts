@@ -145,6 +145,13 @@ describe('group sessions', () => {
 
     // 50 unverified minutes (25 credits) plus the cooperative bonus (20), each.
     expect((await statsFor(owner.userId)).total_credits).toBe(45);
+    // The host opened it live, so they were there for its start.
+    const { results: hostRel } = await env.DB.prepare(
+      'SELECT reliability_pct FROM user_stats WHERE user_id = ?',
+    )
+      .bind(owner.userId)
+      .all<{ reliability_pct: number | null }>();
+    expect(hostRel[0]?.reliability_pct).toBe(100);
     expect((await statsFor(buddy.userId)).total_credits).toBe(45);
     expect((await statsFor(buddy.userId)).current_streak).toBe(1);
     expect((await taskRow(buddyTask)).actual_minutes).toBe(50);

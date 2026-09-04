@@ -53,7 +53,8 @@ export function SessionPanel({
   const view = current.data;
   const session = view?.session ?? null;
   const me = view?.participants.find((p) => p.userId === viewerId);
-  const present = me?.state === 'present' || me?.state === 'late';
+  // `late` means committed and not arrived (PRODUCT.md §3.3); only `present` is in it.
+  const present = me?.state === 'present';
   const isHost = session?.hostId === viewerId;
 
   useHeartbeat(session?.state === 'live' ? session.id : null, present);
