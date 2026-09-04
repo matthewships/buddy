@@ -1029,6 +1029,46 @@ the reasoning is in §2.9. The look changed with it — §5.8.
 
 ---
 
+**2026-09-04 — rebuilt against a design critic.** The page was put through
+thirteen rounds of the same procedure: screenshot at 1440px, a fresh critic
+with only the screenshot (no code, no earlier rounds), asked to name the
+aesthetic, describe a top studio's execution of it, list the gaps, and score
+out of ten. The baseline scored 5.5; the rounds scored between 5.5 and 7 with
+no trend, and successive critics contradicted each other on the same
+questions — bleed both panels or contain both, one column for the questions
+or two, numerals large or small, the wall of goals larger or smaller. What
+every round agreed on is what shipped:
+
+- **One drawing of the product**, the desk with its clock running, beside
+  the question in the hero, with its surface running to the viewport's edge
+  through a pseudo-element rather than a viewport calculation.
+- **Nothing that every landing page has**: no eyebrows, no emoji, no figure
+  strip, no accordions, no card grid, no corner bracket. The numbers moved
+  into sentences; the questions are simply answered.
+- **The wall of goals as a sentence**, read from `GOALS`, straight after the
+  hero on the same ink, a size under the headline. Commas, not slashes,
+  because a sentence is allowed to wrap.
+- **One Tuesday as a log** beside what the desk shows after the clock stops,
+  the same times in the same column. Five rules at display size. Body text
+  at 18px on one measure.
+- **Two greens, one meaning each**: lime for anything that can be pressed
+  and the dot on a running clock; olive for the clock's digits and the
+  points they turn into. `people`, `live` and `success` are not used on the
+  page; faces, bars and numerals are ink.
+
+Two things were learned about the tooling. Tailwind's responsive `text-*`
+utilities carry a line-height that outranks a bare `leading-*`, so display
+type that changes size by breakpoint sets its line-height inline. And a
+`whitespace-nowrap` span with the separator inside it has nothing to break
+on; the break opportunity has to be a real space outside the span.
+
+The critic's transcripts are not kept. The procedure is recorded so that the
+next person who runs it knows the score is noisy to about a point and a half
+and should read the notes for agreement across rounds, not chase any one of
+them.
+
+---
+
 ## 5.8 The creative direction — added 2026-09-03
 
 The web client's look was, until now, the mobile app's: the same indigo, the
