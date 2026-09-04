@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { COUNTRY_KEYS } from './countries';
 import { REACTION_KEYS } from './reactions';
+import { LEAVE_REASON_KEYS } from './safety';
 import { EDUCATION_LEVEL_KEYS } from './education-levels';
 import { GOAL_KEYS } from './goals';
 import { INTEREST_KEYS } from './interests';
@@ -328,6 +329,12 @@ export const updateMeSchema = z
     /** What `custom` means, when it is one of the interests (§2.1). */
     interestText: z.string().trim().max(MAX_INTEREST_TEXT).nullish(),
     buddyProfile: buddyProfileSchema.optional(),
+    /**
+     * Quiet hours (PRODUCT.md §5.3): two local hours on a 24-hour clock. Sent
+     * together or not at all; the route rejects one without the other.
+     */
+    quietHoursStart: z.number().int().min(0).max(23).optional(),
+    quietHoursEnd: z.number().int().min(0).max(23).optional(),
   })
   .refine(
     (v) => !(v.goalKey === 'custom' || v.goalKeys?.includes('custom')) || (v.goalText?.length ?? 0) > 0,
@@ -429,6 +436,15 @@ export const createGroupSchema = z.object({
 
 export const inviteToGroupSchema = z.object({
   handle: handleSchema,
+});
+
+/**
+ * Leaving a group, optionally saying why (PRODUCT.md §6.1). Both fields are
+ * optional so the mobile app, which posts an empty body, keeps working.
+ */
+export const leaveGroupSchema = z.object({
+  reason: z.enum(LEAVE_REASON_KEYS).optional(),
+  note: z.string().trim().max(MAX_REPORT_NOTE).optional(),
 });
 
 /**

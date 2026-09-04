@@ -6,10 +6,11 @@ import { useRef, useState } from 'react';
 import { useUploadAvatar } from '@/api/avatar';
 import { useMe, useUpdateMe } from '@/api/auth';
 import { useDeleteAccount } from '@/api/board';
-import { useProfile } from '@/api/users';
+import { useBlocks, useProfile, useUnblockUser } from '@/api/users';
 import { useSession } from '@/auth/store';
 import { useNotificationPreference } from '@/hooks/useNotificationPreference';
 import {
+  Avatar,
   Button,
   ConfirmSheet,
   ErrorText,
@@ -189,6 +190,10 @@ export default function Profile() {
         onOpenBuddyChange={(isOpenBuddy) => {
           if (!updateMe.isPending) updateMe.mutate({ isOpenBuddy });
         }}
+        quietHours={{ start: profile.quietHoursStart, end: profile.quietHoursEnd }}
+        onQuietHoursChange={(start, end) => {
+          if (!updateMe.isPending) updateMe.mutate({ quietHoursStart: start, quietHoursEnd: end });
+        }}
       />
 
       <ConfirmSheet
@@ -229,12 +234,16 @@ function SettingsSheet({
   onClose,
   isOpenBuddy,
   onOpenBuddyChange,
+  quietHours,
+  onQuietHoursChange,
 }: {
   open: boolean;
   onClose: () => void;
   isOpenBuddy: boolean;
   /** The caller drops a change made while one is already in flight. */
   onOpenBuddyChange: (value: boolean) => void;
+  quietHours: { start: number; end: number };
+  onQuietHoursChange: (start: number, end: number) => void;
 }) {
   return (
     <Sheet open={open} onClose={onClose} title="Settings">
@@ -262,7 +271,107 @@ function SettingsSheet({
       {/* Rendered only while the sheet is open, so the permission state is read
           fresh each time rather than from whatever it was on page load. */}
       {open ? <NotificationSettings /> : null}
+
+      <QuietHoursSettings value={quietHours} onChange={onQuietHoursChange} />
+
+      {open ? <BlockedList /> : null}
     </Sheet>
+  );
+}
+
+/**
+ * Quiet hours (PRODUCT.md §5.3): the local window in which nothing nudges.
+ * Two native selects rather than a custom control — a clock is a list of
+ * twenty-four things, and the browser's own picker handles that on every
+ * platform, keyboard included. Chat and buddy requests are people reaching
+ * out and are not silenced; the copy says so.
+ */
+function QuietHoursSettings({
+  value,
+  onChange,
+}: {
+  value: { start: number; end: number };
+  onChange: (start: number, end: number) => void;
+}) {
+  const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  const label = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
+  const select = 'h-10 rounded-md border border-surface-border bg-surface px-2 text-base text-ink';
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-surface-border pt-4">
+      <p className="text-base font-semibold text-ink">Quiet hours</p>
+      <p className="text-sm text-ink-muted">
+        No nudges between these hours, your time. Buddy requests and chat still reach you.
+      </p>
+      <div className="flex flex-row items-center gap-2">
+        <label className="flex flex-row items-center gap-2 text-sm text-ink-muted">
+          From
+          <select
+            className={select}
+            value={value.start}
+            onChange={(event) => onChange(Number(event.target.value), value.end)}
+          >
+            {hours.map((hour) => (
+              <option key={hour} value={hour}>
+                {label(hour)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-row items-center gap-2 text-sm text-ink-muted">
+          to
+          <select
+            className={select}
+            value={value.end}
+            onChange={(event) => onChange(value.start, Number(event.target.value))}
+          >
+            {hours.map((hour) => (
+              <option key={hour} value={hour}>
+                {label(hour)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/** Everyone the caller has blocked, and the way to undo it (PRODUCT.md §6.1). */
+function BlockedList() {
+  const blocks = useBlocks();
+  const unblock = useUnblockUser();
+  const list = blocks.data?.blocks ?? [];
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-surface-border pt-4">
+      <p className="text-base font-semibold text-ink">Blocked</p>
+      {blocks.isPending ? (
+        <Spinner />
+      ) : list.length === 0 ? (
+        <p className="text-sm text-ink-muted">Nobody. Block someone from their profile.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-surface-border">
+          {list.map((person) => (
+            <li key={person.id} className="flex flex-row items-center gap-3 py-2">
+              <Avatar avatarKey={person.avatarKey} displayName={person.displayName} size={32} />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-semibold text-ink">{person.displayName}</span>
+                <span className="text-xs text-ink-subtle">@{person.handle}</span>
+              </div>
+              <Button
+                label="Unblock"
+                variant="ghost"
+                className="w-auto"
+                loading={unblock.isPending && unblock.variables === person.handle}
+                onClick={() => unblock.mutate(person.handle)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      <ErrorText message={unblock.error?.message} />
+    </div>
   );
 }
 

@@ -17,6 +17,8 @@ export interface GroupSummary {
 export interface GroupDetail extends GroupSummary {
   /** Whoever made the group. Only they, or the Buddy, may change the Buddy. */
   createdBy: string;
+  /** Whether the viewer has muted this group's pushes (PRODUCT.md §6.1). */
+  muted: boolean;
   buddyUserId: string | null;
   buddyVerifierId: string | null;
 }
@@ -117,14 +119,35 @@ export function useInviteToGroup(groupId: string) {
   });
 }
 
+/** Leaving, with the private reason the sheet asked for (PRODUCT.md §6.1). */
 export function useLeaveGroup() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (groupId: string) =>
+    mutationFn: async (input: { groupId: string; reason?: string; note?: string }) =>
       unwrap<{ ok: true; groupDeleted: boolean }>(
-        await api.api.groups[':id'].leave.$post({ param: { id: groupId } }),
+        await api.api.groups[':id'].leave.$post({
+          param: { id: input.groupId },
+          json: {
+            ...(input.reason ? { reason: input.reason as never } : {}),
+            ...(input.note ? { note: input.note } : {}),
+          },
+        }),
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: groupKeys.all }),
+  });
+}
+
+/** Muting or unmuting this group's pushes. The room itself is unaffected. */
+export function useMuteGroup(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (muted: boolean) =>
+      unwrap<{ muted: boolean }>(
+        muted
+          ? await api.api.groups[':id'].mute.$post({ param: { id: groupId } })
+          : await api.api.groups[':id'].mute.$delete({ param: { id: groupId } }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) }),
   });
 }
 

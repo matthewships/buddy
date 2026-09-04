@@ -121,6 +121,9 @@ export interface Me extends StudentFields {
   isOpenBuddy: boolean;
   /** Today's status, with expiry already applied by the server (§2.6). */
   statusKey: string | null;
+  /** Quiet hours, local, 24-hour (PRODUCT.md §5.3). */
+  quietHoursStart: number;
+  quietHoursEnd: number;
   onboarded: boolean;
   /** False while the handle is still the placeholder registration assigns. */
   handleClaimed: boolean;

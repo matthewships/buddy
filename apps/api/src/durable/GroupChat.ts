@@ -8,6 +8,7 @@ import { groupMembers, messages, tasks } from '../db/schema.js';
 import type { Env } from '../env.js';
 import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';
+import { blockedIdsFor, mutedIdsFor } from '../services/blocks.js';
 import { enqueuePush } from '../services/push.js';
 
 /**
@@ -193,16 +194,25 @@ export class GroupChat extends DurableObject<Env> {
       createdAt: message.createdAt,
     });
 
-    this.broadcast({ type: 'message', message });
+    /**
+     * A block is mutual in effect (PRODUCT.md §6.1): a socket belonging to
+     * somebody in a block pair with the sender does not receive the message,
+     * and the history route withholds it the same way. One read per message,
+     * beside the two this handler already does.
+     */
+    const blocked = new Set(await blockedIdsFor(client, identity.userId));
+    this.broadcast({ type: 'message', message }, blocked);
 
     // Push only to members who are not currently connected — notifying someone
-    // who is looking at the message is noise.
+    // who is looking at the message is noise — and not to anyone who muted
+    // the group or is in a block pair with the sender.
     const connectedIds = new Set(
       this.ctx
         .getWebSockets()
         .map((socket) => (socket.deserializeAttachment() as SocketIdentity | null)?.userId)
         .filter((id): id is string => Boolean(id)),
     );
+    const muted = await mutedIdsFor(client, groupId);
 
     const absent = (
       await client
@@ -211,7 +221,7 @@ export class GroupChat extends DurableObject<Env> {
         .where(and(eq(groupMembers.groupId, groupId), ne(groupMembers.userId, identity.userId)))
     )
       .map((row) => row.userId)
-      .filter((id) => !connectedIds.has(id));
+      .filter((id) => !connectedIds.has(id) && !muted.has(id) && !blocked.has(id));
 
     await enqueuePush(this.env, {
       userIds: absent,
@@ -262,9 +272,14 @@ export class GroupChat extends DurableObject<Env> {
     this.broadcastPresence();
   }
 
-  private broadcast(payload: Outbound): void {
+  /** `except` is the set of user ids whose sockets are skipped — a block pair. */
+  private broadcast(payload: Outbound, except?: Set<string>): void {
     const encoded = JSON.stringify(payload);
     for (const socket of this.ctx.getWebSockets()) {
+      if (except?.size) {
+        const identity = socket.deserializeAttachment() as SocketIdentity | null;
+        if (identity?.userId && except.has(identity.userId)) continue;
+      }
       try {
         socket.send(encoded);
       } catch {

@@ -3,13 +3,15 @@ import { and, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { Hono } from 'hono';
 
-import { type BuddySort, buddyDirectoryQuerySchema } from '@buddy/shared';
+import { type BuddySort, buddyDirectoryQuerySchema, isMinor } from '@buddy/shared';
 
 import { db } from '../db/client.js';
 import { buddyProfiles, groupMembers, userStats, userTags, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
+import { blockedIdsFor } from '../services/blocks.js';
 import { MATCH_SCORE, activeSince, activityLabel } from '../services/matching.js';
+import { adultLineCondition } from '../services/safety.js';
 
 /**
  * The buddy directory (§2.2) — for users who know nobody.
@@ -42,6 +44,7 @@ export const buddyRoutes = new Hono<AppEnv>()
         majorKey: true,
         country: true,
         institutionNormalised: true,
+        dateOfBirth: true,
       },
     });
 
@@ -73,7 +76,10 @@ export const buddyRoutes = new Hono<AppEnv>()
         ).map((row) => row.userId)
       : [];
 
-    const excluded = [...new Set([viewerId, ...mateIds])];
+    // Blocks are mutual in effect (PRODUCT.md §6.1): whoever the viewer has
+    // blocked, and whoever has blocked the viewer, is simply not here.
+    const blockedIds = await blockedIdsFor(client, viewerId);
+    const excluded = [...new Set([viewerId, ...mateIds, ...blockedIds])];
     const since = activeSince();
 
     // The match score, mirroring §2.2's ordering rules.
@@ -136,6 +142,8 @@ export const buddyRoutes = new Hono<AppEnv>()
       // Only fully onboarded users: a card with no goal is useless.
       sql`${users.onboardedAt} IS NOT NULL`,
       notInArray(users.id, excluded),
+      // The adult line (PRODUCT.md §6.3): minors see minors, adults see adults.
+      adultLineCondition(isMinor(viewer?.dateOfBirth)),
       // A filter on one goal matches a card that carries it in either slot;
       // otherwise a user's second goal would be invisible to the directory.
       ...(goal ? [or(eq(users.goalKey, goal), eq(users.goalKey2, goal))!] : []),

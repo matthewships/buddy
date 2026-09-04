@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { handleSchema } from '@buddy/shared';
+import { LEAVE_REASONS, handleSchema } from '@buddy/shared';
 
 import { useMe } from '@/api/auth';
 import type { LeaderboardScope } from '@/api/board';
@@ -13,6 +13,7 @@ import {
   useGroupStandings,
   useInviteToGroup,
   useLeaveGroup,
+  useMuteGroup,
   useSetGroupBuddy,
   type GroupDetail,
   type GroupMember,
@@ -21,6 +22,7 @@ import {
   Avatar,
   BackLink,
   Button,
+  Chips,
   ErrorText,
   Field,
   GroupTasks,
@@ -29,6 +31,7 @@ import {
   SharePanel,
   Sheet,
   Spinner,
+  Toggle,
 } from '@/components';
 import { verifierFor } from '@/lib/review-rights';
 
@@ -410,7 +413,10 @@ function SettingsSheet({
 }) {
   const setBuddy = useSetGroupBuddy(group.id);
   const leave = useLeaveGroup();
+  const mute = useMuteGroup(group.id);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [leaveReason, setLeaveReason] = useState<string | null>(null);
+  const [leaveNote, setLeaveNote] = useState('');
 
   const buddy = members.find((m) => m.id === group.buddyUserId);
   const viewerIsBuddy = viewerId === group.buddyUserId;
@@ -484,22 +490,75 @@ function SettingsSheet({
         <ErrorText message={setBuddy.error?.message} />
       </div>
 
+      {/*
+        Muting (PRODUCT.md §6.1): the phone stops buzzing for this group's chat
+        and nudges. The room is untouched, and the switch says exactly that.
+      */}
+      <div className="mt-2 flex flex-row items-center justify-between gap-4 border-t border-surface-border pt-4">
+        <div className="flex flex-1 flex-col">
+          <p className="text-base font-semibold text-ink">Mute notifications</p>
+          <p className="text-sm text-ink-muted">
+            {group.muted
+              ? 'This group’s chat and nudges no longer notify you.'
+              : 'Chat and nudges from this group notify you.'}
+          </p>
+        </div>
+        <Toggle
+          checked={group.muted}
+          onChange={(value) => {
+            if (!mute.isPending) mute.mutate(value);
+          }}
+          label="Mute notifications"
+        />
+      </div>
+      <ErrorText message={mute.error?.message} />
+
+      {/*
+        Leaving, with a reason (PRODUCT.md §6.1). The reason is private — it
+        feeds nothing anyone else sees — and optional, because a reason
+        demanded is a reason invented.
+      */}
       <div className="mt-2 border-t border-surface-border pt-4">
         {confirmingLeave ? (
-          <div className="flex flex-row gap-2">
-            <Button
-              label="Yes, leave"
-              variant="danger"
-              className="flex-1"
-              loading={leave.isPending}
-              onClick={() => leave.mutate(group.id, { onSuccess: onLeft })}
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-ink-muted">Why are you leaving? Only Buddy sees this.</p>
+            <Chips
+              label="Reason for leaving"
+              options={LEAVE_REASONS}
+              selected={leaveReason}
+              onSelect={(key) => setLeaveReason(key === leaveReason ? null : key)}
             />
-            <Button
-              label="Stay"
-              variant="ghost"
-              className="flex-1"
-              onClick={() => setConfirmingLeave(false)}
+            <Field
+              label="Anything else (optional)"
+              value={leaveNote}
+              onChangeText={setLeaveNote}
+              maxLength={600}
+              placeholder="A sentence is plenty"
             />
+            <div className="flex flex-row gap-2">
+              <Button
+                label="Leave group"
+                variant="danger"
+                className="flex-1"
+                loading={leave.isPending}
+                onClick={() =>
+                  leave.mutate(
+                    {
+                      groupId: group.id,
+                      ...(leaveReason ? { reason: leaveReason } : {}),
+                      ...(leaveNote.trim() ? { note: leaveNote.trim() } : {}),
+                    },
+                    { onSuccess: onLeft },
+                  )
+                }
+              />
+              <Button
+                label="Stay"
+                variant="ghost"
+                className="flex-1"
+                onClick={() => setConfirmingLeave(false)}
+              />
+            </div>
           </div>
         ) : (
           <Button label="Leave group" variant="ghost" onClick={() => setConfirmingLeave(true)} />

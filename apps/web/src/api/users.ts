@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, unwrap } from './client';
 
@@ -49,6 +49,50 @@ export interface PublicProfile extends StudentFields {
     availability: string | null;
     checkinStyle: string | null;
   } | null;
+}
+
+export interface BlockedUser {
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarKey: string | null;
+  blockedAt: string;
+}
+
+export const blockKeys = { list: ['me', 'blocks'] as const };
+
+/** Everyone the caller has blocked, for the settings list that undoes it. */
+export function useBlocks(enabled = true) {
+  return useQuery({
+    queryKey: blockKeys.list,
+    enabled,
+    queryFn: async () => unwrap<{ blocks: BlockedUser[] }>(await api.api.me.blocks.$get()),
+  });
+}
+
+/**
+ * Blocking somebody (PRODUCT.md §6.1). Everything that lists people is
+ * invalidated, because a block changes all of it at once: the directory, the
+ * feed, every group and every chat history.
+ */
+export function useBlockUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (handle: string) =>
+      unwrap<{ blocked: true; leftGroups: number }>(
+        await api.api.users[':handle'].block.$post({ param: { handle } }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries(),
+  });
+}
+
+export function useUnblockUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (handle: string) =>
+      unwrap<{ blocked: false }>(await api.api.users[':handle'].block.$delete({ param: { handle } })),
+    onSuccess: () => void queryClient.invalidateQueries(),
+  });
 }
 
 export function useProfile(handle: string) {

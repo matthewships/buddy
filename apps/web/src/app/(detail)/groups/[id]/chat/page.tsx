@@ -230,11 +230,17 @@ function Bubble({
             mine ? 'bg-brand' : 'border border-surface-border bg-surface'
           }`}
         >
-          <p
-            className={`whitespace-pre-wrap break-words text-base ${mine ? 'text-brand-fg' : 'text-ink'}`}
-          >
-            {message.body}
-          </p>
+          {message.blocked ? (
+            // Collapsed, not removed (PRODUCT.md §6.1): the row keeps its place
+            // so replies to it still make sense, and says why it is empty.
+            <p className="text-sm italic text-ink-subtle">Message from someone you blocked</p>
+          ) : (
+            <p
+              className={`whitespace-pre-wrap break-words text-base ${mine ? 'text-brand-fg' : 'text-ink'}`}
+            >
+              {message.body}
+            </p>
+          )}
         </div>
         <p className={`mt-0.5 text-xs text-ink-subtle ${mine ? 'text-right' : ''}`}>
           {new Date(message.createdAt).toLocaleTimeString([], {

@@ -21,6 +21,7 @@ import {
   devices,
   posts,
   refreshTokens,
+  userBlocks,
   users,
   webPushSubscriptions,
 } from '../db/schema.js';
@@ -82,6 +83,8 @@ export const meRoutes = new Hono<AppEnv>()
       statusKey: statusIsCurrent(user.statusDate, localDateOrUtc(user.timezone))
         ? user.statusKey
         : null,
+      quietHoursStart: user.quietHoursStart,
+      quietHoursEnd: user.quietHoursEnd,
       buddyProfile: profile
         ? {
             headline: profile.headline,
@@ -91,6 +94,25 @@ export const meRoutes = new Hono<AppEnv>()
           }
         : null,
     });
+  })
+
+  /** Everyone the caller has blocked, so the list can be undone from settings. */
+  .get('/blocks', async (c) => {
+    const client = db(c.env.DB);
+    const userId = currentUserId(c);
+    const rows = await client
+      .select({
+        id: users.id,
+        handle: users.handle,
+        displayName: users.displayName,
+        avatarKey: users.avatarKey,
+        blockedAt: userBlocks.createdAt,
+      })
+      .from(userBlocks)
+      .innerJoin(users, eq(users.id, userBlocks.blockedId))
+      .where(eq(userBlocks.blockerId, userId))
+      .orderBy(userBlocks.createdAt);
+    return c.json({ blocks: rows });
   })
 
   /**
@@ -226,8 +248,18 @@ export const meRoutes = new Hono<AppEnv>()
      * to set, and Drizzle rejects an empty SET with "No values to set" rather
      * than treating it as a no-op.
      */
+    // Quiet hours travel as a pair: one without the other has no window.
+    if ((patch.quietHoursStart === undefined) !== (patch.quietHoursEnd === undefined)) {
+      throw badRequest('Send both quiet hours, or neither');
+    }
+
     const columns = {
       ...(patch.displayName !== undefined && { displayName: patch.displayName }),
+      ...(patch.quietHoursStart !== undefined &&
+        patch.quietHoursEnd !== undefined && {
+          quietHoursStart: patch.quietHoursStart,
+          quietHoursEnd: patch.quietHoursEnd,
+        }),
       ...(patch.handle !== undefined && { handle: patch.handle }),
       ...(patch.timezone !== undefined && { timezone: patch.timezone }),
       ...(patch.avatarKey !== undefined && { avatarKey: patch.avatarKey ?? null }),

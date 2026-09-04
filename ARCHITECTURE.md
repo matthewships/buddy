@@ -439,6 +439,55 @@ exists.
 
 ---
 
+## 2.10 The safety floor — added 2026-09-04 (PRODUCT.md slice 0)
+
+The first slice of the v3 proposal (PRODUCT.md §6.1, §6.3, §5.3), and the
+one that had to come before any of the others: every later slice adds
+contact between strangers, and until this landed there was no way to end
+contact with one. Migration `0011_safety_floor` is hand-written and contains
+only `ADD COLUMN` and `CREATE TABLE`, for the reason 0009 records.
+
+- **Block** (`POST/DELETE /api/users/:handle/block`, `GET /api/me/blocks`).
+  Stored in one direction in `user_blocks`, read in both: the directory, the
+  feed, public profiles, buddy requests, group invites and chat history all
+  exclude a pair if either row exists, and the chat room skips the sockets of
+  anyone in a block pair with the sender. A blocked profile, request or
+  invite reads as **absence** (404), never as "blocked" — the block exists to
+  withhold exactly that. Blocking expires any pending request between the two
+  and removes the blocker from every *matched* two-person group the pair
+  share; a room of two where one has blocked the other is not a group. Chat
+  history from a blocked sender is collapsed (empty body, `blocked: true`)
+  rather than removed, so paging and replies still make sense.
+- **Mute** (`POST/DELETE /api/groups/:id/mute`, `group_mutes`). The group's
+  chat and task pushes stop reaching the member; the room is untouched.
+  `GET /api/groups/:id` returns `muted` for the caller.
+- **Leave with a reason** (`POST /api/groups/:id/leave` now takes an optional
+  `{reason, note}`; `group_departures`). Private to the leaver, kept after the
+  membership row and the group itself are gone — `group_id` is deliberately
+  not a foreign key, because the reasons a group emptied are the one thing
+  that should survive it. The body stays optional so the mobile app, which
+  posts nothing, is unaffected. `LEAVE_REASONS` is data in `packages/shared`.
+- **The adult line** (`isMinor`, `ADULT_AGE_YEARS = 18`, `adultLineCondition`).
+  A viewer under eighteen sees only users whose recorded birth date also puts
+  them under it; everyone else sees only users over it *or with no recorded
+  date*. An unrecorded age is read as adult, because every account that
+  predates the age gate has one, and treating them as unknown would empty the
+  directory. Requests across the line read as absence. Self-declared, like
+  the floor in §2.8: a line, not assurance.
+- **Quiet hours** (`users.quiet_hours_start/end`, default 23–07, local;
+  `PATCH /me` takes the pair). Applied in the queue consumer
+  (`dropQuietRecipients`), against each recipient's own local hour, and only
+  to the push types in `QUIET_PUSH_TYPES` — a buddy request or a chat message
+  is a person reaching out; quiet hours are about the product not doing so.
+  A recipient inside their window is dropped, not delayed: a nudge delivered
+  late is a nudge about nothing.
+
+Web: block on a profile (confirmed), the blocked list and quiet hours in
+profile settings, mute and leave-with-reason in group settings, collapsed
+bubbles in chat. Tests: `apps/api/test/safety.test.ts`.
+
+---
+
 ## 3. System diagram
 
 ```

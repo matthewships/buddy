@@ -210,6 +210,13 @@ export const users = sqliteTable(
      */
     statusKey: text('status_key'),
     statusDate: text('status_date'),
+    /**
+     * Quiet hours (PRODUCT.md §5.3), local, 24-hour. Plain ADD COLUMN with a
+     * default, which SQLite allows in place; the window wraps midnight, and
+     * `inQuietHours` in packages/shared is the one definition of "inside it".
+     */
+    quietHoursStart: integer('quiet_hours_start').notNull().default(23),
+    quietHoursEnd: integer('quiet_hours_end').notNull().default(7),
     isOpenBuddy: integer('is_open_buddy', { mode: 'boolean' }).notNull().default(false),
     // Set when the user finishes onboarding (handle, goal, occupation). The app
     // reads it to decide between the onboarding stack and the tabs; deriving it
@@ -704,6 +711,78 @@ export const userBadges = sqliteTable(
 );
 
 /* ------------------------------------------------------------------ *
+ * Safety (PRODUCT.md §6.1, slice 0)
+ * ------------------------------------------------------------------ */
+
+/**
+ * One row per block. Directional in storage, mutual in effect: every
+ * people-listing query excludes a pair if *either* row exists, so a person who
+ * blocks somebody also disappears from that somebody's directory, feed and
+ * chat. Storing the direction is what lets the blocker, and only the blocker,
+ * undo it.
+ */
+export const userBlocks = sqliteTable(
+  'user_blocks',
+  {
+    blockerId: text('blocker_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    blockedId: text('blocked_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    primaryKey({ columns: [t.blockerId, t.blockedId] }),
+    // "Who has blocked me?" — the other half of every mutual check.
+    index('user_blocks_blocked_idx').on(t.blockedId),
+    check('user_blocks_not_self', sql`"blocker_id" <> "blocked_id"`),
+  ],
+);
+
+/**
+ * Muting a group: its chat and nudge pushes stop reaching this member. Chat
+ * itself is unaffected; the mute is about the phone buzzing, not the room.
+ */
+export const groupMutes = sqliteTable(
+  'group_mutes',
+  {
+    groupId: text('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_mutes_user_idx').on(t.userId)],
+);
+
+/**
+ * Why somebody left. Kept after the membership row is gone — that is its
+ * point — and after the group is gone too, so `group_id` is not a foreign
+ * key: a group deleted when its last member leaves would otherwise take the
+ * reasons with it, and the reasons are what say why it emptied.
+ *
+ * `reason` is not CHECK-constrained; `LEAVE_REASONS` in packages/shared is the
+ * list, and Zod is the gate.
+ */
+export const groupDepartures = sqliteTable(
+  'group_departures',
+  {
+    id: text('id').primaryKey(),
+    groupId: text('group_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reason: text('reason'),
+    note: text('note'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [index('group_departures_group_idx').on(t.groupId)],
+);
+
+/* ------------------------------------------------------------------ *
  * Chat & moderation
  * ------------------------------------------------------------------ */
 
@@ -874,4 +953,6 @@ export type CreditLedgerEntry = typeof creditLedger.$inferSelect;
 export type UserStats = typeof userStats.$inferSelect;
 export type UserBadge = typeof userBadges.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type UserBlock = typeof userBlocks.$inferSelect;
+export type GroupMute = typeof groupMutes.$inferSelect;
 export type Report = typeof reports.$inferSelect;

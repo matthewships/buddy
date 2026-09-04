@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -19,6 +19,7 @@ import { newId } from '../lib/ids.js';
 import { enforceRateLimit } from '../lib/rate-limit.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
+import { blockedIdsFor } from '../services/blocks.js';
 import { enqueuePush } from '../services/push.js';
 
 /**
@@ -63,6 +64,10 @@ export const postRoutes = new Hono<AppEnv>()
     const viewerId = currentUserId(c);
     const client = db(c.env.DB);
 
+    // Mutual invisibility (PRODUCT.md §6.1): a blocked pair sees neither
+    // side's posts. Filtered in the query, so paging stays correct.
+    const blockedIds = await blockedIdsFor(client, viewerId);
+
     const rows = await client
       .select({
         id: posts.id,
@@ -82,6 +87,7 @@ export const postRoutes = new Hono<AppEnv>()
           // A deleted account's posts go with it, but the soft delete leaves the
           // row — so exclude them here too rather than showing "Deleted account".
           isNull(users.deletedAt),
+          ...(blockedIds.length ? [notInArray(posts.userId, blockedIds)] : []),
           ...(cursor ? [lt(posts.id, cursor)] : []),
         ),
       )

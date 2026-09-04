@@ -6,11 +6,12 @@ import { useState } from 'react';
 import { MAX_REQUEST_MESSAGE } from '@buddy/shared';
 
 import { useCurrentRequest, useSendRequest } from '@/api/buddies';
-import { useProfile } from '@/api/users';
+import { useBlockUser, useProfile } from '@/api/users';
 import {
   BackLink,
   Button,
   Card,
+  ConfirmSheet,
   ErrorText,
   Field,
   ProfileView,
@@ -34,8 +35,10 @@ export default function BuddyProfile() {
   const profile = useProfile(handle);
   const current = useCurrentRequest();
   const sendRequest = useSendRequest();
+  const block = useBlockUser();
 
   const [message, setMessage] = useState('');
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
 
   if (profile.isPending) {
     return (
@@ -114,6 +117,39 @@ export default function BuddyProfile() {
               </p>
             </Card>
           )
+        }
+      />
+
+      {/*
+        The safety floor (PRODUCT.md §6.1). Quiet, at the bottom, and always
+        there: a control that only appears once something has gone wrong is a
+        control nobody finds in time.
+      */}
+      <div className="mt-6 flex flex-col items-center gap-1">
+        <Button
+          label={`Block ${person.displayName}`}
+          variant="ghost"
+          className="w-auto"
+          onClick={() => setConfirmingBlock(true)}
+        />
+        <ErrorText message={block.error?.message} />
+      </div>
+
+      <ConfirmSheet
+        open={confirmingBlock}
+        title={`Block ${person.displayName}?`}
+        body="You will not see each other in the directory, the feed or in chat, and any request between you lapses. If you share a matched group, you leave it. You can undo this from your settings."
+        confirmLabel="Block"
+        cancelLabel="Keep them"
+        busy={block.isPending}
+        onCancel={() => setConfirmingBlock(false)}
+        onConfirm={() =>
+          block.mutate(person.handle, {
+            onSuccess: () => {
+              setConfirmingBlock(false);
+              router.replace('/buddies');
+            },
+          })
         }
       />
     </Screen>

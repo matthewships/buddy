@@ -1,8 +1,11 @@
 import { eq, inArray } from 'drizzle-orm';
 
+import { QUIET_PUSH_TYPES, inQuietHours } from '@buddy/shared';
+
 import type { Db } from '../db/client.js';
-import { devices, webPushSubscriptions } from '../db/schema.js';
+import { devices, users, webPushSubscriptions } from '../db/schema.js';
 import type { Env } from '../env.js';
+import { localHour } from '../lib/time.js';
 import { sendWebPush, type VapidKeys } from './web-push.js';
 
 /**
@@ -69,8 +72,9 @@ interface ExpoTicket {
 export async function deliverPush(
   env: Env,
   db: Db,
-  messages: PushMessage[],
+  inbound: PushMessage[],
 ): Promise<{ sent: number; removed: number; webSent: number; webRemoved: number }> {
+  const messages = await dropQuietRecipients(db, inbound);
   const userIds = [...new Set(messages.flatMap((m) => m.userIds))];
   if (userIds.length === 0) return { sent: 0, removed: 0, webSent: 0, webRemoved: 0 };
 
@@ -81,6 +85,54 @@ export async function deliverPush(
   const web = await deliverWeb(env, db, messages, userIds);
 
   return { ...expo, webSent: web.sent, webRemoved: web.removed };
+}
+
+/**
+ * Quiet hours (PRODUCT.md §5.3), applied at delivery rather than at enqueue.
+ *
+ * Only the nudge-shaped types are silenced — `QUIET_PUSH_TYPES` — because a
+ * buddy request or a chat message is a person reaching out, and quiet hours
+ * are about the product not doing so. Applied here, in the one place every
+ * push passes through, so that no route has to remember; and against each
+ * recipient's *own* local hour, because a group spans timezones and a nudge
+ * that is fine in London is 3am in Tokyo. A recipient inside their window is
+ * simply dropped: a nudge delivered late is a nudge about nothing.
+ */
+export async function dropQuietRecipients(db: Db, messages: PushMessage[]): Promise<PushMessage[]> {
+  const quietMessages = messages.filter((m) => m.data?.type && QUIET_PUSH_TYPES.has(m.data.type));
+  if (quietMessages.length === 0) return messages;
+
+  const ids = [...new Set(quietMessages.flatMap((m) => m.userIds))];
+  if (ids.length === 0) return messages;
+
+  const rows = await db
+    .select({
+      id: users.id,
+      timezone: users.timezone,
+      start: users.quietHoursStart,
+      end: users.quietHoursEnd,
+    })
+    .from(users)
+    .where(inArray(users.id, ids));
+
+  const now = new Date();
+  const quiet = new Set<string>();
+  for (const row of rows) {
+    let hour: number;
+    try {
+      hour = localHour(row.timezone, now);
+    } catch {
+      continue;
+    }
+    if (inQuietHours(hour, row.start, row.end)) quiet.add(row.id);
+  }
+  if (quiet.size === 0) return messages;
+
+  return messages.map((m) =>
+    m.data?.type && QUIET_PUSH_TYPES.has(m.data.type)
+      ? { ...m, userIds: m.userIds.filter((id) => !quiet.has(id)) }
+      : m,
+  );
 }
 
 async function deliverExpo(

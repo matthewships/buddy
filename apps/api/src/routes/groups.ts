@@ -9,11 +9,20 @@ import {
   groupLeaderboardQuerySchema,
   statusIsCurrent,
   inviteToGroupSchema,
+  leaveGroupSchema,
   setGroupBuddySchema,
 } from '@buddy/shared';
 
 import { db, type Db } from '../db/client.js';
-import { groupInviteLinks, groupInvites, groupMembers, groups, users } from '../db/schema.js';
+import {
+  groupDepartures,
+  groupInviteLinks,
+  groupInvites,
+  groupMembers,
+  groupMutes,
+  groups,
+  users,
+} from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, forbidden, gone, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
@@ -21,6 +30,7 @@ import { enforceRateLimit } from '../lib/rate-limit.js';
 import { newInviteToken } from '../lib/tokens.js';
 import { localDateOrUtc, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
+import { isBlockedPair } from '../services/blocks.js';
 import { groupLeaderboard } from '../services/leaderboard.js';
 import { enqueuePush } from '../services/push.js';
 
@@ -151,6 +161,11 @@ export const groupRoutes = new Hono<AppEnv>()
       statusKey: statusIsCurrent(statusDate, localDateOrUtc(timezone)) ? statusKey : null,
     }));
 
+    const mute = await client.query.groupMutes.findFirst({
+      where: and(eq(groupMutes.groupId, groupId), eq(groupMutes.userId, userId)),
+      columns: { userId: true },
+    });
+
     return c.json({
       group: {
         id: group.id,
@@ -158,6 +173,8 @@ export const groupRoutes = new Hono<AppEnv>()
         emoji: group.emoji,
         kind: group.kind,
         createdAt: group.createdAt,
+        /** Whether the caller has muted this group's pushes (PRODUCT.md §6.1). */
+        muted: Boolean(mute),
         // Returned so the client can offer the same answer the rule below
         // enforces. Inferring it from the `owner` member role would be a
         // second source for one fact, and the two can disagree.
@@ -341,6 +358,10 @@ export const groupRoutes = new Hono<AppEnv>()
       columns: { id: true, deletedAt: true },
     });
     if (!target || target.deletedAt !== null) throw notFound(`No one is using @${handle}`);
+    // Absence rather than refusal, in both directions (PRODUCT.md §6.1).
+    if (await isBlockedPair(client, fromUserId, target.id)) {
+      throw notFound(`No one is using @${handle}`);
+    }
     if (target.id === fromUserId) throw badRequest('You are already in this group');
 
     const already = await client.query.groupMembers.findFirst({
@@ -383,13 +404,51 @@ export const groupRoutes = new Hono<AppEnv>()
     return c.json({ id, handle, status: 'pending' as const }, 201);
   })
 
-  /** Leaving. The last member out deletes the group rather than orphaning it. */
-  .post('/:id/leave', async (c) => {
+  /**
+   * Muting: the group's chat and nudge pushes stop reaching this member
+   * (PRODUCT.md §6.1). Nothing else changes; the room itself is unaffected.
+   */
+  .post('/:id/mute', async (c) => {
     const groupId = c.req.param('id');
     const userId = currentUserId(c);
     const client = db(c.env.DB);
+    await assertMember(client, groupId, userId);
+    await client.insert(groupMutes).values({ groupId, userId }).onConflictDoNothing();
+    return c.json({ muted: true as const });
+  })
+
+  .delete('/:id/mute', async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+    await assertMember(client, groupId, userId);
+    await client
+      .delete(groupMutes)
+      .where(and(eq(groupMutes.groupId, groupId), eq(groupMutes.userId, userId)));
+    return c.json({ muted: false as const });
+  })
+
+  /**
+   * Leaving, optionally saying why (PRODUCT.md §6.1). The reason is private to
+   * the leaver and recorded before the membership row goes, in a table that
+   * outlives the group. The last member out deletes the group rather than
+   * orphaning it.
+   */
+  .post('/:id/leave', zValidator('json', leaveGroupSchema.optional()), async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+    const { reason, note } = c.req.valid('json') ?? {};
 
     await assertMember(client, groupId, userId);
+
+    await client.insert(groupDepartures).values({
+      id: newId(),
+      groupId,
+      userId,
+      reason: reason ?? null,
+      note: note ?? null,
+    });
 
     await client
       .delete(groupMembers)

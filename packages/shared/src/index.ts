@@ -22,6 +22,7 @@ export * from './majors';
 export * from './occupations';
 export * from './profile-strength';
 export * from './reactions';
+export * from './safety';
 export * from './schemas';
 export * from './statuses';
 export * from './topics';

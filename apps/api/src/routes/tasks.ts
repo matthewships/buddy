@@ -20,6 +20,7 @@ import { newId } from '../lib/ids.js';
 import { localDate, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { syncBadges } from '../services/badges.js';
+import { mutedIdsFor } from '../services/blocks.js';
 import { awardApproval, chargeAbandon, countReview } from '../services/credits.js';
 import { enqueuePush } from '../services/push.js';
 import { reviewRightsFor } from '../services/review-rights.js';
@@ -701,5 +702,10 @@ async function notifyGroup(
     .from(groupMembers)
     .where(and(eq(groupMembers.groupId, groupId), ne(groupMembers.userId, exceptUserId)));
 
-  await enqueuePush(c.env, { userIds: members.map((m) => m.userId), ...message });
+  // A member who muted the group asked not to be buzzed by it (PRODUCT.md §6.1).
+  const muted = await mutedIdsFor(client, groupId);
+  await enqueuePush(c.env, {
+    userIds: members.map((m) => m.userId).filter((id) => !muted.has(id)),
+    ...message,
+  });
 }
