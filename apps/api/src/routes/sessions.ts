@@ -1,8 +1,8 @@
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 
-import { createSessionSchema, joinSessionSchema } from '@buddy/shared';
+import { createSessionSchema, joinSessionSchema, nudgeTaskSchema } from '@buddy/shared';
 
 import { db, type Db } from '../db/client.js';
 import { sessionParticipants, sessionTasks, sessions, tasks, users } from '../db/schema.js';
@@ -12,6 +12,7 @@ import { newId } from '../lib/ids.js';
 import { nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { mutedIdsFor } from '../services/blocks.js';
+import { joinedOnTime, sendBuddyNudge } from '../services/pressure.js';
 import { enqueuePush } from '../services/push.js';
 import { attachTask, endSession, leaveSession, liveGroupSession } from '../services/sessions.js';
 import { assertMember } from './groups.js';
@@ -203,6 +204,8 @@ export const sessionRoutes = new Hono<AppEnv>()
     const now = nowIso();
     const live = session.state === 'live';
 
+    // On time means present within five minutes of the start (PRODUCT.md §3.3).
+    const onTime = live ? joinedOnTime(session.startedAt, now) : null;
     await client
       .insert(sessionParticipants)
       .values({
@@ -211,6 +214,7 @@ export const sessionRoutes = new Hono<AppEnv>()
         state: live ? 'present' : 'committed',
         joinedAt: live ? now : null,
         lastSeenAt: live ? now : null,
+        onTime,
       })
       .onConflictDoUpdate({
         target: [sessionParticipants.sessionId, sessionParticipants.userId],
@@ -219,6 +223,8 @@ export const sessionRoutes = new Hono<AppEnv>()
           joinedAt: live ? now : null,
           lastSeenAt: live ? now : null,
           leftAt: null,
+          // A first join decides it; a rejoin after leaving does not rewrite it.
+          onTime: sql`COALESCE(${sessionParticipants.onTime}, ${onTime})`,
         },
       });
     if (task && live) await bringTask(client, id, task, now);
@@ -276,13 +282,19 @@ export const sessionRoutes = new Hono<AppEnv>()
     if (session.state !== 'scheduled') throw conflict('That session is not waiting to start');
     if (await liveGroupSession(client, session.groupId)) throw conflict('Another session is already running');
 
+    /**
+     * Only the host is present at the start. Everyone who committed stays
+     * `committed` until they join — that is what lets the pressure job tell
+     * late from absent (PRODUCT.md §3.3), and it is the truth: a commitment is
+     * not attendance.
+     */
     const now = nowIso();
     await client.batch([
       client.update(sessions).set({ state: 'live', startedAt: now }).where(eq(sessions.id, id)),
       client
         .update(sessionParticipants)
-        .set({ state: 'present', joinedAt: now, lastSeenAt: now })
-        .where(and(eq(sessionParticipants.sessionId, id), eq(sessionParticipants.state, 'committed'))),
+        .set({ state: 'present', joinedAt: now, lastSeenAt: now, onTime: 1 })
+        .where(and(eq(sessionParticipants.sessionId, id), eq(sessionParticipants.userId, userId))),
     ]);
 
     const committed = await client.query.sessionParticipants.findMany({
@@ -297,6 +309,48 @@ export const sessionRoutes = new Hono<AppEnv>()
     });
     c.executionCtx.waitUntil(c.env.GROUP_CHAT.getByName(session.groupId).noteFocusChange(userId));
     return c.json(await describe(client, id));
+  })
+
+  /**
+   * A present member nudges somebody who committed and has not arrived
+   * (PRODUCT.md §3.3): the same four lines, one per sender per target per
+   * session, inside the recipient's daily budget.
+   */
+  .post('/:id/nudge/:userId', zValidator('json', nudgeTaskSchema), async (c) => {
+    const id = c.req.param('id');
+    const toUserId = c.req.param('userId');
+    const { template } = c.req.valid('json');
+    const fromUserId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    const session = await client.query.sessions.findFirst({ where: eq(sessions.id, id) });
+    if (!session) throw notFound('No such session');
+    if (session.state !== 'live') throw conflict('That session is not running');
+    if (toUserId === fromUserId) throw badRequest('You cannot nudge yourself');
+
+    const [me, them] = await Promise.all([
+      client.query.sessionParticipants.findFirst({
+        where: and(eq(sessionParticipants.sessionId, id), eq(sessionParticipants.userId, fromUserId)),
+      }),
+      client.query.sessionParticipants.findFirst({
+        where: and(eq(sessionParticipants.sessionId, id), eq(sessionParticipants.userId, toUserId)),
+      }),
+    ]);
+    if (!me || !['present', 'late'].includes(me.state)) throw forbidden('Join the session to nudge from it');
+    if (!them || !['committed', 'late'].includes(them.state)) throw conflict('They are not waiting to be nudged');
+
+    const sender = await client.query.users.findFirst({ where: eq(users.id, fromUserId), columns: { displayName: true } });
+    const result = await sendBuddyNudge(client, c.env, {
+      fromUserId,
+      fromName: sender?.displayName ?? 'Someone',
+      toUserId,
+      template,
+      sessionId: id,
+      groupId: session.groupId,
+      title: `${session.plannedMinutes}-minute session, running now`,
+    });
+    if (!result.ok) throw conflict(result.reason);
+    return c.json({ id: result.id, template }, 201);
   })
 
   /** The host ends it. Everyone present is settled. */

@@ -25,6 +25,7 @@ import {
 } from '../db/schema.js';
 import { newId } from '../lib/ids.js';
 import { isoWeekKey, localDateOrUtc, nowIso, previousLocalDate } from '../lib/time.js';
+import { recomputeReliability } from './pressure.js';
 
 /**
  * Sessions (PRODUCT.md §3.1, slice 1).
@@ -198,6 +199,18 @@ export async function endSession(client: Db, sessionId: string, at: string = now
     .returning({ id: sessions.id });
   if (claimed.length === 0) return;
 
+  // Somebody still `committed` or `late` with no join when it ends never came.
+  await client
+    .update(sessionParticipants)
+    .set({ state: 'no_show', onTime: 0 })
+    .where(
+      and(
+        eq(sessionParticipants.sessionId, sessionId),
+        inArray(sessionParticipants.state, ['committed', 'late']),
+        sql`${sessionParticipants.joinedAt} IS NULL`,
+      ),
+    );
+
   const present = await client.query.sessionParticipants.findMany({
     where: and(eq(sessionParticipants.sessionId, sessionId), inArray(sessionParticipants.state, ['present', 'late'])),
   });
@@ -210,6 +223,15 @@ export async function endSession(client: Db, sessionId: string, at: string = now
     columns: { id: true, startedAt: true, estimatedMinutes: true, sessionId: true },
   });
   for (const task of strays) await settleTaskClock(client, task, at);
+
+  if (session.kind === 'group') {
+    // Reliability (PRODUCT.md §3.6) for everyone who was ever on the roster.
+    const everyone = await client.query.sessionParticipants.findMany({
+      where: eq(sessionParticipants.sessionId, sessionId),
+      columns: { userId: true },
+    });
+    for (const p of everyone) await recomputeReliability(client, p.userId);
+  }
 
   if (session.kind === 'group' && present.length >= 2) {
     const anyoneLeft = await client.query.sessionParticipants.findFirst({

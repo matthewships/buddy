@@ -556,6 +556,54 @@ the new rules.
 
 ---
 
+## 2.12 Pressure — added 2026-09-04 (PRODUCT.md slice 2)
+
+The brief's centre, and the part the build was emptiest on: nudges,
+check-ins, and the number that carries the pressure. Migration
+`0013_pressure` is `ADD COLUMN` and `CREATE TABLE` only.
+
+- **The latest start** is derived, never scheduled: the task carries the
+  time it needs and the day ends at the owner's midnight, so
+  `latestStartAt = localDayEnd(timezone, dueDate) − estimate` is returned on
+  every task list. `localDayEnd` corrects for the zone's offset twice so the
+  night the clocks change is right. The owner may set an earlier `start_by`
+  (`HH:MM`, `PATCH /tasks/:id`); later than the arithmetic is refused.
+- **Three nudges, one table.** `nudges` holds the system's start nudge, a
+  groupmate's templated one, a requested check-in and its reply, keyed on the
+  recipient's local day so the budget (PRODUCT.md §5.3:
+  `MAX_BUDDY_NUDGES_PER_DAY`, `MAX_CHECKINS_PER_DAY`) is one count. The
+  templates are data in `packages/shared` (`NUDGE_TEMPLATES`,
+  `CHECKIN_REPLIES`); there is no free text, because free text is where
+  nagging lives.
+- **The quarter-hourly job** (`jobs/pressure.ts`, cron `*/15 * * * *`,
+  branched on `controller.cron` so the rollover stays hourly) sends the start
+  nudge once per task per day inside `START_NUDGE_LEAD_MINUTES`, marks a
+  `committed` member of a live group session `late` after
+  `LATE_AFTER_MINUTES` and `no_show` after `NO_SHOW_AFTER_MINUTES` (never
+  joined), and sends due check-ins. Idempotent through the table and the
+  participant states; quiet hours are applied at delivery.
+- **A commitment is not attendance.** Starting a scheduled session now makes
+  only the host present; everyone else stays `committed` until they join,
+  which is what lets late be told from absent. Late join is always allowed
+  (PRODUCT.md §3.3). **Supersedes** slice 1's "committed become present on
+  start".
+- **Reliability** (`user_stats.reliability_pct/_sessions`): on-time
+  attendance over the last `RELIABILITY_WINDOW` committed group sessions,
+  recomputed for every participant when a group session ends;
+  `session_participants.on_time` is decided on the first join. Shown as a
+  band (`reliabilityBand`) on the card and the profile; the number only to
+  its owner. Below `RELIABILITY_SUSPEND_BELOW` with at least
+  `RELIABILITY_MIN_SESSIONS` sessions, `POST /buddy-requests` is refused
+  with the reason and the way back. Nothing here touches credits.
+- **Requested check-ins** are owner-initiated (`POST /tasks/:id/checkin`),
+  for today, to one groupmate; the buddy replies once
+  (`POST /nudges/:id/reply`) with one of three lines. The `to_user_id` of a
+  check-in row is the owner, because it is their budget and their screen.
+
+Tests: `apps/api/test/pressure.test.ts`.
+
+---
+
 ## 3. System diagram
 
 ```

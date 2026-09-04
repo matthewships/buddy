@@ -41,6 +41,10 @@ export interface PublicProfile extends StudentFields {
     bestStreak: number;
     tasksApproved: number;
     reviewsGiven: number;
+    /** On-time attendance, as a band; the number only on your own profile (PRODUCT.md §3.6). */
+    reliability: 'reliable' | 'mostly' | 'rebuilding' | 'new';
+    reliabilityPct: number | null;
+    reliabilitySessions: number;
   };
   badges: { key: string; name: string; description: string; emoji: string; awardedAt: string }[];
   buddyProfile: {

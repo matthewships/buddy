@@ -602,6 +602,12 @@ export const tasks = sqliteTable(
     sessionId: text('session_id'),
     /** Minutes this task has had on a clock, across every session it was in. */
     actualMinutes: integer('actual_minutes').notNull().default(0),
+    /**
+     * The owner's own "start by", `HH:MM` on the task's local day (PRODUCT.md
+     * §3.1, slice 2). The derived latest start — local midnight minus the
+     * estimate — is computed, never stored; this is only the earlier override.
+     */
+    startBy: text('start_by'),
     status: text('status').notNull().default('planned'),
     proofText: text('proof_text'),
     proofImageKey: text('proof_image_key'),
@@ -706,6 +712,13 @@ export const userStats = sqliteTable(
     /** Streak freezes left this month, and the month they belong to. */
     freezesAvailable: integer('freezes_available').notNull().default(2),
     freezesMonth: text('freezes_month'),
+    /**
+     * Reliability (PRODUCT.md §3.6, slice 2): on-time attendance over the last
+     * `RELIABILITY_WINDOW` committed group sessions, as a percentage, and how
+     * many sessions it rests on. Recomputed when a group session ends.
+     */
+    reliabilityPct: integer('reliability_pct'),
+    reliabilitySessions: integer('reliability_sessions').notNull().default(0),
     updatedAt: text('updated_at').notNull().default(now),
   },
   (t) => [
@@ -788,6 +801,8 @@ export const sessionParticipants = sqliteTable(
     leftAt: text('left_at'),
     lastSeenAt: text('last_seen_at'),
     presentMinutes: integer('present_minutes').notNull().default(0),
+    /** 1 when they were present within `LATE_AFTER_MINUTES` of the start; 0 when late; null until known. */
+    onTime: integer('on_time'),
     createdAt: text('created_at').notNull().default(now),
   },
   (t) => [
@@ -856,6 +871,40 @@ export const restDays = sqliteTable(
     createdAt: text('created_at').notNull().default(now),
   },
   (t) => [primaryKey({ columns: [t.userId, t.date] })],
+);
+
+/**
+ * Every nudge (PRODUCT.md §3.3, slice 2): the system's start nudge, a
+ * groupmate's templated one, a check-in the owner asked for and its reply.
+ * One table because they share a budget — `to_user_id` and `day` are what
+ * the per-recipient limit counts — and because a task's screen lists them
+ * together. `kind` and `template` are not CHECK-constrained; the lists live
+ * in packages/shared.
+ */
+export const nudges = sqliteTable(
+  'nudges',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id').references(() => sessions.id, { onDelete: 'cascade' }),
+    fromUserId: text('from_user_id').references(() => users.id, { onDelete: 'cascade' }),
+    toUserId: text('to_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    template: text('template'),
+    /** The recipient's local day, for the budget. */
+    day: text('day').notNull(),
+    /** For a requested check-in: when the buddy is asked to look. */
+    scheduledFor: text('scheduled_for'),
+    sentAt: text('sent_at'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (t) => [
+    index('nudges_recipient_day_idx').on(t.toUserId, t.day, t.kind),
+    index('nudges_task_idx').on(t.taskId),
+    index('nudges_pending_idx').on(t.kind, t.sentAt, t.scheduledFor),
+  ],
 );
 
 /* ------------------------------------------------------------------ *
@@ -1103,6 +1152,7 @@ export type UserBadge = typeof userBadges.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type UserBlock = typeof userBlocks.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
+export type Nudge = typeof nudges.$inferSelect;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type GroupMute = typeof groupMutes.$inferSelect;
 export type Report = typeof reports.$inferSelect;

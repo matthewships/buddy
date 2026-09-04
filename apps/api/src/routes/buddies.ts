@@ -3,7 +3,7 @@ import { and, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { Hono } from 'hono';
 
-import { type BuddySort, buddyDirectoryQuerySchema, isMinor } from '@buddy/shared';
+import { type BuddySort, buddyDirectoryQuerySchema, isMinor, reliabilityBand } from '@buddy/shared';
 
 import { db } from '../db/client.js';
 import { buddyProfiles, groupMembers, userStats, userTags, users } from '../db/schema.js';
@@ -241,6 +241,8 @@ export const buddyRoutes = new Hono<AppEnv>()
         totalCredits: userStats.totalCredits,
         currentStreak: userStats.currentStreak,
         reviewsGiven: userStats.reviewsGiven,
+        reliabilityPct: userStats.reliabilityPct,
+        reliabilitySessions: userStats.reliabilitySessions,
         /**
          * The card's chips, aggregated in the query rather than fetched per
          * row: a page of 20 buddies would otherwise be 20 extra round trips.
@@ -302,6 +304,8 @@ export const buddyRoutes = new Hono<AppEnv>()
           totalCredits: row.totalCredits ?? 0,
           currentStreak: row.currentStreak ?? 0,
           reviewsGiven: row.reviewsGiven ?? 0,
+          // The band, never the number, on somebody else's card (PRODUCT.md §5.3).
+          reliability: reliabilityBand(row.reliabilityPct ?? null, row.reliabilitySessions ?? 0),
         },
       })),
       nextCursor:

@@ -51,8 +51,10 @@
   // Hourly: day rollover. Monday 00:05 UTC: freeze the week's leaderboard and
   // reset weekly credits (§4.9). Both fire the same `scheduled` handler, which
   // branches on controller.cron.
+  // Every quarter hour: the pressure job (jobs/pressure.ts) — start nudges,
+  // late and absent marks, requested check-ins. Branched on controller.cron.
   "triggers": {
-    "crons": ["0 * * * *", "5 0 * * 1"]
+    "crons": ["0 * * * *", "5 0 * * 1", "*/15 * * * *"]
   },
 
   // Push delivery (§4.6). The Worker is both producer (routes enqueue) and

@@ -19,6 +19,7 @@ export * from './interests';
 export * from './level-fit';
 export * from './limits';
 export * from './majors';
+export * from './nudges';
 export * from './occupations';
 export * from './profile-strength';
 export * from './reactions';

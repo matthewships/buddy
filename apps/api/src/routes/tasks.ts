@@ -7,6 +7,8 @@ import {
   createTaskSchema,
   localDateSchema,
   markTaskDoneSchema,
+  nudgeTaskSchema,
+  requestCheckinSchema,
   reviewTaskSchema,
   ulidSchema,
   updateTaskSchema,
@@ -17,13 +19,14 @@ import { groupMembers, groups, sessions, taskReviews, tasks, users } from '../db
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
-import { localDate, nowIso } from '../lib/time.js';
+import { localDate, localDateOrUtc, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
 import { syncBadges } from '../services/badges.js';
 import { mutedIdsFor } from '../services/blocks.js';
 import { awardApproval, countReview } from '../services/credits.js';
 import { enqueuePush } from '../services/push.js';
 import { reviewRightsFor } from '../services/review-rights.js';
+import { latestStart, nudgesForTask, requestCheckin, sendBuddyNudge } from '../services/pressure.js';
 import {
   attachTask,
   endSession,
@@ -101,6 +104,7 @@ const taskColumns = {
   startedAt: tasks.startedAt,
   sessionId: tasks.sessionId,
   actualMinutes: tasks.actualMinutes,
+  startBy: tasks.startBy,
   status: tasks.status,
   proofText: tasks.proofText,
   proofImageKey: tasks.proofImageKey,
@@ -189,6 +193,7 @@ export const taskRoutes = new Hono<AppEnv>()
         ...taskColumns,
         ownerHandle: users.handle,
         ownerDisplayName: users.displayName,
+        ownerTimezone: users.timezone,
         groupName: groups.name,
       })
       .from(tasks)
@@ -203,7 +208,18 @@ export const taskRoutes = new Hono<AppEnv>()
       )
       .orderBy(desc(tasks.dueDate), tasks.createdAt);
 
-    return c.json({ tasks: rows });
+    /**
+     * The latest start (PRODUCT.md §3.1, slice 2), derived per task from the
+     * owner's own midnight and the estimate, so a groupmate can see "start by
+     * 22:30" without the owner scheduling anything. `latestStartAt` is an
+     * instant; `startBy` above is only the owner's earlier override.
+     */
+    return c.json({
+      tasks: rows.map(({ ownerTimezone, ...row }) => ({
+        ...row,
+        latestStartAt: latestStart(row, ownerTimezone),
+      })),
+    });
   })
 
   .post('/', zValidator('json', createTaskSchema), async (c) => {
@@ -270,6 +286,25 @@ export const taskRoutes = new Hono<AppEnv>()
      */
     const revived = task.status === 'missed' && patch.dueDate !== undefined;
 
+    /**
+     * The owner's own "start by" may only bring the derived latest start
+     * forward. Later than the arithmetic allows is refused: the task could not
+     * be finished that day, and a promise the clock cannot keep is not one.
+     */
+    if (patch.startBy) {
+      const owner = await client.query.users.findFirst({ where: eq(users.id, userId), columns: { timezone: true } });
+      const timezone = owner?.timezone ?? 'UTC';
+      const next = {
+        dueDate: patch.dueDate ?? task.dueDate,
+        estimatedMinutes: patch.estimatedMinutes === undefined ? task.estimatedMinutes : (patch.estimatedMinutes ?? null),
+      };
+      const ceiling = latestStart({ ...next, startBy: null }, timezone);
+      const own = latestStart({ ...next, startBy: patch.startBy }, timezone);
+      if (ceiling && own && own === ceiling) {
+        throw badRequest('That is later than the task can be started and still finish that day');
+      }
+    }
+
     await client
       .update(tasks)
       .set({
@@ -279,6 +314,7 @@ export const taskRoutes = new Hono<AppEnv>()
         ...(patch.estimatedMinutes !== undefined && {
           estimatedMinutes: patch.estimatedMinutes ?? null,
         }),
+        ...(patch.startBy !== undefined && { startBy: patch.startBy ?? null }),
         ...(revived && { status: 'planned' as const }),
       })
       .where(and(eq(tasks.id, id), inArray(tasks.status, ['planned', 'missed'])));
@@ -598,6 +634,77 @@ export const taskRoutes = new Hono<AppEnv>()
 
     const row = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
     return c.json({ task: row });
+  })
+
+  /**
+   * A groupmate's nudge to somebody who has not started (PRODUCT.md §3.3):
+   * one of four fixed lines, one per sender per task per day, inside the
+   * recipient's daily budget. Never to yourself, never about a task already
+   * on the clock — a nudge is about starting.
+   */
+  .post('/:id/nudge', zValidator('json', nudgeTaskSchema), async (c) => {
+    const id = c.req.param('id');
+    const { template } = c.req.valid('json');
+    const fromUserId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    const task = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    if (!task) throw notFound('No such task');
+    if (task.userId === fromUserId) throw badRequest('You cannot nudge yourself');
+    await assertMember(client, task.groupId, fromUserId);
+    if (task.startedAt) throw conflict('They have already started');
+    if (task.status !== 'planned' && task.status !== 'missed') throw conflict('That task is not waiting to be started');
+
+    const sender = await client.query.users.findFirst({ where: eq(users.id, fromUserId), columns: { displayName: true } });
+    const result = await sendBuddyNudge(client, c.env, {
+      fromUserId,
+      fromName: sender?.displayName ?? 'Someone',
+      toUserId: task.userId,
+      template,
+      taskId: id,
+      groupId: task.groupId,
+      title: task.title,
+    });
+    if (!result.ok) throw conflict(result.reason);
+    return c.json({ id: result.id, template }, 201);
+  })
+
+  /**
+   * "Check on me at 7:15" (PRODUCT.md §3.3): the owner asks one groupmate to
+   * look at a time. Owner-initiated only, which is what makes it opt-in; the
+   * pressure job sends the buddy a push when the time comes.
+   */
+  .post('/:id/checkin', zValidator('json', requestCheckinSchema), async (c) => {
+    const id = c.req.param('id');
+    const { buddyUserId, at } = c.req.valid('json');
+    const ownerId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    const task = await client.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    if (!task) throw notFound('No such task');
+    if (task.userId !== ownerId) throw forbidden('That task is not yours');
+    if (buddyUserId === ownerId) throw badRequest('Pick somebody else in the group');
+    await assertMember(client, task.groupId, buddyUserId);
+    if (Date.parse(at) < Date.now()) throw badRequest('Pick a time that has not passed');
+    const owner = await client.query.users.findFirst({ where: eq(users.id, ownerId), columns: { timezone: true } });
+    if (localDateOrUtc(owner?.timezone ?? 'UTC', new Date(at)) !== localDateOrUtc(owner?.timezone ?? 'UTC')) {
+      throw badRequest('A check-in is for today');
+    }
+
+    const result = await requestCheckin(client, { ownerId, buddyUserId, taskId: id, at });
+    if (!result.ok) throw conflict(result.reason);
+    return c.json({ id: result.id, at }, 201);
+  })
+
+  /** Every nudge on a task, newest first, for the owner's screen and the group's. */
+  .get('/:id/nudges', async (c) => {
+    const id = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+    const task = await client.query.tasks.findFirst({ where: eq(tasks.id, id), columns: { groupId: true } });
+    if (!task) throw notFound('No such task');
+    await assertMember(client, task.groupId, userId);
+    return c.json({ nudges: await nudgesForTask(client, id) });
   })
 
   /**

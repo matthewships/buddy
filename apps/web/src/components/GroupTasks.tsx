@@ -43,7 +43,9 @@ import { ReportSheet } from './ReportSheet';
 import { Sheet } from './Sheet';
 import { Spinner } from './Spinner';
 import { formatEstimate } from './TaskClock';
+import { CheckinReply, CheckinRequest, NudgeButtons, NudgeLog, StartByLabel } from './Pressure';
 import { SessionPanel } from './SessionPanel';
+import { useTaskNudges } from '@/api/nudges';
 import { TaskRing } from './TaskRing';
 import { StatusPill } from './TaskRow';
 
@@ -272,11 +274,11 @@ export function GroupTasks({
               </h3>
               {dayTasks.map((task) =>
                 viewingSelf ? (
-                  <MyTask key={task.id} task={task} />
+                  <MyTask key={task.id} task={task} members={members} viewerId={viewerId} />
                 ) : canReview(group, members, task, viewerId) && task.status === 'done' ? (
                   <ReviewTask key={task.id} task={task} />
                 ) : (
-                  <TheirTask key={task.id} task={task} />
+                  <TheirTask key={task.id} task={task} viewerId={viewerId} />
                 ),
               )}
             </div>
@@ -664,7 +666,7 @@ const TIME_BUMPS = [10, 30] as const;
  * first and shelving it until tomorrow are both a tap away, because the reason
  * a task got missed is usually one of those two.
  */
-function MyTask({ task }: { task: Task }) {
+function MyTask({ task, members, viewerId }: { task: Task; members: GroupMember[]; viewerId: string }) {
   const markDone = useMarkDone();
   const submitProof = useSubmitProof();
   const deleteTask = useDeleteTask();
@@ -682,6 +684,8 @@ function MyTask({ task }: { task: Task }) {
   const overrun = useOverrun(running ? task : { ...task, startedAt: null });
   const missed = task.status === 'missed';
   const open = task.status === 'planned' || missed;
+  // What has been said about this task today: nudges, check-ins, replies.
+  const nudges = useTaskNudges(task.id, open && task.dueDate === localToday());
 
   /**
    * Starting needs an estimate — there is nothing to count down without one —
@@ -754,7 +758,11 @@ function MyTask({ task }: { task: Task }) {
           */
           task.estimatedMinutes === null ? (
             <span className="text-ink-subtle">No time set</span>
-          ) : null
+          ) : (
+            // The latest start (PRODUCT.md §3.1): the one number that makes
+            // "not started" urgent, derived rather than scheduled.
+            <StartByLabel at={task.latestStartAt} />
+          )
         ) : (
           <StatusPill status={task.status} />
         )
@@ -827,6 +835,12 @@ function MyTask({ task }: { task: Task }) {
             )}
           </div>
           {proofField}
+      {open && !running ? (
+        <>
+          {nudges.data?.nudges.length ? <NudgeLog nudges={nudges.data.nudges} viewerId={viewerId} /> : null}
+          <CheckinRequest taskId={task.id} members={members} viewerId={viewerId} />
+        </>
+      ) : null}
           <ErrorText
             message={
               abandon.error?.message ?? markDone.error?.message ?? updateTask.error?.message
@@ -1033,8 +1047,14 @@ function TaskOptions({
 }
 
 /** Someone else's task, when the viewer is not the one who reviews it. */
-function TheirTask({ task }: { task: Task }) {
+function TheirTask({ task, viewerId }: { task: Task; viewerId: string }) {
   const running = isRunning(task);
+  const waiting = (task.status === 'planned' || task.status === 'missed') && !running;
+  const nudges = useTaskNudges(task.id, waiting && task.dueDate === localToday());
+  // A check-in this viewer was asked for, sent and not yet answered.
+  const askedOfMe = nudges.data?.nudges.find(
+    (n) => n.kind === 'checkin' && n.fromUserId === viewerId && n.sentAt && !nudges.data?.nudges.some((r) => r.kind === 'checkin_reply' && r.fromUserId === viewerId),
+  );
 
   return (
     <TaskShell
@@ -1053,12 +1073,17 @@ function TheirTask({ task }: { task: Task }) {
         ) : task.status === 'planned' ? (
           task.estimatedMinutes === null ? (
             <span className="text-ink-subtle">No time set</span>
-          ) : null
+          ) : (
+            <StartByLabel at={task.latestStartAt} />
+          )
         ) : (
           <StatusPill status={task.status} />
         )
       }
-    />
+    >
+      {waiting && task.estimatedMinutes !== null ? <NudgeButtons taskId={task.id} /> : null}
+      {askedOfMe ? <CheckinReply taskId={task.id} checkin={askedOfMe} /> : null}
+    </TaskShell>
   );
 }
 

@@ -529,6 +529,15 @@ export const updateTaskSchema = z.object({
   notes: z.string().trim().max(MAX_TASK_NOTES).nullish(),
   dueDate: localDateSchema.optional(),
   estimatedMinutes: estimatedMinutesSchema.nullish(),
+  /**
+   * The owner's own "start by", `HH:MM` on the task's day (PRODUCT.md §3.1,
+   * slice 2). May only be earlier than the derived latest start; null clears
+   * it. Optional so the mobile app's patches are unaffected.
+   */
+  startBy: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM')
+    .nullish(),
 });
 
 export const listTasksQuerySchema = z.object({

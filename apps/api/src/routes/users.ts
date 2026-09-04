@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 
-import { BADGES, type BadgeKey } from '@buddy/shared';
+import { BADGES, type BadgeKey, reliabilityBand } from '@buddy/shared';
 
 import { db } from '../db/client.js';
 import {
@@ -86,6 +86,10 @@ export const userRoutes = new Hono<AppEnv>()
         bestStreak: stats?.bestStreak ?? 0,
         tasksApproved: stats?.tasksApproved ?? 0,
         reviewsGiven: stats?.reviewsGiven ?? 0,
+        reliability: reliabilityBand(stats?.reliabilityPct ?? null, stats?.reliabilitySessions ?? 0),
+        // The exact number only to its owner (PRODUCT.md §5.3).
+        reliabilityPct: user.id === currentUserId(c) ? (stats?.reliabilityPct ?? null) : null,
+        reliabilitySessions: stats?.reliabilitySessions ?? 0,
       },
       badges: badges.map((b) => describeBadge(b.badgeKey as BadgeKey, b.awardedAt)),
       buddyProfile: profile

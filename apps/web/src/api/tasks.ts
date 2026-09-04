@@ -23,6 +23,10 @@ export interface Task {
   sessionId: string | null;
   /** Minutes this task has had on a clock, across every session. */
   actualMinutes: number;
+  /** The owner's own "start by", HH:MM, or null (PRODUCT.md §3.1). */
+  startBy: string | null;
+  /** The latest instant it can be started and still finish that day; null without an estimate. */
+  latestStartAt: string | null;
   status: TaskStatus;
   proofText: string | null;
   proofImageKey: string | null;
@@ -172,6 +176,8 @@ export function useUpdateTask() {
       notes?: string | null;
       dueDate?: string;
       estimatedMinutes?: number;
+      /** The owner's own "start by", HH:MM; null clears it (PRODUCT.md §3.1). */
+      startBy?: string | null;
     }) =>
       unwrap<{ task: Task }>(
         await api.api.tasks[':id'].$patch({ param: { id }, json: patch as never }),

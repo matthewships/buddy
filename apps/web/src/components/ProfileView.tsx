@@ -1,5 +1,7 @@
 'use client';
 
+import { RELIABILITY_BAND_LABEL } from '@buddy/shared';
+
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -203,6 +205,14 @@ export function ProfileView({
           <Stat label="Streak" value={`${profile.stats.currentStreak}d`} />
           <Stat label="Best" value={`${profile.stats.bestStreak}d`} />
           <Stat label="Approved" value={profile.stats.tasksApproved} />
+          <Stat
+            label="Shows up"
+            value={
+              profile.stats.reliabilityPct !== null
+                ? `${profile.stats.reliabilityPct}%`
+                : RELIABILITY_BAND_LABEL[profile.stats.reliability]
+            }
+          />
         </div>
         <p className="mt-3 border-t border-surface-border pt-2 text-xs text-ink-subtle">
           {profile.stats.reviewsGiven} reviews given · member since{' '}

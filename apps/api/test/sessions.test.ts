@@ -189,8 +189,10 @@ describe('group sessions', () => {
 
     const started = await post(`/api/sessions/${session.id}/start`, {}, owner.accessToken);
     expect(started.status).toBe(200);
-    const after = (await started.json()) as { participants: { state: string }[] };
-    expect(after.participants.every((p) => p.state === 'present')).toBe(true);
+    const after = (await started.json()) as { participants: { userId: string; state: string }[] };
+    // The host is present; a commitment is not attendance until they join.
+    expect(after.participants.find((p) => p.userId === owner.userId)?.state).toBe('present');
+    expect(after.participants.find((p) => p.userId === buddy.userId)?.state).toBe('committed');
   });
 });
 

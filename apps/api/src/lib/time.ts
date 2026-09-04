@@ -80,3 +80,54 @@ export function isoWeekKey(at: Date = new Date()): string {
   const week = Math.ceil(((d.getTime() - yearStart) / 86_400_000 + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
+
+/**
+ * The instant at which a local calendar day ends, in `timezone`: local
+ * midnight at the start of the following day, as UTC. Found by taking the UTC
+ * midnight of that next day and correcting by the zone's offset at that
+ * instant, twice, so a DST change on the night itself is handled.
+ *
+ * This is what "the latest start" (PRODUCT.md §3.1) subtracts an estimate
+ * from: a task's day ends at *its owner's* midnight, never a server's.
+ */
+export function localDayEnd(timezone: string, date: string): Date {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  let guess = Date.UTC(y, m - 1, d + 1);
+  for (let i = 0; i < 2; i += 1) {
+    const local = localParts(timezone, new Date(guess));
+    const asIfUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
+    // The zone's offset at `guess`, in ms: positive east of Greenwich.
+    const offset = asIfUtc - guess;
+    guess = Date.UTC(y, m - 1, d + 1) - offset;
+  }
+  return new Date(guess);
+}
+
+/** A local `HH:MM` on a local day, as an instant. Same correction as `localDayEnd`. */
+export function localTimeToInstant(timezone: string, date: string, time: string): Date {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const [hh, mm] = time.split(':').map(Number) as [number, number];
+  let guess = Date.UTC(y, m - 1, d, hh, mm);
+  for (let i = 0; i < 2; i += 1) {
+    const local = localParts(timezone, new Date(guess));
+    const asIfUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
+    const offset = asIfUtc - guess;
+    guess = Date.UTC(y, m - 1, d, hh, mm) - offset;
+  }
+  return new Date(guess);
+}
+
+function localParts(timezone: string, at: Date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(at);
+  const read = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  // `hour` reads 24 at midnight in some engines under en-GB; normalise.
+  return { year: read('year'), month: read('month'), day: read('day'), hour: read('hour') % 24, minute: read('minute') };
+}

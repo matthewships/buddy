@@ -15,6 +15,7 @@ import {
   useStartSession,
   type SessionParticipant,
 } from '@/api/sessions';
+import { useNudgeParticipant } from '@/api/nudges';
 import { serverNow } from '@/hooks/useCountdown';
 
 import { Avatar } from './Avatar';
@@ -47,6 +48,7 @@ export function SessionPanel({
   const start = useStartSession(groupId);
   const end = useEndSession(groupId);
   const cancel = useCancelSession(groupId);
+  const nudgeParticipant = useNudgeParticipant(groupId);
 
   const view = current.data;
   const session = view?.session ?? null;
@@ -162,7 +164,21 @@ export function SessionPanel({
         </div>
         <SharedClock startedAt={session.startedAt ?? view!.serverNow} plannedMinutes={session.plannedMinutes} />
       </div>
-      <Faces participants={view!.participants} viewerId={viewerId} live />
+      <Faces
+        participants={view!.participants}
+        viewerId={viewerId}
+        live
+        onNudge={
+          present
+            ? (userId) => nudgeParticipant.mutate({ sessionId: session.id, userId, template: 'waiting' })
+            : undefined
+        }
+        nudging={nudgeParticipant.isPending}
+      />
+      {nudgeParticipant.isSuccess ? (
+        <p className="text-xs text-success">Nudged. One per person per session.</p>
+      ) : null}
+      <ErrorText message={nudgeParticipant.error?.message} />
       <div className="flex flex-row gap-2">
         {present ? (
           <Button
@@ -201,10 +217,15 @@ function Faces({
   participants,
   viewerId,
   live = false,
+  onNudge,
+  nudging = false,
 }: {
   participants: SessionParticipant[];
   viewerId: string;
   live?: boolean;
+  /** Offered on members who committed and have not arrived (PRODUCT.md §3.3). */
+  onNudge?: (userId: string) => void;
+  nudging?: boolean;
 }) {
   const word = (p: SessionParticipant) => {
     switch (p.state) {
@@ -236,6 +257,16 @@ function Faces({
           <Avatar avatarKey={p.avatarKey} displayName={p.displayName} size={22} />
           <span className="font-semibold">{p.userId === viewerId ? 'You' : p.displayName.split(' ')[0]}</span>
           <span className="text-ink-subtle">{word(p)}</span>
+          {onNudge && p.userId !== viewerId && (p.state === 'committed' || p.state === 'late') ? (
+            <button
+              type="button"
+              disabled={nudging}
+              onClick={() => onNudge(p.userId)}
+              className="ml-1 cursor-pointer rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-fg disabled:opacity-50"
+            >
+              Nudge
+            </button>
+          ) : null}
         </li>
       ))}
     </ul>

@@ -5,12 +5,14 @@ import { Hono } from 'hono';
 import {
   BUDDY_REQUEST_COOLDOWN_MS,
   BUDDY_REQUEST_TTL_MS,
+  RELIABILITY_SUSPEND_BELOW,
   createBuddyRequestSchema,
   isMinor,
+  reliabilityBand,
 } from '@buddy/shared';
 
 import { db, type Db } from '../db/client.js';
-import { buddyRequests, groupMembers, groups, users } from '../db/schema.js';
+import { buddyRequests, groupMembers, groups, userStats, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, forbidden, gone, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
@@ -84,6 +86,22 @@ export const buddyRequestRoutes = new Hono<AppEnv>()
 
     const client = db(c.env.DB);
     await sweepExpired(client);
+
+    /**
+     * Reliability (PRODUCT.md §3.6): somebody who keeps not showing up to the
+     * sessions they committed to cannot ask strangers for more of them until
+     * they have shown up to a few. Existing groups are unaffected; this only
+     * pauses instant matching, and it says why.
+     */
+    const myStats = await client.query.userStats.findFirst({
+      where: eq(userStats.userId, fromUserId),
+      columns: { reliabilityPct: true, reliabilitySessions: true },
+    });
+    if (reliabilityBand(myStats?.reliabilityPct ?? null, myStats?.reliabilitySessions ?? 0) === 'rebuilding') {
+      throw forbidden(
+        `Your show-up rate is below ${RELIABILITY_SUSPEND_BELOW}%. Attend the sessions you commit to and this opens again.`,
+      );
+    }
 
     const target = await client.query.users.findFirst({
       where: eq(users.id, toUserId),

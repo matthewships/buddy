@@ -19,10 +19,12 @@ import { groupRoutes, inviteRoutes } from './routes/groups.js';
 import { inviteLinkRoutes } from './routes/invite-links.js';
 import { postRoutes } from './routes/posts.js';
 import { meRoutes } from './routes/me.js';
+import { nudgeRoutes } from './routes/nudges.js';
 import { sessionGroupRoutes, sessionRoutes } from './routes/sessions.js';
 import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
 import { runNudges } from './jobs/nudge.js';
+import { runPressure } from './jobs/pressure.js';
 import { runRollover } from './jobs/rollover.js';
 import { runWeekly } from './jobs/weekly.js';
 import { deliverPush, type PushMessage } from './services/push.js';
@@ -39,6 +41,8 @@ import { deliverPush, type PushMessage } from './services/push.js';
  */
 /** Must match the weekly entry in wrangler.jsonc's `triggers.crons`. */
 const WEEKLY_CRON = '5 0 * * 1';
+/** The quarter-hourly pressure job (jobs/pressure.ts); also in wrangler.jsonc. */
+const PRESSURE_CRON = '*/15 * * * *';
 
 const app = new Hono<AppEnv>();
 
@@ -85,6 +89,7 @@ const routes = app
   // Group sessions (PRODUCT.md §3.1): opened under the group, driven by id.
   .route('/api/groups', sessionGroupRoutes)
   .route('/api/sessions', sessionRoutes)
+  .route('/api/nudges', nudgeRoutes)
   // The socket upgrade sits outside /api/groups: it authenticates with a
   // ticket, and that prefix's bearer middleware would reject it first.
   .route('/api/chat', chatSocketRoutes)
@@ -160,6 +165,28 @@ export default {
    * of silently skipping a day's rollover for a whole timezone.
    */
   async scheduled(controller, env, ctx) {
+    /**
+     * The quarter-hourly firing is the pressure job and nothing else: the
+     * rollover stays hourly, and at :00 both expressions fire as two separate
+     * invocations, each doing its own work. Everything the pressure job does
+     * is idempotent through the `nudges` table or a participant state.
+     */
+    if (controller.cron === PRESSURE_CRON) {
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const result = await runPressure(db(env.DB), env);
+            console.log(
+              `[pressure] startNudges=${result.startNudges} late=${result.markedLate} absent=${result.markedAbsent} checkins=${result.checkins}`,
+            );
+          } catch (error) {
+            console.error('[pressure] failed', error);
+          }
+        })(),
+      );
+      return;
+    }
+
     ctx.waitUntil(
       (async () => {
         const result = await runRollover(db(env.DB));
