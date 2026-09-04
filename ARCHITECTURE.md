@@ -537,6 +537,18 @@ and Zod is the gate.
 - **Stale sessions** — a laptop closed on a running clock — are ended by the
   rollover once they pass the plan's overrun cap plus an hour, so the day is
   settled before it is judged.
+- **The migration backfills `last_session_date` from `last_approved_date`**,
+  so a streak earned under the old rule holds under the new one instead of
+  burning both freezes and dying three rollovers later.
+- **Known, left for slice 3:** the daily bonus still pays on a day whose only
+  approved task had no minutes on a clock, so two friends approving one
+  trivial task each day earn it. The guard is one line in
+  `maybeAwardDailyBonus` (require `SESSION_STREAK_MINUTES` credited that day)
+  and belongs with the verification rewrite. Tasks whose clock was running at
+  the moment of deploy have no session; their minutes are booked but earn no
+  credits and no streak day, once. `apps/mobile` still shows the abandon
+  penalty in copy and the approval award, which is now usually 0; it is
+  outside the working agreement and is flagged for its port.
 
 Tests: `apps/api/test/sessions.test.ts`; the streak, bonus and abandon tests
 in `rollover`, `tasks`, `group-buddy` and `unreviewed-tasks` were rewritten to

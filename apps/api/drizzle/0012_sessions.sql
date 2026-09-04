@@ -10,6 +10,11 @@ ALTER TABLE `user_stats` ADD `session_minutes_today` integer DEFAULT 0 NOT NULL;
 ALTER TABLE `user_stats` ADD `session_minutes_date` text;--> statement-breakpoint
 ALTER TABLE `user_stats` ADD `freezes_available` integer DEFAULT 2 NOT NULL;--> statement-breakpoint
 ALTER TABLE `user_stats` ADD `freezes_month` text;--> statement-breakpoint
+-- A streak earned under the old rule must not be broken by the new one. The
+-- last approved day becomes the last session day, so a streak kept yesterday
+-- holds and one lapsed three days ago breaks honestly, rather than every
+-- existing streak burning both monthly freezes and then dying.
+UPDATE `user_stats` SET `last_session_date` = `last_approved_date` WHERE `last_session_date` IS NULL AND `last_approved_date` IS NOT NULL;--> statement-breakpoint
 CREATE TABLE `sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`group_id` text NOT NULL,
