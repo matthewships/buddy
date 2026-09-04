@@ -3,13 +3,16 @@
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { GOALS, OCCUPATIONS } from '@buddy/shared';
+import { COUNTRIES, EDUCATION_LEVELS, GOALS, MAJORS, TOPICS } from '@buddy/shared';
 
+import { useMe } from '@/api/auth';
 import {
   useBuddyDirectory,
   useCurrentRequest,
   useIncomingRequests,
   useRespondToRequest,
+  useSendRequest,
+  type BuddySort,
   type DirectoryFilters,
 } from '@/api/buddies';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -17,43 +20,66 @@ import {
   BuddyCard,
   Button,
   Card,
+  ErrorText,
+  GetFoundCard,
   RefreshButton,
   RequestBanner,
   Screen,
+  Segmented,
   Spinner,
   Toggle,
   WaitingCard,
 } from '@/components';
 
+const SORTS = [
+  { key: 'recommended', label: 'Recommended' },
+  { key: 'points', label: 'Points' },
+] as const satisfies readonly { key: BuddySort; label: string }[];
+
 /**
- * The Buddies tab (§5.2).
+ * The Buddies tab — Unibuddy's Connect screen, with Request where its Message
+ * button sits.
  *
- * Three things share this screen because they are the same decision from
+ * Four things share this screen because they are the same decision from
  * different sides: incoming requests to answer, an outgoing request to wait on,
- * and the directory to pick from. While a request is pending every "Request"
- * button is disabled — the API allows only one at a time, and the UI should say
- * so rather than let the user discover it through a 409.
+ * how the list is ordered, and the list itself. While a request is pending every
+ * "Request" button goes disabled and says why — the API allows one at a time,
+ * and the UI should state that rather than let the user find out through a 409.
  */
 export default function Buddies() {
   const router = useRouter();
+  const me = useMe();
+
+  const [sort, setSort] = useState<BuddySort>('recommended');
   const [goal, setGoal] = useState<string | null>(null);
-  const [occupation, setOccupation] = useState<string | null>(null);
+  const [level, setLevel] = useState<string | null>(null);
+  const [major, setMajor] = useState<string | null>(null);
+  const [topic, setTopic] = useState<string | null>(null);
+  const [country, setCountry] = useState<string | null>(null);
+  const [sameInstitution, setSameInstitution] = useState(false);
   const [activeOnly, setActiveOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const filters = useMemo<DirectoryFilters>(
     () => ({
       ...(goal ? { goal } : {}),
-      ...(occupation ? { occupation } : {}),
+      ...(level ? { level } : {}),
+      ...(major ? { major } : {}),
+      ...(topic ? { topic } : {}),
+      ...(country ? { country } : {}),
+      ...(sameInstitution ? { sameInstitution: true } : {}),
       ...(activeOnly ? { activeOnly: true } : {}),
     }),
-    [goal, occupation, activeOnly],
+    [goal, level, major, topic, country, sameInstitution, activeOnly],
   );
 
-  const directory = useBuddyDirectory(filters);
+  const activeFilterCount = Object.keys(filters).length;
+
+  const directory = useBuddyDirectory(filters, sort);
   const current = useCurrentRequest();
   const incoming = useIncomingRequests();
   const respond = useRespondToRequest();
+  const sendRequest = useSendRequest();
 
   const pending = current.data?.request ?? null;
   const outcome = current.data?.outcome ?? null;
@@ -67,6 +93,17 @@ export default function Buddies() {
   });
 
   const acceptedGroup = outcome?.status === 'accepted' ? outcome.group : null;
+  const myInstitution = me.data?.institution?.trim();
+
+  const clearFilters = () => {
+    setGoal(null);
+    setLevel(null);
+    setMajor(null);
+    setTopic(null);
+    setCountry(null);
+    setSameInstitution(false);
+    setActiveOnly(false);
+  };
 
   return (
     <Screen>
@@ -120,6 +157,16 @@ export default function Buddies() {
         </Card>
       ) : null}
 
+      {/*
+        Above the list, not below it: the answers it asks for are what decide
+        the order of the list, and somebody scrolling a directory that ranks
+        them poorly should be told why before they get to the bottom of it.
+        Only once /me is known, so it never flashes "0%" at a full profile.
+      */}
+      {me.data ? <GetFoundCard profile={me.data} /> : null}
+
+      <Segmented label="Sort buddies by" options={SORTS} value={sort} onChange={setSort} />
+
       <div className="flex flex-row items-center justify-between">
         <button
           type="button"
@@ -128,34 +175,98 @@ export default function Buddies() {
           className="cursor-pointer text-base font-semibold text-brand"
         >
           {filtersOpen ? 'Hide filters' : 'Filters'}
+          {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
         </button>
-        <div className="flex flex-row items-center gap-2">
-          <span className="text-sm text-ink-muted">Active in last 15 min</span>
-          <Toggle
-            checked={activeOnly}
-            onChange={setActiveOnly}
-            label="Only show buddies active in the last 15 minutes"
-          />
-        </div>
+        {activeFilterCount > 0 ? (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="cursor-pointer text-sm text-ink-muted hover:text-ink"
+          >
+            Clear all
+          </button>
+        ) : null}
       </div>
 
       {filtersOpen ? (
         <Card>
-          <FilterRow
-            title="Goal"
-            options={GOALS}
-            selected={goal}
-            onSelect={(key) => setGoal(key === goal ? null : key)}
-          />
-          <div className="h-3" />
-          <FilterRow
-            title="Occupation"
-            options={OCCUPATIONS}
-            selected={occupation}
-            onSelect={(key) => setOccupation(key === occupation ? null : key)}
-          />
+          <div className="flex flex-col gap-4">
+            <FilterRow
+              title="Level of study"
+              options={EDUCATION_LEVELS}
+              selected={level}
+              onSelect={(key) => setLevel(key === level ? null : key)}
+            />
+            <FilterRow
+              title="Subject"
+              options={MAJORS}
+              selected={major}
+              onSelect={(key) => setMajor(key === major ? null : key)}
+            />
+            <FilterRow
+              title="Topic"
+              options={TOPICS}
+              selected={topic}
+              onSelect={(key) => setTopic(key === topic ? null : key)}
+            />
+            <FilterRow
+              title="Goal"
+              options={GOALS}
+              selected={goal}
+              onSelect={(key) => setGoal(key === goal ? null : key)}
+            />
+
+            {/*
+              A <select> rather than chips: ~200 countries is far past the point
+              where a wrapped chip list is scannable, and this is a filter, not
+              a question — compactness beats browsability here.
+            */}
+            <label className="flex flex-col gap-2">
+              <span className="text-sm font-semibold text-ink-muted">From</span>
+              <select
+                value={country ?? ''}
+                onChange={(event) => setCountry(event.target.value || null)}
+                className="cursor-pointer rounded-md border border-surface-border bg-surface px-3 py-2 text-base text-ink"
+              >
+                <option value="">Anywhere</option>
+                {COUNTRIES.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/*
+              Institutions are free text, so "the same as mine" is the only
+              institution question a filter can ask. Hidden entirely when the
+              user has not said where they study — it would match nobody, and a
+              control that can only return an empty list is a trap.
+            */}
+            {myInstitution ? (
+              <div className="flex flex-row items-center justify-between gap-4">
+                <span className="text-sm text-ink-muted">Only {myInstitution}</span>
+                <Toggle
+                  checked={sameInstitution}
+                  onChange={setSameInstitution}
+                  label={`Only show buddies at ${myInstitution}`}
+                />
+              </div>
+            ) : null}
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <span className="text-sm text-ink-muted">Active in last 15 min</span>
+              <Toggle
+                checked={activeOnly}
+                onChange={setActiveOnly}
+                label="Only show buddies active in the last 15 minutes"
+              />
+            </div>
+          </div>
         </Card>
       ) : null}
+
+      <ErrorText message={sendRequest.error?.message} />
 
       {buddies.length === 0 ? (
         directory.isPending ? (
@@ -177,6 +288,15 @@ export default function Buddies() {
               key={buddy.id}
               buddy={buddy}
               onPress={() => router.push(`/buddies/${buddy.handle}`)}
+              onRequest={(message) =>
+                sendRequest.mutate({
+                  toUserId: buddy.id,
+                  ...(message ? { message } : {}),
+                })
+              }
+              requestDisabled={Boolean(pending)}
+              requestDisabledReason="You already have a request waiting"
+              busy={sendRequest.isPending}
             />
           ))}
           <div ref={sentinelRef} aria-hidden="true" />

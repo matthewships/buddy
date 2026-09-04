@@ -24,7 +24,7 @@ export function RequestBanner({
   if (countdown.expired) return null;
 
   return (
-    <div className="flex flex-col rounded-2xl border border-brand bg-brand-muted p-4">
+    <div className="flex flex-col rounded-lg border border-brand bg-brand-muted p-4">
       <p className="text-base font-bold text-ink">
         {request.user.displayName} wants you as a buddy
       </p>

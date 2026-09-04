@@ -10,15 +10,161 @@
   }
 
   body {
-    @apply bg-surface-muted text-ink antialiased;
-    font-family:
-      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-      sans-serif;
+    @apply bg-surface-muted font-sans text-ink antialiased;
+  }
+
+  /**
+   * Headings take the display face, everywhere, without a class. The two faces
+   * are the creative direction (ARCHITECTURE.md §5.8): a body that stays out of
+   * the way and a display that does not. Numbers that are the point of a
+   * screen — a streak, a rank, a clock — opt in with `font-display`.
+   */
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+    letter-spacing: -0.015em;
   }
 
   /* Mobile renders inside a native scroll view with no visible bar; matching
      that keeps the two clients looking alike on a trackpad. */
   * {
     scrollbar-width: thin;
+  }
+}
+
+@layer components {
+  /**
+   * The eyebrow: the one line of small capitals above a heading that says
+   * which part of the app you are in. Uppercase because the seed is (§5.8),
+   * spaced because uppercase needs it.
+   */
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-eyebrow text-brand;
+  }
+
+  /**
+   * The corner bracket — the direction's one ornament. "perp" sits at
+   * position 18 of the seed and the corners went square for it; this is the
+   * same right angle drawn on its own, marking the thing on the screen that
+   * matters most. It is a border on two sides of a pseudo-element, so it costs
+   * no markup and no image.
+   */
+  .bracket {
+    position: relative;
+  }
+
+  .bracket::before,
+  .bracket::after {
+    content: '';
+    position: absolute;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-color: currentColor;
+    border-style: solid;
+    border-width: 0;
+    opacity: 0.6;
+  }
+
+  .bracket::before {
+    top: 0;
+    left: 0;
+    border-top-width: 2px;
+    border-left-width: 2px;
+  }
+
+  .bracket::after {
+    right: 0;
+    bottom: 0;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+  }
+}
+
+/* The side panel slides in from the column's edge. Its own keyframe rather than
+   a `theme.extend.keyframes` entry: tailwind.config.js is held byte-identical to
+   apps/mobile's, and a CSS animation means nothing to React Native. */
+@keyframes sheet-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.sheet-slide-in {
+  animation: sheet-slide-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-slide-in {
+    animation: none;
+  }
+}
+
+/**
+ * Landing-page motion.
+ *
+ * All of it lives inside `prefers-reduced-motion: no-preference`, which is the
+ * important part and the opposite of the usual arrangement. The common pattern
+ * is to hide an element by default and reveal it with an animation, then switch
+ * the animation off for reduced motion — which leaves those users looking at an
+ * invisible page. Here the default is the finished state, and motion is added
+ * only when it has been asked for. Turn every one of these rules off and the
+ * page is complete.
+ *
+ * Kept in CSS rather than a client component on purpose: `/` is a server
+ * component whose whole reason for existing is that the first paint needs no
+ * JavaScript, and an animation library would cost more than the page.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes landing-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* On load: the hero, which is above the fold and never scrolled into view. */
+  .landing-rise {
+    animation: landing-rise 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  }
+
+  /**
+   * Scroll-driven, and only where the browser can do it natively. `view()`
+   * needs no scroll listener, no observer and no JavaScript at all; without
+   * `@supports` the elements below would sit at the animation's 0% keyframe —
+   * invisible — in every browser that does not implement it.
+   */
+  @supports (animation-timeline: view()) {
+    .landing-reveal {
+      animation: landing-rise 600ms linear both;
+      animation-timeline: view();
+      animation-range: entry 5% cover 22%;
+    }
+  }
+
+  /**
+   * The one looping animation, on the dot that marks a task whose clock is
+   * running. It is the only thing on the page that is *claiming* to be live, so
+   * it is the only thing that moves on its own.
+   */
+  @keyframes landing-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  .landing-pulse {
+    animation: landing-pulse 1.8s ease-in-out infinite;
   }
 }

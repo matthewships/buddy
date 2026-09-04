@@ -16,9 +16,15 @@ import { adminRoutes, reportRoutes } from './routes/reports.js';
 import { buddyRequestRoutes } from './routes/buddy-requests.js';
 import { buddyRoutes } from './routes/buddies.js';
 import { groupRoutes, inviteRoutes } from './routes/groups.js';
+import { inviteLinkRoutes } from './routes/invite-links.js';
+import { postRoutes } from './routes/posts.js';
 import { meRoutes } from './routes/me.js';
+import { nudgeRoutes } from './routes/nudges.js';
+import { sessionGroupRoutes, sessionRoutes } from './routes/sessions.js';
 import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
+import { runNudges } from './jobs/nudge.js';
+import { runPressure } from './jobs/pressure.js';
 import { runRollover } from './jobs/rollover.js';
 import { runWeekly } from './jobs/weekly.js';
 import { deliverPush, type PushMessage } from './services/push.js';
@@ -26,7 +32,7 @@ import { deliverPush, type PushMessage } from './services/push.js';
 /**
  * The Buddy API (§3): a single Worker with three entry points — `fetch` for
  * REST plus the chat WebSocket upgrade, `queue` for push delivery, and
- * `scheduled` for the rollover and leaderboard crons.
+ * `scheduled` for the rollover, nudge and leaderboard crons.
  *
  * Routes are mounted onto one Hono app and the app's type is exported as
  * `AppType`, which the Expo client consumes through `hc<AppType>()` — that is
@@ -35,6 +41,8 @@ import { deliverPush, type PushMessage } from './services/push.js';
  */
 /** Must match the weekly entry in wrangler.jsonc's `triggers.crons`. */
 const WEEKLY_CRON = '5 0 * * 1';
+/** The quarter-hourly pressure job (jobs/pressure.ts); also in wrangler.jsonc. */
+const PRESSURE_CRON = '*/15 * * * *';
 
 const app = new Hono<AppEnv>();
 
@@ -73,13 +81,20 @@ const routes = app
   .route('/api/buddy-requests', buddyRequestRoutes)
   .route('/api/groups', groupRoutes)
   .route('/api/invites', inviteRoutes)
+  // Public: the preview has to work before the invitee has an account at all.
+  .route('/api/invite-links', inviteLinkRoutes)
   .route('/api/tasks', taskRoutes)
   // Group-scoped chat reads share the /api/groups prefix and its bearer auth.
   .route('/api/groups', chatRoutes)
+  // Group sessions (PRODUCT.md §3.1): opened under the group, driven by id.
+  .route('/api/groups', sessionGroupRoutes)
+  .route('/api/sessions', sessionRoutes)
+  .route('/api/nudges', nudgeRoutes)
   // The socket upgrade sits outside /api/groups: it authenticates with a
   // ticket, and that prefix's bearer middleware would reject it first.
   .route('/api/chat', chatSocketRoutes)
   .route('/api/leaderboard', leaderboardRoutes)
+  .route('/api/posts', postRoutes)
   .route('/api/reports', reportRoutes)
   .route('/api/admin', adminRoutes)
   // Public: see routes/media.ts for why avatars are not behind bearer auth.
@@ -150,12 +165,51 @@ export default {
    * of silently skipping a day's rollover for a whole timezone.
    */
   async scheduled(controller, env, ctx) {
+    /**
+     * The quarter-hourly firing is the pressure job and nothing else: the
+     * rollover stays hourly, and at :00 both expressions fire as two separate
+     * invocations, each doing its own work. Everything the pressure job does
+     * is idempotent through the `nudges` table or a participant state.
+     */
+    if (controller.cron === PRESSURE_CRON) {
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const result = await runPressure(db(env.DB), env);
+            console.log(
+              `[pressure] startNudges=${result.startNudges} late=${result.markedLate} absent=${result.markedAbsent} checkins=${result.checkins}`,
+            );
+          } catch (error) {
+            console.error('[pressure] failed', error);
+          }
+        })(),
+      );
+      return;
+    }
+
     ctx.waitUntil(
       (async () => {
         const result = await runRollover(db(env.DB));
         console.log(
           `[rollover] timezones=${result.timezones} missed=${result.missed} streaksReset=${result.streaksReset}`,
         );
+
+        /**
+         * The 8am-local nudge rides the same hourly firing (jobs/nudge.ts).
+         * Its own try/catch because, unlike the rollover, nothing downstream
+         * depends on it: a nudge that fails must not take the day's rollover
+         * or the weekly close down with it.
+         */
+        try {
+          const nudges = await runNudges(db(env.DB), env);
+          if (nudges.timezones > 0) {
+            console.log(
+              `[nudge] timezones=${nudges.timezones} nudged=${nudges.nudged} alreadySent=${nudges.alreadySent}`,
+            );
+          }
+        } catch (error) {
+          console.error('[nudge] failed', error);
+        }
 
         // The Monday 00:05 UTC firing also closes the week (§4.9). Both crons
         // land here, so the cron expression identifies which one ran.

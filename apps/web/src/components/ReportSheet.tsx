@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { MAX_REPORT_NOTE } from '@buddy/shared';
+import { MAX_REPORT_NOTE, type ReportTarget } from '@buddy/shared';
 
 import { useReport } from '@/api/board';
 
@@ -22,6 +22,9 @@ import { Sheet } from './Sheet';
 const REASONS = [
   'Task was not actually done',
   'Proof is fake or unrelated',
+  // Distinct from "fake or unrelated": that one disputes the work, this one is
+  // about the picture itself, and the two need different handling in the queue.
+  'Photo is inappropriate or explicit',
   'Abusive or harassing',
   'Spam',
   'Something else',
@@ -36,7 +39,7 @@ export function ReportSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  targetType: 'task' | 'message' | 'user';
+  targetType: ReportTarget;
   targetId: string;
   targetLabel: string;
 }) {
@@ -73,7 +76,7 @@ export function ReportSheet({
                   role="radio"
                   aria-checked={active}
                   onClick={() => setReason(option)}
-                  className={`cursor-pointer rounded-xl border px-4 py-3 text-left text-base transition-colors ${
+                  className={`cursor-pointer rounded-md border px-4 py-3 text-left text-base transition-colors ${
                     active
                       ? 'border-brand bg-brand-muted font-semibold text-brand'
                       : 'border-surface-border text-ink hover:border-brand'

@@ -5,10 +5,21 @@ import { useState } from 'react';
 
 import { useLogin } from '@/api/auth';
 import { Button, ErrorText, Field, Screen } from '@/components';
+import { useDraft } from '@/onboarding/draft';
 
 export default function Login() {
   const router = useRouter();
   const login = useLogin();
+
+  /**
+   * A join link the visitor followed before signing in. `/join` stores it on
+   * arrival, which is what makes "I already have an account" a round trip
+   * rather than a dead end: without this, logging in lands on `/buddies` and
+   * the invitation is simply lost — the token is only ever redeemed by the
+   * join screen or by the end of onboarding, and an existing user reaches
+   * neither.
+   */
+  const inviteToken = useDraft((d) => d.inviteToken);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +37,7 @@ export default function Login() {
             router.push(`/verify?email=${encodeURIComponent(result.email)}`);
             return;
           }
-          router.replace('/');
+          router.replace(inviteToken ? `/join/${inviteToken}` : '/');
         },
       },
     );

@@ -24,11 +24,19 @@ export type EmailCodePurpose = (typeof EMAIL_CODE_PURPOSES)[number];
 export const PLATFORMS = ['ios', 'android'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
-export const REPORT_TARGETS = ['task', 'message', 'user'] as const;
+export const REPORT_TARGETS = ['task', 'message', 'user', 'post'] as const;
 export type ReportTarget = (typeof REPORT_TARGETS)[number];
 
 export const REPORT_STATUSES = ['open', 'actioned', 'dismissed'] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+/**
+ * What a row in `user_tags` describes. Topics and interests share one table
+ * because they are the same shape and the same query — "who else picked this" —
+ * and two tables would mean two of every index and join.
+ */
+export const USER_TAG_KINDS = ['topic', 'interest'] as const;
+export type UserTagKind = (typeof USER_TAG_KINDS)[number];
 
 export const LEADERBOARD_SCOPES = ['weekly', 'alltime'] as const;
 export type LeaderboardScope = (typeof LEADERBOARD_SCOPES)[number];

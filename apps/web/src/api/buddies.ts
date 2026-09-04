@@ -5,17 +5,21 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import { BUDDY_REQUEST_TTL_MS } from '@buddy/shared';
+import { BUDDY_REQUEST_TTL_MS, type BuddySort } from '@buddy/shared';
 
 import { api, unwrap } from './client';
+import type { StudentFields } from './users';
 import { setClockOffset } from '@/hooks/useCountdown';
 
-export interface BuddyCard {
+export type { BuddySort };
+
+export interface BuddyCard extends StudentFields {
   id: string;
   handle: string;
   displayName: string;
   avatarKey: string | null;
   goalKey: string | null;
+  goalKey2: string | null;
   goalText: string | null;
   occupationKey: string | null;
   occupationText: string | null;
@@ -27,25 +31,44 @@ export interface BuddyCard {
 export interface DirectoryFilters {
   goal?: string;
   occupation?: string;
+  level?: string;
+  major?: string;
+  country?: string;
+  topic?: string;
+  /**
+   * Institution is free text, so there is no list to pick from — "the same one
+   * as me" is the only institution question a filter can ask. The server
+   * compares normalised names, so it still matches across spellings.
+   */
+  sameInstitution?: boolean;
   activeOnly?: boolean;
 }
 
 export const buddyKeys = {
-  directory: (filters: DirectoryFilters) => ['buddies', filters] as const,
+  // The sort is part of the key: it changes the order *and* the cursor's
+  // meaning, so the two orderings cannot share a cached page list.
+  directory: (filters: DirectoryFilters, sort: BuddySort) =>
+    ['buddies', sort, filters] as const,
   current: ['buddy-request', 'current'] as const,
   incoming: ['buddy-request', 'incoming'] as const,
 };
 
-export function useBuddyDirectory(filters: DirectoryFilters) {
+export function useBuddyDirectory(filters: DirectoryFilters, sort: BuddySort = 'recommended') {
   return useInfiniteQuery({
-    queryKey: buddyKeys.directory(filters),
+    queryKey: buddyKeys.directory(filters, sort),
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) =>
       unwrap<{ buddies: BuddyCard[]; nextCursor: string | null }>(
         await api.api.buddies.$get({
           query: {
+            sort,
             ...(filters.goal ? { goal: filters.goal } : {}),
             ...(filters.occupation ? { occupation: filters.occupation } : {}),
+            ...(filters.level ? { level: filters.level } : {}),
+            ...(filters.major ? { major: filters.major } : {}),
+            ...(filters.country ? { country: filters.country } : {}),
+            ...(filters.topic ? { topic: filters.topic } : {}),
+            ...(filters.sameInstitution ? { sameInstitution: 'true' } : {}),
             ...(filters.activeOnly ? { activeOnly: 'true' } : {}),
             ...(pageParam ? { cursor: pageParam } : {}),
           } as never,

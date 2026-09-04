@@ -5,6 +5,6 @@
   "start_url": "/today",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#4f46e5"
+  "background_color": "#fcfcf7",
+  "theme_color": "#55661a"
 }

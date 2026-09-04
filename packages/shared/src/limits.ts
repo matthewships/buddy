@@ -66,13 +66,18 @@ export const RATE_LIMITS = {
   resendCode: { limit: 3, windowMs: 10 * 60 * 1000 },
   buddyRequest: { limit: 20, windowMs: 60 * 60 * 1000 },
   report: { limit: 10, windowMs: 60 * 60 * 1000 },
+  post: { limit: 20, windowMs: 60 * 60 * 1000 },
+  // Looser than posting: replying is the cheap, chatty half of the Feed, and a
+  // bucket sized for posts would cut someone off mid-thread on a busy morning.
+  reply: { limit: 60, windowMs: 60 * 60 * 1000 },
+  inviteLink: { limit: 20, windowMs: 60 * 60 * 1000 },
 } as const;
 
 /** Field length caps, mirrored by the Zod schemas. */
 export const MAX_DISPLAY_NAME = 40;
 export const MAX_HANDLE = 24;
 export const MIN_HANDLE = 3;
-export const MAX_GOAL_TEXT = 120;
+export const MAX_GOAL_TEXT = 200;
 export const MAX_OCCUPATION_TEXT = 120;
 export const MAX_HEADLINE = 80;
 export const MAX_ABOUT = 600;
@@ -85,6 +90,57 @@ export const MAX_MESSAGE_BODY = 2000;
 export const MAX_REVIEW_COMMENT = 500;
 export const MAX_REQUEST_MESSAGE = 200;
 export const MAX_REPORT_NOTE = 600;
+
+/** Student profile fields (§2.1). */
+export const MAX_INSTITUTION = 80;
+export const MAX_CITY = 60;
+export const MAX_MAJOR_TEXT = 80;
+export const MAX_BIO = 280;
+
+/**
+ * How many topics and interests a profile may carry.
+ *
+ * Small on purpose: these render as chips on a directory card, and a card that
+ * lists a dozen of them stops being scannable — the same reasoning that keeps
+ * a card down to the two indexed goals.
+ */
+export const MAX_TOPICS = 3;
+export const MAX_INTERESTS = 5;
+
+/**
+ * The free text behind the `Other` hobby. Shorter than a goal's 200: a goal is
+ * a sentence about what someone is working toward, a hobby is a noun.
+ */
+export const MAX_INTEREST_TEXT = 60;
+
+/**
+ * Task time estimates (§2.4). Five minutes is the smallest commitment worth
+ * starting a clock for; twelve hours is past the point where a "task" is really
+ * a day's plan, and the clock stops being a useful signal.
+ */
+export const MIN_TASK_MINUTES = 5;
+export const MAX_TASK_MINUTES = 12 * 60;
+
+/** Feed posts (§2.7). */
+export const MAX_POST_CAPTION = 300;
+
+/**
+ * A reply on a post. Shorter than a caption: a reply is somebody being pleased
+ * for you, and the Feed is deliberately not a place to hold a conversation —
+ * that is what the group chat is for.
+ */
+export const MAX_REPLY_TEXT = 200;
+export const MAX_POST_BYTES = 5 * 1024 * 1024;
+
+/**
+ * How many times one invite link may be used, and how long it lasts.
+ *
+ * A link is a bearer capability — anyone holding it can join — so it is bounded
+ * on both axes rather than either. The TTL matches targeted group invites
+ * (`GROUP_INVITE_TTL_MS`), since both are "for people you already know".
+ */
+export const INVITE_LINK_MAX_USES = 25;
+export const MAX_INVITE_TOKEN = 64;
 
 /** Pagination. */
 export const DEFAULT_PAGE_SIZE = 20;

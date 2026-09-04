@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, unwrap } from './client';
+import type { LeaderboardEntry, LeaderboardScope } from './board';
 
 export interface GroupSummary {
   id: string;
@@ -10,6 +11,16 @@ export interface GroupSummary {
   createdAt: string;
   role: 'owner' | 'member';
   memberCount: number;
+}
+
+/** The group detail carries the two review roles; the list does not. */
+export interface GroupDetail extends GroupSummary {
+  /** Whoever made the group. Only they, or the Buddy, may change the Buddy. */
+  createdBy: string;
+  /** Whether the viewer has muted this group's pushes (PRODUCT.md §6.1). */
+  muted: boolean;
+  buddyUserId: string | null;
+  buddyVerifierId: string | null;
 }
 
 export interface GroupMember {
@@ -22,6 +33,12 @@ export interface GroupMember {
   role: 'owner' | 'member';
   joinedAt: string;
   lastSeenAt: string | null;
+  /**
+   * Today's status (§2.6), already expired against that member's own local day
+   * by the server — a group spans timezones, and the client has no business
+   * deciding whose midnight has passed.
+   */
+  statusKey: string | null;
 }
 
 export interface GroupInvite {
@@ -40,6 +57,7 @@ export const groupKeys = {
   all: ['groups'] as const,
   detail: (id: string) => ['groups', id] as const,
   invites: ['invites'] as const,
+  standings: (id: string, scope: LeaderboardScope) => ['groups', id, 'standings', scope] as const,
 };
 
 export function useGroups() {
@@ -54,8 +72,26 @@ export function useGroup(id: string) {
     queryKey: groupKeys.detail(id),
     enabled: id.length > 0,
     queryFn: async () =>
-      unwrap<{ group: GroupSummary; members: GroupMember[] }>(
+      unwrap<{ group: GroupDetail; members: GroupMember[] }>(
         await api.api.groups[':id'].$get({ param: { id } }),
+      ),
+  });
+}
+
+/**
+ * This group's standings.
+ *
+ * Computed live on the server rather than snapshotted, so unlike the global
+ * board there is no five-minute floor to respect here — a member who was
+ * approved a minute ago should have moved by the time anyone looks.
+ */
+export function useGroupStandings(id: string, scope: LeaderboardScope, enabled = true) {
+  return useQuery({
+    queryKey: groupKeys.standings(id, scope),
+    enabled: enabled && id.length > 0,
+    queryFn: async () =>
+      unwrap<{ scope: LeaderboardScope; entries: LeaderboardEntry[] }>(
+        await api.api.groups[':id'].leaderboard.$get({ param: { id }, query: { scope } }),
       ),
   });
 }
@@ -83,20 +119,50 @@ export function useInviteToGroup(groupId: string) {
   });
 }
 
+/** Leaving, with the private reason the sheet asked for (PRODUCT.md §6.1). */
 export function useLeaveGroup() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (groupId: string) =>
+    mutationFn: async (input: { groupId: string; reason?: string; note?: string }) =>
       unwrap<{ ok: true; groupDeleted: boolean }>(
-        await api.api.groups[':id'].leave.$post({ param: { id: groupId } }),
+        await api.api.groups[':id'].leave.$post({
+          param: { id: input.groupId },
+          json: {
+            ...(input.reason ? { reason: input.reason as never } : {}),
+            ...(input.note ? { note: input.note } : {}),
+          },
+        }),
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: groupKeys.all }),
+  });
+}
+
+/** Muting or unmuting this group's pushes. The room itself is unaffected. */
+export function useMuteGroup(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (muted: boolean) =>
+      unwrap<{ muted: boolean }>(
+        muted
+          ? await api.api.groups[':id'].mute.$post({ param: { id: groupId } })
+          : await api.api.groups[':id'].mute.$delete({ param: { id: groupId } }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) }),
   });
 }
 
 export function useInvites() {
   return useQuery({
     queryKey: groupKeys.invites,
+    /**
+     * Polled, because the count on the Profile tab is built from this and is
+     * now the only ambient sign that anything is waiting. Without an interval
+     * the badge only moved when something else happened to invalidate the
+     * query, so an invite that arrived while the app sat open stayed invisible
+     * until the user reloaded. A minute is well inside the seven days an invite
+     * lasts, and it is one small request.
+     */
+    refetchInterval: 60_000,
     queryFn: async () => unwrap<{ invites: GroupInvite[] }>(await api.api.invites.$get()),
   });
 }
@@ -122,4 +188,29 @@ export function useRespondToInvite() {
       onSuccess: invalidate,
     }),
   };
+}
+
+/**
+ * Naming the group's Buddy and, when there is one, the member who verifies the
+ * Buddy's own tasks. Any member may set this.
+ */
+export function useSetGroupBuddy(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { buddyUserId: string | null; verifierUserId?: string | null }) =>
+      unwrap<{ buddyUserId: string | null; buddyVerifierId: string | null }>(
+        await api.api.groups[':id'].buddy.$put({ param: { id: groupId }, json: input }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) }),
+  });
+}
+
+/** Mints a join link to send to someone who is not on Buddy yet. */
+export function useCreateInviteLink(groupId: string) {
+  return useMutation({
+    mutationFn: async () =>
+      unwrap<{ token: string; maxUses: number }>(
+        await api.api.groups[':id']['invite-links'].$post({ param: { id: groupId } }),
+      ),
+  });
 }

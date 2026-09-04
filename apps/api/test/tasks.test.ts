@@ -78,7 +78,7 @@ describe('planning tasks', () => {
 });
 
 describe('the review loop', () => {
-  it('approves with a rating and pays rating x 10 plus the daily bonus', async () => {
+  it('approves, records the rating, and pays the daily bonus — not the rating (PRODUCT.md §3.6)', async () => {
     const { owner, buddy, groupId } = await pair('approve');
     const id = await createTask(owner, groupId);
 
@@ -96,14 +96,17 @@ describe('the review loop', () => {
     };
 
     expect(body.task.status).toBe('approved');
-    expect(body.award.credits).toBe(40);
+    // No clock ran on this task, so there are no minutes to verify: the
+    // rating is recorded and pays nothing. Credits come from minutes.
+    expect(body.award.credits).toBe(0);
     // It was the only task for the day, so the day is complete.
     expect(body.award.dailyBonus).toBe(20);
 
     const stats = await statsFor(owner.userId);
-    expect(stats.total_credits).toBe(60);
+    expect(stats.total_credits).toBe(20);
     expect(stats.tasks_approved).toBe(1);
-    expect(stats.current_streak).toBe(1);
+    // The streak counts session days, and no session ran.
+    expect(stats.current_streak).toBe(0);
 
     // The reviewer's tally moves too.
     expect((await statsFor(buddy.userId)).reviews_given).toBe(1);
@@ -261,7 +264,7 @@ describe('the daily bonus', () => {
       buddy.accessToken,
     );
     await expect(one.json()).resolves.toMatchObject({ award: { dailyBonus: 0 } });
-    expect((await statsFor(owner.userId)).total_credits).toBe(30);
+    expect((await statsFor(owner.userId)).total_credits).toBe(0);
 
     await post(`/api/tasks/${second}/done`, {}, owner.accessToken);
     const two = await post(
@@ -270,7 +273,7 @@ describe('the daily bonus', () => {
       buddy.accessToken,
     );
     await expect(two.json()).resolves.toMatchObject({ award: { dailyBonus: 20 } });
-    expect((await statsFor(owner.userId)).total_credits).toBe(80); // 30 + 30 + 20
+    expect((await statsFor(owner.userId)).total_credits).toBe(20); // 0 + 0 + 20: no minutes ran
   });
 
   it('is paid only once per day even as more approvals land', async () => {
@@ -290,7 +293,7 @@ describe('the daily bonus', () => {
       .bind(owner.userId)
       .all<{ n: number }>();
     expect(results[0]?.n).toBe(1);
-    expect((await statsFor(owner.userId)).total_credits).toBe(10 + 10 + 20);
+    expect((await statsFor(owner.userId)).total_credits).toBe(20);
   });
 });
 

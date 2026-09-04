@@ -42,7 +42,7 @@ export function Avatar({
       <div
         aria-label={`${displayName}, no photo`}
         role="img"
-        className="flex shrink-0 items-center justify-center rounded-full bg-brand-muted font-semibold text-brand"
+        className="flex shrink-0 items-center justify-center rounded-full bg-people font-semibold text-people-fg"
         style={{ width: size, height: size, fontSize: size * 0.38 }}
       >
         {initials(displayName)}

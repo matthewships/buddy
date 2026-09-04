@@ -15,7 +15,8 @@ apps/api       Cloudflare Worker — Hono, D1 + Drizzle, Durable Object chat,
 apps/mobile    Expo SDK 57 app — Expo Router, NativeWind, TanStack Query
 apps/web       Next 16 app — App Router, Tailwind, TanStack Query; deployed as
                a Worker by @opennextjs/cloudflare
-packages/shared  Zod schemas, goal/occupation lists, credit + badge rules
+packages/shared  Zod schemas, the option lists signup asks from (goals, levels,
+               majors, topics, interests, countries), credit + badge rules
 ```
 
 `packages/shared` is the single source of truth for anything all three must
@@ -23,8 +24,13 @@ agree on. Both clients compile against the Worker's own route types through
 Hono's `hc<AppType>()`, so a changed response shape is a type error rather than
 a runtime surprise.
 
-`apps/web` is the same 21 screens as the app, against the same API — not a
-second backend. Its data layer is a deliberate copy of the app's rather than a
+`apps/web` was a port of the app's 21 screens against the same API — not a
+second backend. It has since moved ahead of the app: the student signup
+questionnaire, the rebuilt buddy directory and `/profile/edit` are web-only
+until `apps/mobile` is ported. The app keeps working because every shared and
+schema change was additive (ARCHITECTURE.md §2.1).
+
+Its data layer is a deliberate copy of the app's rather than a
 shared package; `ARCHITECTURE.md` §5.4 records why, and every place the browser
 forced a genuine difference (tokens in `localStorage`, no push, `crossOrigin`
 on avatars).
@@ -89,7 +95,7 @@ Program; see `apps/mobile/EAS.md`.
 ```bash
 npm run lint        # eslint, flat config at the root
 npm run typecheck   # tsc across all four workspaces
-npm test            # 216 tests
+npm test            # 318 tests
 ```
 
 The API suite runs inside `workerd` against real D1, KV and a real Durable
@@ -158,6 +164,17 @@ added to the Home Screen; everywhere else no install is needed.
 
 ## Outstanding
 
+- **`apps/mobile` has not been ported to the student profile.** It still asks
+  the goal/occupation questions and shows neither institution, level, subject,
+  country, topics nor hobbies. It compiles and behaves correctly — the API
+  derives `occupation_key` from the level of study — but a student who signs up
+  on the web and opens the app sees a thinner version of their own profile.
+- **`apps/mobile` degrades in groups that have named a Buddy.** The server is
+  the authority on who may review, so an app user who is not the Buddy will see
+  review buttons that now return 403. Groups with no Buddy keep the original
+  any-member rule, so nothing existing breaks — but the app needs porting. It
+  also cannot set a Buddy, start a task clock, use a join link, or see the Feed,
+  and its Today tab still aggregates tasks the web now shows inside each group.
 - **Push credentials (mobile only).** An APNs key and FCM v1 credentials need
   uploading to EAS before push works on a real device. The web client is not
   waiting on any of that: it uses Web Push directly from the Worker, which needs

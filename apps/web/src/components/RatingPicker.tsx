@@ -29,7 +29,7 @@ export function RatingPicker({
               aria-checked={active}
               aria-label={`Rate ${rating} out of ${MAX_RATING}`}
               onClick={() => onChange(rating)}
-              className={`h-11 flex-1 cursor-pointer rounded-xl border text-base font-semibold transition-colors ${
+              className={`h-11 flex-1 cursor-pointer rounded-md border text-base font-semibold transition-colors ${
                 active
                   ? 'border-brand bg-brand text-brand-fg'
                   : 'border-surface-border bg-surface text-ink hover:border-brand'

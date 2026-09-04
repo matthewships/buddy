@@ -1,11 +1,11 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 
-import { CREDITS_PER_RATING_POINT, DAILY_COMPLETION_BONUS, creditsForRating } from '@buddy/shared';
+import { CREDITS_PER_RATING_POINT, DAILY_COMPLETION_BONUS, verifiedTopUp } from '@buddy/shared';
 
 import type { Db } from '../db/client.js';
 import { creditLedger, tasks, userStats } from '../db/schema.js';
 import { newId } from '../lib/ids.js';
-import { isoWeekKey, nowIso, previousLocalDate } from '../lib/time.js';
+import { isoWeekKey, nowIso } from '../lib/time.js';
 
 /**
  * Credits, streaks and the daily bonus (§2.5).
@@ -45,19 +45,35 @@ export async function awardApproval(
   db: Db,
   params: {
     ownerId: string;
-    reviewerId: string;
+    /**
+     * Null when nobody reviewed it — the rollover closing a task that sat
+     * `done` with no reviewer. There is no one to credit with a review, and
+     * `task_reviews.reviewer_id` is NOT NULL for the same reason: an
+     * unreviewed approval is an absence, not an anonymous reviewer.
+     */
+    reviewerId: string | null;
     taskId: string;
     dueDate: string;
     rating: number;
+    /**
+     * Minutes the task had on a clock (PRODUCT.md §3.6, slice 1). An approval
+     * pays the *verified* half of those minutes; the unverified half was paid
+     * when the clock stopped. The rating is recorded and shown to the owner,
+     * and moves no credits — that is what closed the mutual-five-star loophole.
+     */
+    actualMinutes?: number;
   },
 ): Promise<ApprovalAward> {
   const { ownerId, reviewerId, taskId, dueDate, rating } = params;
-  const credits = creditsForRating(rating);
+  void rating;
+  // Nobody looked, nothing is verified: an unreviewed close pays no top-up.
+  const credits = reviewerId ? verifiedTopUp(params.actualMinutes ?? 0) : 0;
   const weekKey = isoWeekKey();
 
   const statements: Parameters<Db['batch']>[0] = [
-    // A 0-rating approval still closes the task and still counts as approved;
-    // it simply earns nothing. There is no rejected state (§2.4).
+    // Recorded in the ledger under the reason that already exists for an
+    // approval; the amount is the verified top-up. There is no rejected state
+    // (§2.4): a 0-rating approval still closes the task.
     db
       .insert(creditLedger)
       .values({
@@ -85,62 +101,42 @@ export async function awardApproval(
       })
       .where(eq(userStats.userId, ownerId)),
 
+    ...(reviewerId
+      ? [
+          db
+            .update(userStats)
+            .set({
+              reviewsGiven: sql`${userStats.reviewsGiven} + 1`,
+              updatedAt: nowIso(),
+            })
+            .where(eq(userStats.userId, reviewerId)),
+        ]
+      : []),
+
+    // The streak is no longer moved here: it counts days with a session
+    // (services/sessions.ts). `last_approved_date` is still kept, for the
+    // profile's "last approved" line.
     db
       .update(userStats)
       .set({
-        reviewsGiven: sql`${userStats.reviewsGiven} + 1`,
+        lastApprovedDate: sql`MAX(COALESCE(${userStats.lastApprovedDate}, ''), ${dueDate})`,
         updatedAt: nowIso(),
       })
-      .where(eq(userStats.userId, reviewerId)),
-
-    ...streakStatements(db, ownerId, dueDate),
+      .where(eq(userStats.userId, ownerId)),
   ];
 
   await db.batch(statements as never);
 
-  const bonus = await maybeAwardDailyBonus(db, ownerId, dueDate);
+  /**
+   * The daily bonus is for finishing everything you said you would, and an
+   * unreviewed close is not evidence of that — it only means nobody looked. So
+   * a sweep never *triggers* the bonus, though one already earned by a real
+   * approval that day stands: the ledger is keyed on the day and pays once.
+   */
+  const bonus = reviewerId ? await maybeAwardDailyBonus(db, ownerId, dueDate) : 0;
   const stats = await db.query.userStats.findFirst({ where: eq(userStats.userId, ownerId) });
 
   return { credits, dailyBonus: bonus, streak: stats?.currentStreak ?? 0 };
-}
-
-/**
- * Extends the streak in a single statement.
- *
- * Three cases, all expressed as SQL so no read is involved:
- * - the same local day already counted → unchanged
- * - the day before the last counted day → +1
- * - anything older → the chain broke, restart at 1
- *
- * A late review of an *older* day is ignored entirely: approving Monday's task
- * on Wednesday must not rewrite a streak that has already moved past it.
- */
-function streakStatements(db: Db, userId: string, dueDate: string) {
-  const previous = previousLocalDate(dueDate);
-
-  return [
-    db
-      .update(userStats)
-      .set({
-        currentStreak: sql`CASE
-          WHEN ${userStats.lastApprovedDate} = ${dueDate} THEN ${userStats.currentStreak}
-          WHEN ${userStats.lastApprovedDate} = ${previous} THEN ${userStats.currentStreak} + 1
-          ELSE 1 END`,
-        bestStreak: sql`MAX(${userStats.bestStreak}, CASE
-          WHEN ${userStats.lastApprovedDate} = ${dueDate} THEN ${userStats.currentStreak}
-          WHEN ${userStats.lastApprovedDate} = ${previous} THEN ${userStats.currentStreak} + 1
-          ELSE 1 END)`,
-        lastApprovedDate: sql`MAX(COALESCE(${userStats.lastApprovedDate}, ''), ${dueDate})`,
-        updatedAt: nowIso(),
-      })
-      .where(
-        and(
-          eq(userStats.userId, userId),
-          // Only move the streak forward.
-          sql`(${userStats.lastApprovedDate} IS NULL OR ${userStats.lastApprovedDate} <= ${dueDate})`,
-        ),
-      ),
-  ];
 }
 
 /**

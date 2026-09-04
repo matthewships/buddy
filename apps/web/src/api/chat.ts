@@ -10,6 +10,8 @@ export interface ChatMessage {
   senderDisplayName: string;
   body: string;
   createdAt: string;
+  /** True when the sender is in a block pair with the viewer; the body is then empty. */
+  blocked?: boolean;
 }
 
 export const chatKeys = {

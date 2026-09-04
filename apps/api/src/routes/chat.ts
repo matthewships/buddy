@@ -9,6 +9,7 @@ import { messages, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, forbidden, unauthorized } from '../lib/errors.js';
 import { currentUserId, requireAuth, requireSecret } from '../middleware/auth.js';
+import { blockedIdsFor } from '../services/blocks.js';
 import { signChatTicket, verifyChatTicket } from '../services/chat-ticket.js';
 import { assertMember } from './groups.js';
 
@@ -120,9 +121,20 @@ export const chatRoutes = new Hono<AppEnv>()
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
 
+    /**
+     * A blocked sender's messages are collapsed rather than removed (PRODUCT.md
+     * §6.1): the row stays so the conversation still makes sense to everyone
+     * else quoting it, but its body is withheld from the person who blocked
+     * them, or whom they blocked. Paging is unaffected because nothing is
+     * dropped.
+     */
+    const blocked = new Set(await blockedIdsFor(client, userId));
+
     return c.json({
       // Returned newest-first; the client reverses for display.
-      messages: page,
+      messages: page.map((row) =>
+        blocked.has(row.senderId) ? { ...row, body: '', blocked: true as const } : { ...row, blocked: false as const },
+      ),
       nextBefore: hasMore ? (page.at(-1)?.createdAt ?? null) : null,
     });
   });

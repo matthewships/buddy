@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { db } from '../src/db/client.js';
 import { runRollover } from '../src/jobs/rollover.js';
+import { recordSessionDay } from '../src/services/sessions.js';
 
 import { createTask, pair, post, resetRateLimits, statsFor } from './helpers.js';
 
@@ -46,12 +47,14 @@ describe('day rollover', () => {
     expect(await taskStatus(id)).toBe('planned');
   });
 
-  it('does not touch tasks that are already done, approved or missed', async () => {
+  it('does not touch tasks that are already done or approved', async () => {
     const { owner, buddy, groupId } = await pair('rollstates');
 
+    // Yesterday's, so the reviewer still has their full extra day. Stale ones
+    // are closed instead — see unreviewed-tasks.test.ts.
     const done = await createTask(owner, groupId, 'Done one');
     await post(`/api/tasks/${done}/done`, {}, owner.accessToken);
-    await backdate(done, daysAgo(2));
+    await backdate(done, daysAgo(1));
 
     const approved = await createTask(owner, groupId, 'Approved one');
     await post(`/api/tasks/${approved}/done`, {}, owner.accessToken);
@@ -64,7 +67,8 @@ describe('day rollover', () => {
 
     await runRollover(db(env.DB));
 
-    // Only `planned` is swept — a submitted task still deserves its review.
+    // The `missed` sweep takes only `planned` — a submitted task still
+    // deserves its review, and an approved one is finished.
     expect(await taskStatus(done)).toBe('done');
     expect(await taskStatus(approved)).toBe('approved');
   });
@@ -116,48 +120,47 @@ describe('day rollover', () => {
   });
 });
 
+/**
+ * The streak counts days with a session (PRODUCT.md §3.6, slice 1), not days
+ * with an approval. The chain is driven here through the service that a
+ * session's end calls, because a session cannot be ended on a past day over
+ * the API — its day is the day it ends.
+ */
 describe('streaks', () => {
   it('extends across consecutive days and records the best', async () => {
-    const { owner, buddy, groupId } = await pair('streak');
+    const { owner } = await pair('streak');
+    const client = db(env.DB);
 
     for (const offset of [2, 1, 0]) {
-      const id = await createTask(owner, groupId, `Day ${offset}`);
-      await backdate(id, daysAgo(offset));
-      await post(`/api/tasks/${id}/done`, {}, owner.accessToken);
-      await post(`/api/tasks/${id}/review`, { action: 'approve', rating: 2 }, buddy.accessToken);
+      await recordSessionDay(client, owner.userId, daysAgo(offset), 30);
     }
 
     const stats = await statsFor(owner.userId);
     expect(stats.current_streak).toBe(3);
     expect(stats.best_streak).toBe(3);
-    expect(stats.last_approved_date).toBe(daysAgo(0));
   });
 
-  it('does not double-count two approvals on the same day', async () => {
-    const { owner, buddy, groupId } = await pair('streaksame');
-
-    for (const title of ['One', 'Two']) {
-      const id = await createTask(owner, groupId, title);
-      await post(`/api/tasks/${id}/done`, {}, owner.accessToken);
-      await post(`/api/tasks/${id}/review`, { action: 'approve', rating: 2 }, buddy.accessToken);
-    }
-
+  it('does not double-count two sessions on the same day', async () => {
+    const { owner } = await pair('streaksame');
+    const client = db(env.DB);
+    await recordSessionDay(client, owner.userId, daysAgo(0), 30);
+    await recordSessionDay(client, owner.userId, daysAgo(0), 45);
     expect((await statsFor(owner.userId)).current_streak).toBe(1);
+  });
+
+  it('needs a real session, not a short one, to count a day', async () => {
+    const { owner } = await pair('streakshort');
+    const client = db(env.DB);
+    await recordSessionDay(client, owner.userId, daysAgo(0), 10);
+    expect((await statsFor(owner.userId)).current_streak).toBe(0);
   });
 
   it('restarts at 1 after a gap', async () => {
-    const { owner, buddy, groupId } = await pair('streakgap');
-
-    const old = await createTask(owner, groupId, 'Long ago');
-    await backdate(old, daysAgo(10));
-    await post(`/api/tasks/${old}/done`, {}, owner.accessToken);
-    await post(`/api/tasks/${old}/review`, { action: 'approve', rating: 2 }, buddy.accessToken);
+    const { owner } = await pair('streakgap');
+    const client = db(env.DB);
+    await recordSessionDay(client, owner.userId, daysAgo(10), 30);
     expect((await statsFor(owner.userId)).current_streak).toBe(1);
-
-    const now = await createTask(owner, groupId, 'Today');
-    await post(`/api/tasks/${now}/done`, {}, owner.accessToken);
-    await post(`/api/tasks/${now}/review`, { action: 'approve', rating: 2 }, buddy.accessToken);
-
+    await recordSessionDay(client, owner.userId, daysAgo(0), 30);
     const stats = await statsFor(owner.userId);
     expect(stats.current_streak).toBe(1);
     expect(stats.best_streak).toBe(1);
@@ -190,17 +193,19 @@ describe('streaks', () => {
     expect(after.total_credits).toBeGreaterThan(before.total_credits);
   });
 
-  it('breaks a streak once the user goes quiet for a day', async () => {
-    const { owner, buddy, groupId } = await pair('streakbreak');
-
-    const old = await createTask(owner, groupId, 'Two days ago');
-    await backdate(old, daysAgo(2));
-    await post(`/api/tasks/${old}/done`, {}, owner.accessToken);
-    await post(`/api/tasks/${old}/review`, { action: 'approve', rating: 2 }, buddy.accessToken);
+  it('breaks a streak once the user goes quiet for a day, with no freeze left', async () => {
+    const { owner } = await pair('streakbreak');
+    const client = db(env.DB);
+    await recordSessionDay(client, owner.userId, daysAgo(2), 30);
     expect((await statsFor(owner.userId)).current_streak).toBe(1);
+    // A new account holds two freezes, which would be spent first (see
+    // sessions.test.ts); this is the case with none.
+    await env.DB.prepare('UPDATE user_stats SET freezes_available = 0, freezes_month = ? WHERE user_id = ?')
+      .bind(daysAgo(0).slice(0, 7), owner.userId)
+      .run();
 
-    // The cron notices nothing was approved yesterday or today.
-    const result = await runRollover(db(env.DB));
+    // The cron notices there was no session yesterday or today.
+    const result = await runRollover(client);
     expect(result.streaksReset).toBeGreaterThanOrEqual(1);
 
     const stats = await statsFor(owner.userId);
@@ -210,12 +215,10 @@ describe('streaks', () => {
   });
 
   it('does not break a streak that is still current', async () => {
-    const { owner, buddy, groupId } = await pair('streakkeep');
-    const id = await createTask(owner, groupId);
-    await post(`/api/tasks/${id}/done`, {}, owner.accessToken);
-    await post(`/api/tasks/${id}/review`, { action: 'approve', rating: 2 }, buddy.accessToken);
-
-    await runRollover(db(env.DB));
+    const { owner } = await pair('streakkeep');
+    const client = db(env.DB);
+    await recordSessionDay(client, owner.userId, daysAgo(0), 30);
+    await runRollover(client);
     expect((await statsFor(owner.userId)).current_streak).toBe(1);
   });
 });

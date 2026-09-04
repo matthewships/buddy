@@ -101,3 +101,111 @@ export function useUploadAvatar() {
     },
   });
 }
+
+/**
+ * A Feed photo (§2.7), uploaded through the same two-step protocol.
+ *
+ * Resized differently on purpose. An avatar is centre-cropped to a square
+ * because that is the shape it renders in; a Feed photo is a picture of
+ * something — a desk, a whiteboard, a finished page — and cropping it to a
+ * square would cut the subject out. This bounds the long edge and leaves the
+ * frame alone.
+ *
+ * Bigger than an avatar's 256px, because it renders at full column width, but
+ * still bounded: the server caps uploads at 5 MB and a modern phone camera
+ * clears that easily, so an unresized upload would fail for exactly the users
+ * most likely to attempt one.
+ */
+const MAX_POST_EDGE = 1280;
+
+async function toBoundedJpeg(file: File): Promise<{ bytes: ArrayBuffer; contentType: string }> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_POST_EDGE / Math.max(bitmap.width, bitmap.height));
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('No 2d context');
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
+    );
+    if (!blob) throw new Error('Encode failed');
+
+    return { bytes: await blob.arrayBuffer(), contentType: 'image/jpeg' };
+  } catch {
+    // Same fallback as the avatar: the server validates content types, so a
+    // rejection there is a better failure than a silent one here.
+    return { bytes: await file.arrayBuffer(), contentType: file.type || 'image/jpeg' };
+  }
+}
+
+export function usePostImageUpload() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<{ key: string }> => {
+      const { bytes, contentType } = await toBoundedJpeg(file);
+
+      const { key, uploadUrl } = await unwrap<{ key: string; uploadUrl: string }>(
+        await api.api.me['post-image'].$post(),
+      );
+
+      const token = await getAccessToken();
+      const response = await fetch(`${API_URL}${uploadUrl}`, {
+        method: 'PUT',
+        headers: {
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          'content-type': contentType,
+        },
+        body: bytes,
+      });
+
+      await unwrap<{ key: string }>(response);
+      // The post is created separately; nothing here references the key yet.
+      return { key };
+    },
+  });
+}
+
+/**
+ * A proof photo (§2.4), through the same two-step protocol as a Feed photo and
+ * with the same bounding — a proof is a picture of a desk, a screen or a page,
+ * so it wants the whole frame rather than the avatar's centred square.
+ *
+ * What differs is only where the bytes end up: the key comes back under
+ * `proofs/`, which is the prefix the API refuses to serve from `/api/media` and
+ * serves instead from `GET /api/tasks/:id/proof-image`, behind a group
+ * membership check. Nothing here has to know that; it just has to send the key
+ * it was given to the task, not one it made up.
+ */
+export function useProofImageUpload() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<{ key: string }> => {
+      const { bytes, contentType } = await toBoundedJpeg(file);
+
+      const { key, uploadUrl } = await unwrap<{ key: string; uploadUrl: string }>(
+        await api.api.me['proof-image'].$post(),
+      );
+
+      const token = await getAccessToken();
+      const response = await fetch(`${API_URL}${uploadUrl}`, {
+        method: 'PUT',
+        headers: {
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          'content-type': contentType,
+        },
+        body: bytes,
+      });
+
+      await unwrap<{ key: string }>(response);
+      // The task carries the key; nothing here references it yet.
+      return { key };
+    },
+  });
+}

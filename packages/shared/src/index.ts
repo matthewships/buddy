@@ -7,10 +7,24 @@
  * package at runtime. Both consumers (Metro, and esbuild via wrangler) resolve
  * extensionless TypeScript, so this is the form that works for both.
  */
+export * from './age';
 export * from './badges';
+export * from './countries';
 export * from './credits';
+export * from './education-levels';
 export * from './enums';
 export * from './goals';
+export * from './institutions';
+export * from './interests';
+export * from './level-fit';
 export * from './limits';
+export * from './majors';
+export * from './nudges';
 export * from './occupations';
+export * from './profile-strength';
+export * from './reactions';
+export * from './safety';
 export * from './schemas';
+export * from './sessions';
+export * from './statuses';
+export * from './topics';

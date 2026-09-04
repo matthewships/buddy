@@ -16,7 +16,8 @@ import {
 import { db } from '../db/client.js';
 import { userStats, users } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
-import { badRequest, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, unauthorized } from '../lib/errors.js';
+import { placeholderHandle } from '../lib/handles.js';
 import { newId } from '../lib/ids.js';
 import { clientIp, enforceRateLimit } from '../lib/rate-limit.js';
 import { nowIso } from '../lib/time.js';
@@ -54,7 +55,7 @@ export const authRoutes = new Hono<AppEnv>()
    * owner gets a code and the caller learns nothing.
    */
   .post('/register', zValidator('json', registerSchema), async (c) => {
-    const { email, password, displayName } = c.req.valid('json');
+    const { email, password, displayName, handle } = c.req.valid('json');
     await enforceRateLimit(c.env.CACHE, 'register', clientIp(c.req.raw));
     assertPasswordAllowed(password);
 
@@ -74,17 +75,28 @@ export const authRoutes = new Hono<AppEnv>()
       return c.json({ ok: true as const, emailSent: true as const }, 201);
     }
 
+    // The web client asks for a handle here; the mobile app still claims one
+    // later in PATCH /me. Checked before the account exists so the user is told
+    // on the screen they typed it on, rather than several steps later.
+    if (handle) {
+      const taken = await client.query.users.findFirst({
+        where: eq(users.handle, handle),
+        columns: { id: true },
+      });
+      if (taken) throw conflict('That handle is taken', { field: 'handle' });
+    }
+
     const { hash, salt } = await hashPassword(password);
     const userId = newId();
 
-    // A placeholder handle keeps the NOT NULL + UNIQUE constraint satisfiable
-    // before onboarding; the user picks a real one in PATCH /me.
+    // Without one, a placeholder handle keeps the NOT NULL + UNIQUE constraint
+    // satisfiable before onboarding; the user picks a real one in PATCH /me.
     await client.insert(users).values({
       id: userId,
       email,
       passwordHash: hash,
       passwordSalt: salt,
-      handle: `u${userId.slice(-12).toLowerCase()}`,
+      handle: handle ?? placeholderHandle(userId),
       displayName,
     });
     await client.insert(userStats).values({ userId });
@@ -273,9 +285,26 @@ export function publicSelf(user: {
   avatarKey: string | null;
   timezone: string;
   goalKey: string | null;
+  goalKey2: string | null;
+  goalKeys: string[] | null;
   goalText: string | null;
+  interestText: string | null;
   occupationKey: string | null;
   occupationText: string | null;
+  educationLevel: string | null;
+  /**
+   * The caller's own date of birth (§2.8). On `publicSelf` only — `users.ts`
+   * builds another person's profile field by field and this is not one of
+   * them. What the client needs it for is knowing whether the question has
+   * been answered, not showing it to anybody.
+   */
+  dateOfBirth: string | null;
+  institution: string | null;
+  majorKey: string | null;
+  majorText: string | null;
+  country: string | null;
+  city: string | null;
+  bio: string | null;
   isOpenBuddy: boolean;
   onboardedAt: string | null;
   createdAt: string;
@@ -289,12 +318,37 @@ export function publicSelf(user: {
     avatarKey: user.avatarKey,
     timezone: user.timezone,
     goalKey: user.goalKey,
+    goalKey2: user.goalKey2,
+    /**
+     * The full ordered list. Falls back to the indexed pair for an account that
+     * predates the column, so a client can read this one field and never have
+     * to reassemble the pair itself.
+     */
+    goalKeys: user.goalKeys ?? [user.goalKey, user.goalKey2].filter((k): k is string => k !== null),
     goalText: user.goalText,
+    interestText: user.interestText,
     occupationKey: user.occupationKey,
     occupationText: user.occupationText,
+    educationLevel: user.educationLevel,
+    dateOfBirth: user.dateOfBirth,
+    institution: user.institution,
+    majorKey: user.majorKey,
+    majorText: user.majorText,
+    country: user.country,
+    city: user.city,
+    bio: user.bio,
     isOpenBuddy: user.isOpenBuddy,
     createdAt: user.createdAt,
     /** Drives the app's choice between the onboarding stack and the tabs (§5.2). */
     onboarded: user.onboardedAt !== null,
+    /**
+     * Whether the handle is a real one or still the placeholder registration
+     * assigns. A client cannot work this out for itself — the placeholder is
+     * derived from the user id and looks like any other handle — and it has to,
+     * because onboarding cannot complete without a claimed handle. Without this,
+     * a signed-in user with no handle answers every question, fails to complete,
+     * and is sent back to the first question forever.
+     */
+    handleClaimed: user.handle !== placeholderHandle(user.id),
   };
 }

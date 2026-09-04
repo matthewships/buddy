@@ -377,6 +377,36 @@ describe('profile and handles', () => {
     await expect(theirs.json()).resolves.toMatchObject({ available: false });
   });
 
+  it('stores, clears and guards the second goal', async () => {
+    const session = await signUp('twogoal@example.com');
+    await onboard(session, 'twogoalh');
+
+    const set = await patch('/api/me', { goalKey2: 'fitness' }, session.accessToken);
+    expect(set.status).toBe(200);
+    expect(await set.json()).toMatchObject({ goalKey: 'thesis', goalKey2: 'fitness' });
+
+    // The same goal in both slots is rejected even when only one half is sent,
+    // which the Zod refine alone cannot see.
+    const dupe = await patch('/api/me', { goalKey2: 'thesis' }, session.accessToken);
+    expect(dupe.status).toBe(409);
+
+    const cleared = await patch('/api/me', { goalKey2: null }, session.accessToken);
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({ goalKey: 'thesis', goalKey2: null });
+
+    // Omitting it entirely leaves the stored value alone.
+    await patch('/api/me', { goalKey2: 'coding' }, session.accessToken);
+    const untouched = await patch('/api/me', { displayName: 'Two Goals' }, session.accessToken);
+    expect(await untouched.json()).toMatchObject({ goalKey2: 'coding' });
+  });
+
+  it('rejects an unknown second goal', async () => {
+    const session = await signUp('badsecond@example.com');
+    await onboard(session, 'badsecond');
+    const res = await patch('/api/me', { goalKey2: 'become_a_wizard' }, session.accessToken);
+    expect(res.status).toBe(400);
+  });
+
   it('requires free text for a custom goal', async () => {
     const session = await signUp('customgoal@example.com');
     const bad = await patch('/api/me', { goalKey: 'custom' }, session.accessToken);

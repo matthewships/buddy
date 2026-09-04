@@ -2,15 +2,36 @@ import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 
-import { GROUP_INVITE_TTL_MS, createGroupSchema, inviteToGroupSchema } from '@buddy/shared';
+import {
+  GROUP_INVITE_TTL_MS,
+  INVITE_LINK_MAX_USES,
+  createGroupSchema,
+  groupLeaderboardQuerySchema,
+  statusIsCurrent,
+  inviteToGroupSchema,
+  leaveGroupSchema,
+  setGroupBuddySchema,
+} from '@buddy/shared';
 
 import { db, type Db } from '../db/client.js';
-import { groupInvites, groupMembers, groups, users } from '../db/schema.js';
+import {
+  groupDepartures,
+  groupInviteLinks,
+  groupInvites,
+  groupMembers,
+  groupMutes,
+  groups,
+  users,
+} from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, conflict, forbidden, gone, notFound } from '../lib/errors.js';
 import { newId } from '../lib/ids.js';
-import { nowIso } from '../lib/time.js';
+import { enforceRateLimit } from '../lib/rate-limit.js';
+import { newInviteToken } from '../lib/tokens.js';
+import { localDateOrUtc, nowIso } from '../lib/time.js';
 import { currentUserId, requireAuth } from '../middleware/auth.js';
+import { isBlockedPair } from '../services/blocks.js';
+import { groupLeaderboard } from '../services/leaderboard.js';
 import { enqueuePush } from '../services/push.js';
 
 /**
@@ -108,7 +129,7 @@ export const groupRoutes = new Hono<AppEnv>()
     const group = await client.query.groups.findFirst({ where: eq(groups.id, groupId) });
     if (!group) throw notFound('No such group');
 
-    const members = await client
+    const rows = await client
       .select({
         id: users.id,
         handle: users.handle,
@@ -119,11 +140,31 @@ export const groupRoutes = new Hono<AppEnv>()
         role: groupMembers.role,
         joinedAt: groupMembers.joinedAt,
         lastSeenAt: users.lastSeenAt,
+        timezone: users.timezone,
+        statusKey: users.statusKey,
+        statusDate: users.statusDate,
       })
       .from(groupMembers)
       .innerJoin(users, eq(users.id, groupMembers.userId))
       .where(and(eq(groupMembers.groupId, groupId), isNull(users.deletedAt)))
       .orderBy(groupMembers.joinedAt);
+
+    /**
+     * Each status is measured against its *own* setter's local day (§2.6). A
+     * group spans timezones, and a status set in Tokyo would read as stale to a
+     * member in London hours before its owner's day was over. The timezone and
+     * the stored date are then dropped: they are how the answer is worked out,
+     * not anybody else's business.
+     */
+    const members = rows.map(({ timezone, statusDate, statusKey, ...member }) => ({
+      ...member,
+      statusKey: statusIsCurrent(statusDate, localDateOrUtc(timezone)) ? statusKey : null,
+    }));
+
+    const mute = await client.query.groupMutes.findFirst({
+      where: and(eq(groupMutes.groupId, groupId), eq(groupMutes.userId, userId)),
+      columns: { userId: true },
+    });
 
     return c.json({
       group: {
@@ -132,9 +173,171 @@ export const groupRoutes = new Hono<AppEnv>()
         emoji: group.emoji,
         kind: group.kind,
         createdAt: group.createdAt,
+        /** Whether the caller has muted this group's pushes (PRODUCT.md §6.1). */
+        muted: Boolean(mute),
+        // Returned so the client can offer the same answer the rule below
+        // enforces. Inferring it from the `owner` member role would be a
+        // second source for one fact, and the two can disagree.
+        createdBy: group.createdBy,
+        buddyUserId: group.buddyUserId,
+        buddyVerifierId: group.buddyVerifierId,
       },
       members,
     });
+  })
+
+  /**
+   * This group's standings (§2.5).
+   *
+   * The global board answers "where am I among everyone", which for a new
+   * account is a hundred strangers and a number with nothing to compare it to.
+   * This answers the question the product is actually about: how the people who
+   * agreed to check each other's work are doing, side by side.
+   *
+   * Membership-gated like every other group read, and computed live rather than
+   * snapshotted — see services/leaderboard.ts for why this one skips the cache.
+   */
+  .get('/:id/leaderboard', zValidator('query', groupLeaderboardQuerySchema), async (c) => {
+    const groupId = c.req.param('id');
+    const { scope } = c.req.valid('query');
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, currentUserId(c));
+
+    return c.json({ scope, entries: await groupLeaderboard(client, groupId, scope) });
+  })
+
+  /**
+   * Naming the group's Buddy, and the member who verifies the Buddy's own tasks
+   * (§2.4).
+   *
+   * This used to be "any member may set this", with a note that the line would
+   * want revisiting. It does, because the rule it guards is the product: the
+   * Buddy is the person who decides whether your work counts, and letting
+   * anybody reassign that at any moment means the member facing a review they
+   * do not like can simply appoint themselves. Accountability nobody can
+   * quietly opt out of is the whole proposition.
+   *
+   * So the first naming is open — a group with no Buddy is already on the
+   * weaker any-member rule, and agreeing on one is a decision the group makes
+   * together, not a privilege. Changing or clearing one, once named, belongs to
+   * the person who made the group or to the Buddy themselves, who must always
+   * be able to put the job down.
+   *
+   * The nomination of who checks the Buddy stays with the Buddy. Nobody may
+   * approve their own task, so that slot exists to answer "who checks the
+   * checker" — and the answer is not one the checker's own reviewee should be
+   * able to install.
+   *
+   * Setting the Buddy to null returns the group to the any-member review rule.
+   */
+  .put('/:id/buddy', zValidator('json', setGroupBuddySchema), async (c) => {
+    const groupId = c.req.param('id');
+    const { buddyUserId, verifierUserId } = c.req.valid('json');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, userId);
+
+    const current = await client.query.groups.findFirst({ where: eq(groups.id, groupId) });
+    if (!current) throw notFound('No such group');
+
+    const changingBuddy = (current.buddyUserId ?? null) !== (buddyUserId ?? null);
+    if (changingBuddy && current.buddyUserId) {
+      const mayChange = userId === current.createdBy || userId === current.buddyUserId;
+      if (!mayChange) {
+        throw forbidden(
+          'Only whoever made the group, or the Buddy themselves, can change who checks tasks',
+        );
+      }
+    }
+
+    // The Buddy's own verifier is the Buddy's call — see the note above.
+    if (
+      !changingBuddy &&
+      current.buddyUserId &&
+      (current.buddyVerifierId ?? null) !== (verifierUserId ?? null) &&
+      userId !== current.buddyUserId
+    ) {
+      throw forbidden('Only the Buddy can choose who checks their own tasks');
+    }
+
+    if (buddyUserId) await assertMember(client, groupId, buddyUserId);
+    if (verifierUserId) {
+      await assertMember(client, groupId, verifierUserId);
+      // Nobody may approve their own task, so a Buddy who verifies themselves
+      // would be a group where the Buddy's tasks can never be reviewed.
+      if (verifierUserId === buddyUserId) {
+        throw badRequest('The Buddy cannot verify their own tasks — pick someone else');
+      }
+    }
+
+    await client
+      .update(groups)
+      .set({
+        buddyUserId,
+        // Clearing the Buddy clears their nominee with them: a verifier without
+        // a Buddy names nothing.
+        buddyVerifierId: buddyUserId ? (verifierUserId ?? null) : null,
+      })
+      .where(eq(groups.id, groupId));
+
+    const row = await client.query.groups.findFirst({ where: eq(groups.id, groupId) });
+    return c.json({
+      buddyUserId: row?.buddyUserId ?? null,
+      buddyVerifierId: row?.buddyVerifierId ?? null,
+    });
+  })
+
+  /**
+   * Mints a join link, for inviting someone who is not a user yet (§2.3).
+   *
+   * This reverses the original decision that "@handle covers the same need":
+   * it does not. A handle can only name someone who already signed up, which
+   * makes every group a closed room and every new member somebody else's
+   * problem to recruit.
+   */
+  .post('/:id/invite-links', async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, userId);
+    await enforceRateLimit(c.env.CACHE, 'inviteLink', userId);
+
+    const id = newId();
+    const token = newInviteToken();
+
+    await client.insert(groupInviteLinks).values({
+      id,
+      token,
+      groupId,
+      createdBy: userId,
+      maxUses: INVITE_LINK_MAX_USES,
+      expiresAt: new Date(Date.now() + GROUP_INVITE_TTL_MS).toISOString(),
+    });
+
+    return c.json({ token, maxUses: INVITE_LINK_MAX_USES }, 201);
+  })
+
+  /** Revoking one, for a link that got further than intended. */
+  .delete('/:id/invite-links/:linkId', async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+
+    await assertMember(client, groupId, userId);
+    await client
+      .update(groupInviteLinks)
+      .set({ revokedAt: nowIso() })
+      .where(
+        and(
+          eq(groupInviteLinks.id, c.req.param('linkId')),
+          eq(groupInviteLinks.groupId, groupId),
+        ),
+      );
+
+    return c.json({ ok: true as const });
   })
 
   /**
@@ -155,6 +358,10 @@ export const groupRoutes = new Hono<AppEnv>()
       columns: { id: true, deletedAt: true },
     });
     if (!target || target.deletedAt !== null) throw notFound(`No one is using @${handle}`);
+    // Absence rather than refusal, in both directions (PRODUCT.md §6.1).
+    if (await isBlockedPair(client, fromUserId, target.id)) {
+      throw notFound(`No one is using @${handle}`);
+    }
     if (target.id === fromUserId) throw badRequest('You are already in this group');
 
     const already = await client.query.groupMembers.findFirst({
@@ -197,17 +404,74 @@ export const groupRoutes = new Hono<AppEnv>()
     return c.json({ id, handle, status: 'pending' as const }, 201);
   })
 
-  /** Leaving. The last member out deletes the group rather than orphaning it. */
-  .post('/:id/leave', async (c) => {
+  /**
+   * Muting: the group's chat and nudge pushes stop reaching this member
+   * (PRODUCT.md §6.1). Nothing else changes; the room itself is unaffected.
+   */
+  .post('/:id/mute', async (c) => {
     const groupId = c.req.param('id');
     const userId = currentUserId(c);
     const client = db(c.env.DB);
+    await assertMember(client, groupId, userId);
+    await client.insert(groupMutes).values({ groupId, userId }).onConflictDoNothing();
+    return c.json({ muted: true as const });
+  })
+
+  .delete('/:id/mute', async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+    await assertMember(client, groupId, userId);
+    await client
+      .delete(groupMutes)
+      .where(and(eq(groupMutes.groupId, groupId), eq(groupMutes.userId, userId)));
+    return c.json({ muted: false as const });
+  })
+
+  /**
+   * Leaving, optionally saying why (PRODUCT.md §6.1). The reason is private to
+   * the leaver and recorded before the membership row goes, in a table that
+   * outlives the group. The last member out deletes the group rather than
+   * orphaning it.
+   */
+  .post('/:id/leave', zValidator('json', leaveGroupSchema.optional()), async (c) => {
+    const groupId = c.req.param('id');
+    const userId = currentUserId(c);
+    const client = db(c.env.DB);
+    const { reason, note } = c.req.valid('json') ?? {};
 
     await assertMember(client, groupId, userId);
+
+    await client.insert(groupDepartures).values({
+      id: newId(),
+      groupId,
+      userId,
+      reason: reason ?? null,
+      note: note ?? null,
+    });
 
     await client
       .delete(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)));
+
+    /**
+     * If the departing member held either review role, clear it. Reviews then
+     * fall back to the any-member rule rather than pointing at somebody who is
+     * no longer here — which would leave every task in the group unreviewable.
+     */
+    const group = await client.query.groups.findFirst({
+      where: eq(groups.id, groupId),
+      columns: { buddyUserId: true, buddyVerifierId: true },
+    });
+    if (group?.buddyUserId === userId || group?.buddyVerifierId === userId) {
+      await client
+        .update(groups)
+        .set({
+          ...(group.buddyUserId === userId && { buddyUserId: null, buddyVerifierId: null }),
+          ...(group.buddyVerifierId === userId && { buddyVerifierId: null }),
+        })
+        .where(eq(groups.id, groupId));
+    }
 
     /**
      * Tell the chat room the member is gone, so their socket is closed now

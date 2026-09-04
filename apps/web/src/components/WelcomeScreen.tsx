@@ -1,15 +1,17 @@
 import Link from 'next/link';
+import { FIRST_STEP } from '@/onboarding/steps';
 
 import { linkButtonClass } from './buttonStyles';
 import { Screen } from './Frame';
 
 /**
- * The landing content, shared by `/` and `/welcome`.
+ * The compact signed-out screen at `/welcome`.
  *
- * Two routes render the same screen: `/` is the public landing page, and
- * `/welcome` has to keep existing because `RequireSession` sends a signed-out
- * user there. One component rather than two copies, so the copy and the
- * spacing cannot drift.
+ * `RequireSession` sends a signed-out user here, which is why it exists and why
+ * it stayed small when `/` became a landing page: somebody who has just been
+ * signed out mid-session wants the way back in, not a pitch for the product
+ * they were already using. The two routes said the same thing while `/` had
+ * nothing else to say; now they answer different questions.
  *
  * Deliberately *not* a client component. This is the first paint of the site
  * for anyone arriving without a session, and a `'use client'` here would put
@@ -29,16 +31,24 @@ export function WelcomeScreen() {
   return (
     <Screen>
       <div className="flex flex-1 flex-col justify-center gap-3">
-        <h1 className="text-4xl font-bold text-ink">Buddy</h1>
-        <p className="text-base text-ink-muted">
-          Plan your day, get it approved by a buddy, build the streak.
+        <span className="eyebrow">For students</span>
+        <h1 className="text-4xl font-bold leading-none text-ink">
+          Buddy<span className="text-accent">.</span>
+        </h1>
+        <p className="text-base leading-relaxed text-ink-muted">
+          Plan what you will finish today. Have a buddy check it. Keep the streak.
         </p>
         <div className="mt-8 flex flex-col gap-3">
-          <Link href="/register" className={linkButtonClass('primary')}>
-            Create an account
+          {/*
+            Into the questions, not straight to registration. Nobody is asked to
+            create an account before they have seen what the product is for —
+            the account comes last, once the answers are already theirs.
+          */}
+          <Link href="/login" className={linkButtonClass('primary')}>
+            Sign back in
           </Link>
-          <Link href="/login" className={linkButtonClass('ghost')}>
-            I already have an account
+          <Link href={FIRST_STEP} className={linkButtonClass('ghost')}>
+            I&rsquo;m new here
           </Link>
         </div>
       </div>

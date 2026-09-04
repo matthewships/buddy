@@ -1,0 +1,28 @@
+# Cloudflare Workers Assets reads this file (it ships in `public/`, so the build
+# copies it to `.open-next/assets/` alongside sw.js and the manifest).
+#
+# Why it is needed at all: Workers Assets defaults every file to
+# `max-age=0, must-revalidate`, which is the safe default for content whose URL
+# can be rewritten and the wrong one for content whose URL cannot. Next's build
+# output is the second kind. Without this, every chunk is revalidated on every
+# load — and because OpenNext's ETags are not stable, revalidation is a full
+# download rather than a 304.
+#
+# This is deliberately *not* done in next.config.ts. That file's rule excludes
+# `/_next/` precisely because these paths are served by the assets binding
+# before the Worker's router ever sees them, so a header set there would not
+# arrive. Two mechanisms, one for documents and one for assets, and the comment
+# in next.config.ts says which is which.
+
+# Content-hashed by the build: a changed file is a changed filename, never a
+# changed body at the same URL. This is the one case where a year is honest, and
+# `immutable` additionally tells the browser not to revalidate even on reload.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The opposite case, stated rather than left to the default. A stale service
+# worker outlives the page that registered it and keeps handling events with old
+# code, so this one must always be checked. It is also the file whose staleness
+# would be hardest to diagnose.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate

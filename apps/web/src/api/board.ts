@@ -1,5 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 
+import type { ReportTarget } from '@buddy/shared';
+
 import { api, unwrap } from './client';
 
 export interface LeaderboardEntry {
@@ -33,7 +35,7 @@ export function useLeaderboard(scope: LeaderboardScope) {
 export function useReport() {
   return useMutation({
     mutationFn: async (input: {
-      targetType: 'task' | 'message' | 'user';
+      targetType: ReportTarget;
       targetId: string;
       reason: string;
       note?: string;

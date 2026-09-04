@@ -13,6 +13,49 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
 
+  /**
+   * Make a deploy visible to somebody who has already been here.
+   *
+   * A prerendered route is served with `cache-control: s-maxage=31536000` and
+   * nothing else. `s-maxage` binds shared caches only, so a browser is left
+   * with no directive at all and falls back to *heuristic* freshness — it may
+   * reuse the HTML for an unspecified time without ever asking. The symptom is
+   * a landing page that does not change after a deploy, which is exactly what
+   * happened on 2026-09-02.
+   *
+   * `max-age=0, must-revalidate` fixes it. What it costs is worth stating
+   * plainly, because the obvious assumption is wrong: the response carries an
+   * ETag, but OpenNext mints a **new one per response** — two requests a second
+   * apart return different values — so `If-None-Match` never matches and a
+   * revalidation is always a full body, never a 304. Measured against the
+   * deployed Worker, not assumed.
+   *
+   * That is an acceptable price here and would not be everywhere. Next's router
+   * navigates on the client after the first paint, so full document loads are
+   * the first visit and a reload — not every click. Paying ~80 KB (far less
+   * compressed) on those, in exchange for a deploy that is actually visible, is
+   * the right side of the trade. `s-maxage` is left intact for shared caches.
+   *
+   * Documents only. `/_next/static/*` is content-hashed and must keep its
+   * immutable year — those files are never rewritten, only replaced.
+   */
+  async headers() {
+    return [
+      {
+        // Everything except `/_next/`, via a negative lookahead — a bare
+        // `/:path*` would match the hashed assets too and throw away the one
+        // cache header that is unambiguously correct.
+        source: '/:path((?!_next/).*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, must-revalidate, s-maxage=31536000',
+          },
+        ],
+      },
+    ];
+  },
+
   env: {
     /**
      * Where the API lives, inlined into the client bundle at build time.

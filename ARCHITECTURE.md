@@ -35,7 +35,70 @@ Backend cost: Workers **Paid plan ($5/mo)** covers everything at early scale. Ex
 ## 2. Product rules (please correct anything wrong)
 
 ### 2.1 Registration & profile
-Every new user goes through:
+
+**Revised 2026-08-31 — students only, and questions before the account.**
+**Revised again 2026-09-03 — six screens, the first task in the middle of them,
+and a desk waiting at the end; see §2.9.** The list below is the 2026-08-31
+questionnaire, kept because the data model it describes is unchanged: every
+column is still written by `PATCH /me`, and the four questions that left the
+signup gate are asked again from the directory (§2.9).
+
+Buddy is now a student product (school through PhD). Signup asks nine questions
+*before* an account exists, and creates the account last:
+
+1. **Level of study** — High school · Foundation/College · Undergraduate ·
+   Master's · PhD · Postdoc · Recent graduate. Stored as `education_level`.
+2. **Institution** (free text) + optional city.
+3. **Major / field of study** — chips + "Other", stored as `major_key` +
+   `major_text`, the same pair-of-columns pattern as goals.
+4. **Where you're from** — ISO 3166-1 alpha-2, stored as `country`.
+5. **Goal** — unchanged, still up to `MAX_GOALS`, still the heaviest term in
+   matching.
+6. **Favourite topics** (max 3) and 7. **hobbies & interests** (max 5), both in
+   `user_tags`.
+8. **Bio** — a free line, optional.
+9. **"Are you willing to be someone's buddy?"** + headline and availability.
+
+Then **email + password + `@handle`** → 6-digit code → verified → one
+`PATCH /me` writes every answer → optional avatar prompt. (A subscription step
+would sit between verification and the write; skipped for now.)
+
+Three consequences worth recording:
+
+- **The questions precede the account**, so the answers live in a
+  sessionStorage-backed draft (`apps/web/src/onboarding/draft.ts`) until there
+  is somewhere to write them. That is what makes the flow survive the trip to a
+  mail client for the verification code. The rationale is Finch's: the first
+  screen is where abandonment concentrates, and personalising before collecting
+  costs nothing while asking for a password first costs the user.
+- **`@handle` is claimed at registration**, because it is the one answer checked
+  against every other user, and a collision should surface on the screen it was
+  typed on. It stays optional on the wire so the mobile app, which still claims
+  one during onboarding, is unaffected.
+- **The occupation *question* is gone; the column is not.** `occupation_key` is
+  indexed, CHECK-constrained and read by `apps/mobile`, so `PATCH /me` derives
+  it from the level of study via `OCCUPATION_FOR_LEVEL`. An explicit
+  `occupationKey` in a patch still wins, which is what the app sends.
+- **Onboarding completion** is now "a claimed handle (not the registration
+  placeholder), a goal, and a level **or** an occupation". The disjunction is
+  load-bearing: mobile never sends a level, and requiring one would leave every
+  app user stuck in the onboarding gate.
+
+**Institutions are free text**, so "the same institution" is a definition rather
+than a comparison. `normaliseInstitution()` in `packages/shared` is that
+definition — it folds case, accents, punctuation, dotted acronyms (`M.I.T.` =
+`MIT`) and a leading "the" — and the result is stored in
+`institution_normalised` so the comparison is an indexed equality. It has
+exactly one definition because two things depend on it: the "same institution as
+me" filter and the `sameInstitution` term in the match score. If they disagreed,
+the sort would rank someone the filter had hidden. It deliberately does not
+attempt fuzzy matching; silently merging two schools is worse than missing a
+match.
+
+---
+
+The original flow, for reference:
+
 1. **Email + password** → we send a 6-digit verification code by email → verified.
 2. **Identity**: display name, unique `@handle`, avatar (optional), timezone (auto-detected).
 3. **Goal** — "What are you working toward?" Pick one suggestion chip **or** type your own:
@@ -52,7 +115,20 @@ Goal + occupation are collected from **everyone** (not only open buddies) becaus
 
 ### 2.2 Buddy directory & requests (for users who know nobody)
 - The directory lists users with `is_open_buddy = true` (excluding self and existing group-mates), each as a card: avatar, name, **goal**, **occupation**, headline, activity indicator ("Active now / Active 12 min ago"), credits, streak, reviews given, badges.
-- Default sort: **same goal first, then same occupation, then most recently active**. Filters: goal, occupation, "active in the last 15 min".
+- Default sort: **Recommended**, a score computed in SQL. **Revised 2026-08-31:**
+  the weights are powers of two, which makes the ranking strictly lexicographic —
+  each signal outweighs every weaker signal *combined*, so the order is the whole
+  rule: `sameGoal` (128) → `sameInstitution` (64) → `sameMajor` (32) →
+  `sameOccupation` (16) → `sameLevel` (8) → `sharedTopic` (4) → `sameCountry` (2)
+  → `activeNow` (1). Hand-tuned weights would mean that adding a signal quietly
+  changes what the existing ones mean, and three small matches would start
+  outranking a shared goal with nothing to announce it.
+- Second sort: **Points**, by total credits. Each sort needs its own keyset
+  cursor, so the cursor carries its sort and a mismatched one restarts from the
+  first page rather than paging through a comparison that means nothing.
+- Filters: level of study, subject, topic, goal, country, "active in the last
+  15 min", and **"same institution as me"** — a toggle rather than a list,
+  because institutions are free text and there is nothing to enumerate.
 - Tapping a card opens the **full buddy profile** (about me, availability, badges, stats, member since) so the user can learn about them before requesting.
 - **Send request** (optional short message). Rules:
   - Only **one pending request at a time** per requester.
@@ -64,7 +140,30 @@ Goal + occupation are collected from **everyone** (not only open buddies) becaus
 - Because a 5-minute window only works if the recipient is reachable, the directory highlights recently active buddies and defaults to sorting them first.
 
 ### 2.3 Groups
-A user creates a group and invites people they already know by `@handle` (or a share link). Any number of members. Group invites don't expire in 5 minutes (they're for friends), they stay pending for 7 days. Every group gets a chat room.
+A user creates a group and invites people they already know by `@handle`. Any number of members. Group invites don't expire in 5 minutes (they're for friends), they stay pending for 7 days. Every group gets a chat room.
+
+**Added 2026-08-31 — join links.** §5.2 originally recorded that share-link
+invites were "not in v1; @handle covers the same need". It does not: a handle
+can only name somebody who already signed up, which made every group a closed
+room and every new member somebody else's problem to recruit. Links live in
+`group_invite_links` rather than as a nullable `to_user_id` on `group_invites` —
+a targeted invite names one recipient and is accepted once, a link names nobody
+and is used many times, and sharing a table would make every existing invite
+query check which kind of row it held. A link expires in 7 days, is capped at
+`INVITE_LINK_MAX_USES`, and can be revoked.
+
+The preview (`GET /invite-links/:token`) is **unauthenticated**, deliberately.
+Someone arriving from a WhatsApp message is about to be asked nine questions, an
+email address and a password, and asking all that before saying what they are
+joining is how you lose them. The link already grants entry to anyone holding
+it, so naming the group to a holder discloses nothing the link does not — but it
+returns only the group name and the inviter, never the member list. A leaked link
+should not become a roster.
+
+On the web the token rides in the signup draft (`sessionStorage`) through the
+whole questionnaire and the email round trip, and is redeemed at
+`/onboarding/done`, so an invitee lands in the group rather than on a generic
+home screen.
 
 ### 2.4 Daily tasks & the review loop
 - Each member writes the tasks they plan to finish **today** (their local day). Tasks not completed by local midnight become **missed**.
@@ -72,6 +171,9 @@ A user creates a group and invites people they already know by `@handle` (or a s
 - A buddy in the group reviews it: **Approve with rating 0–5**, or **Request proof** (task goes back to owner as *proof requested*). Owner submits/updates the proof → buddy reviews again → Approve with rating (0 effectively rejects).
 - **Decided 2026-08-27:** in groups with 3+ members, **any other member can review and the first review is final**. Enforced by a guarded `UPDATE ... WHERE status='done' RETURNING`, not by a status read followed by a write — two reviewers tapping simultaneously would both pass the latter.
 - **Decided 2026-08-27:** a rating of **0 still approves**. It closes the task and counts toward the streak and the daily bonus; it simply earns no credits. `TASK_STATUSES` has no rejected state, and adding one would leave tasks stuck with nowhere to go.
+- **Added 2026-09-02 — a proof may be a photo, and the photo is group-private.** `tasks.proof_image_key` existed from `0000_init` but nothing wrote it. The upload reuses the avatar's two-step protocol (`POST /api/me/proof-image` → PUT to the Worker) under a `proofs/<userId>/` prefix, and the prefix is the access rule: `media.ts` serves `avatars/` and `posts/` unauthenticated on the reasoning that every signed-in user can already see them, and it says in so many words that proof images "are group-private and will need a different, authenticated path". That path is `GET /api/tasks/:id/proof-image`, which re-checks group membership on **every read** — leaving a group has to stop the images resolving, and an unguessable key is not an access control. It answers `private, no-store` rather than `/api/media`'s year-long immutable cache, and `404`s rather than `403`s for a non-member, so a stranger cannot learn the task exists. A client-supplied key is re-checked against the caller's own prefix, exactly as `posts.ts` does, so nobody can attach somebody else's upload to their own task.
+- **Consequence for the client:** a browser will not put an `Authorization` header on an `<img src>`, and the API's `secureHeaders()` CORP means the app's images are already `crossOrigin` CORS requests. So the reviewer's proof photo is fetched as a blob and shown as an object URL (`useProofImage`), with the revoke tied to the component's lifetime — a cached one would leak a blob per proof viewed.
+- **Added 2026-09-02 — reporting a proof photo.** The report path is the one that already exists (`ReportSheet`, `targetType: 'task'`); what is new is a flag icon *on the proof itself*, because "this picture should not be here" is a different claim from "this work was not done" and needs to be reachable without reading the actions below it. It carries a new reason, "Photo is inappropriate or explicit"; `reports.reason` is deliberately not CHECK-constrained, so a new reason costs nothing. **This is a safety control, not a moderation system** — there is no scanning, no EXIF stripping and no automatic takedown, and the image stays visible to the group until an admin acts on the report.
 
 ### 2.5 Credits, streaks, badges, leaderboard
 - On approval: `credits = rating × 10`; **+20 daily bonus** if every planned task of the day is approved. `[DECISION]` (constants in `packages/shared/config`)
@@ -80,8 +182,425 @@ A user creates a group and invites people they already know by `@handle` (or a s
 - **Leaderboard**: weekly (resets Monday 00:00 UTC) and all-time, global. `[DECISION]` add per-group leaderboard too?
 
 ### 2.6 Reports & chat
-- Any member can report a proof, a chat message, or a user (reason + note). Reports go to a simple admin endpoint for you to review. `[DECISION]` auto-hide content after N reports, or manual only?
+- Any member can report a proof, a chat message, a user, or (from 2026-08-31) a Feed post — reason + note. Reports go to a simple admin endpoint for you to review. `[DECISION]` auto-hide content after N reports, or manual only?
 - Chat: real-time text per group, history, push when backgrounded. No typing indicators / read receipts in v1.
+- **Sender clarity (2026-08-31).** Messages always carried the sender's name; a
+  group of three or more needs to tell people apart *without reading*, so the
+  name now carries a stable colour derived from the user id and an avatar sits
+  beside the bubble. The colour comes from the id rather than a list position so
+  it does not change when someone joins or a page of history loads above.
+- **The focus lock (2026-08-31).** While one of a member's tasks is running, that
+  member cannot post to that group's chat. Enforced in `GroupChat`
+  by a D1 read on **every inbound message**, not by state held in the object and
+  set over RPC. State would be faster and wrong: one missed unlock — a rollover,
+  a future endpoint, a retry that fails after the write — would lock someone out
+  of their group chat permanently. Reading the truth each time is self-healing,
+  and costs one indexed read beside a write the handler already does. An RPC
+  (`noteFocusChange`) exists only to grey the composer promptly; correctness does
+  not depend on it arriving.
+
+### 2.7 The Feed — added 2026-08-31
+
+A photo, an optional caption, and reactions from a fixed positive set (heart,
+like, fire, clap, book, brain). No comments.
+
+**Global**: every signed-in user sees every post. The alternative — scoping to
+groups — is safer and largely self-moderating, but leaves a brand-new account
+with no group looking at an empty screen, and this is the one surface that can
+give them something. The cost is a public photo surface, which is why `post` is
+in `REPORT_TARGETS` from the first day rather than later.
+
+Reactions are a closed list on purpose. Buddy is built on other people rating
+your work; the Feed should not also hand them a way to boo. `post_reactions` is
+keyed `(post_id, user_id, reaction)`, which makes a reaction a toggle rather than
+a counter — a second tap deletes the row it would otherwise duplicate.
+
+Images upload through the avatar's two-step protocol under a `posts/` prefix and
+are served by the same unauthenticated media route, on its own reasoning: every
+signed-in user can already see every post, and a bearer token on an `<img>` would
+defeat the CDN cache for no privacy gained.
+
+**Account deletion removes posts outright.** Deleting an account is a *soft*
+delete, so `ON DELETE cascade` never fires — the same reason the handler already
+deletes web-push rows by hand. Unlike a chat message, a post is not part of
+anyone else's history, so there is nothing lost by removing it.
+
+---
+
+## 2.8 Age, and who this is for — added 2026-09-02
+
+**Buddy is for people aged 16 and over**, and this is the section that says what
+that does and does not buy.
+
+**The floor is 16, and it is enforced.** `MIN_AGE_YEARS` in
+`packages/shared/src/age.ts` is the single place it lives; `dateOfBirthSchema`
+reads it, so `PATCH /me` refuses an under-age date whether or not the client
+asked nicely. `users.date_of_birth` (0010, a plain ADD COLUMN) stores the answer,
+and `PATCH /me` writes it **only when the column is null** — an age gate that can
+be edited away afterwards is not a gate, and the profile editor patches the same
+route.
+
+**Why 16 rather than the 13 the law floors at.** Thirteen is what US COPPA and UK
+GDPR set and what most consumer apps use. Buddy matches *strangers*, gives them
+private chat, and accepts photographs from them (§2.4). Sixteen clears every EU
+member state's Article 8 threshold without per-country consent logic and matches
+Australia's minimum-age regime. It does **not** clear the UK's Age Appropriate
+Design Code or Ofcom's children's duties, which cover everybody under eighteen:
+this is a floor, not an exemption.
+
+**The question is asked first**, before institution, subject or goals. It is the
+only question whose answer can end the signup, so asking it last would mean
+collecting eight answers from somebody about to be turned away — and collecting
+nothing at all from someone under the floor is the point. `FIRST_STEP` is read
+from `SIGNUP_STEPS` by the landing page and the welcome screen rather than
+written out, because this change moved it once already.
+
+**What the gate is not.** It is self-reported, and nothing verifies it. A
+determined fifteen-year-old types a different year. That is why the floor is not
+printed above the empty input — a number shown before the field is an
+instruction for what to enter — and why this stops the careless case rather than
+the motivated one. Real assurance means identity or payment signals the product
+does not have.
+
+**Two things it deliberately does not do.** Accounts created before 2026-09-02
+have a null date of birth and are left alone: an unanswered age is not a young
+one, and there is nothing honest to backfill. And `apps/mobile` does not ask the
+question yet, so the gate binds the web signup only.
+
+**`middle_school` was added and removed the same day.** It went in before the
+floor was chosen; middle school is ordinarily 11–14, so once the floor landed at
+16 the option could only have been picked by somebody answering it wrongly, and
+a question nobody can answer truthfully is what `level-fit.ts` exists to
+prevent. **Decided 2026-09-02:** the floor is 16, high school is the youngest
+level, and the level list gets revisited on signup data rather than on a guess.
+
+Nothing about that decision is expensive to reverse. `education_level_v2`
+(migration 0009) carries no CHECK, which was originally to let `middle_school`
+in and is now what makes any future change to the list an edit to
+`EDUCATION_LEVELS` and nothing else — no migration, no rebuild. The column stays
+for that reason even though the shared list and the frozen CHECK currently
+agree.
+
+---
+
+## 2.9 Onboarding, revised — the day before the account — added 2026-09-03
+
+**The problem, stated the way it was stated.** The questionnaire asked ten
+things about a person and nothing about their day. Someone arriving from the
+landing page answered age, level, institution, field, country, goal, topics,
+interests, a bio and whether they would be a buddy, then created an account,
+then fetched a code from their email, then were offered a photo, and *then*
+landed on an empty groups tab where the first task they could write was behind
+"create a group" and a name field. Every screen on that path asked for
+something and none of them gave anything back. That is the shape of an
+onboarding people close.
+
+**The measure this section is built to.** Not "is it short" — Finch's is long
+and works — but: *would somebody pay to keep going?* Which is another way of
+asking whether, at the moment the product asks for a commitment, the person
+already has something in the product they do not want to lose. The changes
+below are all in service of putting that something there before the password.
+
+### What changed
+
+1. **Six screens, not ten.** Age (§2.8, still first — it is the only answer
+   that can end the signup), level, goal, **what will you finish today**,
+   campus-and-field on one screen, and the buddy toggle. Then registration.
+   `SIGNUP_STEPS` in `apps/web/src/onboarding/steps.ts` is the list.
+
+2. **The product's own act, in the middle.** `/start/today` asks for one task
+   and a time estimate and stores them in the draft (`firstTask`,
+   `firstTaskMinutes`). Nothing touches the server; it is a question like the
+   others, except that it is the only one about doing rather than being.
+   Skippable — someone signing up at midnight has no today left, and a forced
+   answer is a fake one a buddy is then asked to check.
+
+3. **The plan, shown back, as the reason to register.** `/register` opens with
+   `DayOneCard`: the task, the estimate, the goal, who will check it, and the
+   first rung of the streak ladder with a zero on it. The form is underneath.
+   The card is what the account buys; the fields are the price; the screen
+   says them in that order.
+
+4. **The desk, built for you.** `/onboarding/done` saves the profile as before,
+   then creates a group of one named after you (`🎯 Ana's desk`) — or joins the
+   group you were invited to — puts the task on it, and offers **Start the
+   clock**. The three things a new account used to have to discover (make a
+   group, open it, add a task) happen while the screen is loading. The group
+   id is written to the draft the moment it exists (`dayOneGroupId`), so a
+   refresh finds the desk rather than making a second one.
+
+   A group of one is honest, not a hack: §2.4's rollover approves an
+   unreviewed task at rating 0 after a full extra day. The day counts, the
+   streak survives, and it earns nothing because nobody looked. The card and
+   the group header both say so — "nobody checks your work yet" — because that
+   sentence is what sends people to the directory, and a promise of "anyone in
+   the group" to a group that is only you would be a lie.
+
+5. **The landing page asks the question.** The hero is a `<form method="get">`
+   — what will you finish today? — posting to `SIGNUP_STEPS[0]` as `?task=`.
+   `TaskFromQuery` in the intro layout writes it into the draft on whichever
+   step it lands on and removes it from the URL. The page stays a server
+   component with no script (§5.7).
+
+6. **Four questions left the gate and are asked where they matter.** Country,
+   topics, interests and bio were never needed to be *onboarded* (a handle, a
+   goal and a level are — §2.1), and none of them changes anything until the
+   directory is on screen. `profileStrength()` in `packages/shared` scores a
+   profile with the match score's own weights (§2.2: institution 64, field 32,
+   level 8, topic 4, country 2; a photo at 16 because it decides who gets the
+   tap without ranking anyone), and `GetFoundCard` shows the heaviest gap as an
+   action above the directory and on the profile. It renders nothing at 100%.
+   Institution and field stayed in signup, sharing a screen, because 64 and 32
+   are too heavy to leave.
+
+7. **The draft is `buddy.signup.v2`.** Its shape changed, and the store's own
+   comment says bumping the name is how that is handled: a v1 draft from the
+   old questions is simply not found.
+
+### Where each idea came from
+
+The brief was to look outside the category. These are the sources, and what
+was taken from each — and, where it matters, what was *not*.
+
+| Borrowed from | The idea | Where it landed |
+| --- | --- | --- |
+| **Duolingo** | The first lesson happens before the email. You have a streak of one before you have an account. | `/start/today`; the streak rung on `DayOneCard`; "Start the clock" on the last screen. |
+| **Airbnb, Uber** | The first screen is the product's search box, not a pitch. | The hero form on `/`. |
+| **Noom, Finch** | After the questions, a "your plan" screen built from the answers — the moment the questionnaire pays off. | `DayOneCard` on `/register` and `/onboarding/done`. Nothing on it is a forecast; it is the task they typed and the rules that apply to it. |
+| **Strava** | Record something on day one and the app has a reason to exist tomorrow. | The desk with the task already on it. |
+| **LinkedIn** | A profile-strength meter that says what to add and why. | `profileStrength()` + `GetFoundCard`, with weights from the match score rather than invented. |
+| **Tinder, Hinge** | Progressive profiling: ask for the tiebreak details once there is a list of people they would break ties between. | Country, topics, interests, bio moved from signup to the directory. |
+| **Focusmate** | Commitment is a *time*, not a resolution. | The estimate on the first task; the clock. Already in the product, now on screen four instead of screen fourteen. |
+| **Finch** (what was *not* taken) | Its most-cited flaw is a progress bar that appears partway through. | The step blocks are on every screen from the first, and there are six of them because there are six questions. |
+| **Every subscription app** (what was *not* taken) | A paywall between the plan reveal and the product. | Deliberately absent. §2.1 already parks "a subscription step would sit between verification and the write"; this section is about making it *worth* paying, which has to come first. |
+
+### The other journeys — ideas, and where each one stands
+
+The same exercise for every path through the app. Each row says what it is
+borrowed from and whether it shipped in this change, is a web-only follow-up,
+or needs `apps/api`. Nothing here is typed into the landing page until it
+exists.
+
+**Finding a buddy (§2.2)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Tell people what would move them up the list, above the list. | LinkedIn | **Shipped** — `GetFoundCard`. |
+| "N people working toward *your* goal are active now", on the landing page and the empty directory. The single strongest social-proof line the product can honestly say. | Tinder ("people near you"), Peloton (live class counts) | **Needs `apps/api`**: an unauthenticated count endpoint, bucketed and cached, that returns nothing below a floor so an empty product does not print "2". |
+| A request composer that suggests the opening line from what you share ("You're both doing IELTS — ask what band they're aiming for"). | Hinge prompts | Web-only, next. The card already knows the shared terms. |
+| Reciprocal ask: when a request lapses, offer the *other* person's pending requests to the requester. | Bumble's "expiring" queue | Needs `apps/api`. |
+
+**The desk — tasks and the review loop (§2.4)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| The first task exists before the first visit to the group screen. | Duolingo, Strava | **Shipped** — `/onboarding/done`. |
+| A group of one is a real place, and says what it is missing. | Forest (solo timer that still counts) | **Shipped** — the header line. |
+| A finished-task card designed to be screenshotted and shared (task, time, rating, streak), so the proof of work is also the invitation. | Strava's activity card, Spotify Wrapped | Web-only, next: a static card on approval, `SharePanel` already exists for links. |
+| The 8am nudge names *yesterday's* task ("Yesterday: methods section, 4★. Today?") rather than a generic prompt. | Duolingo's streak reminders, which name the streak | Needs `apps/api` — the reminder job would read one more row. |
+| A daily "moment" — everybody in a group plans at the same hour, and the chat opens for ten minutes around it. | BeReal | Not planned. It fights the timezone rule (§2.4) and the focus lock (§2.6); recorded so it is not re-proposed as new. |
+
+**Groups and chat (§2.3, §2.6)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| The invite link is the first thing the desk offers, because a desk of one is the product half-built. | WhatsApp group links, Discord | Web-only, next: the invite affordance already hangs off the member strip; on a solo desk it should be the empty state, not a control. |
+| Status verbs with a suggested reply for groupmates. | — (already in the product, §2.6) | Shipped earlier. |
+| Read-receipt-free chat. | Signal's defaults | Shipped earlier, by omission. |
+
+**Feed (§2.7)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Reactions only, no comments, no dislike. | Strava kudos | Shipped earlier. |
+| Post the *approved task* as a card, not only a photo — one tap from the approval sheet. | Strava again: the activity is the post | Web-only, next; the API takes a caption already. |
+| Show a brand-new account the feed first, because it is the one screen that is never empty. | Instagram's explore for new accounts | Partly true today (§2.7); the tab order still leads with Buddies. Worth an A/B, not a decision. |
+
+**Board and badges (§2.5)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Ladders with the next rung always visible. | Duolingo, Headspace | Shipped earlier (`nextBadge`). |
+| Leagues — a weekly board of ~30 people at your level, promotion and relegation — rather than one global board where a new account is 4,312th. | Duolingo leagues | Needs `apps/api`: cohort assignment and a weekly job. The most likely single change to move retention, and the one that needs the most people to exist first. |
+| Per-group standings. | — | Shipped earlier as the sheet on the group screen. |
+
+**Profile (§2.1)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| The meter, on the profile, linking to the editor. | LinkedIn | **Shipped** — `GetFoundCard compact`. |
+| "Member since" and a best-streak line as the profile's own proof of work. | Strava, GitHub's contribution graph | Shipped earlier in `ProfileView`. |
+
+**Commitment (the "willing to pay" question)**
+
+| Idea | From | Status |
+| --- | --- | --- |
+| Stakes: put a small amount on a week's plan, forfeited to the group's pot on a missed day. | StickK, Beeminder, Forest's real-tree purchase | Needs `apps/api` and a payment provider, and a decision about whether Buddy wants to be that kind of product. Recorded because it is the direct answer to the brief's question; not proposed as the *first* answer, because a stake on a product you have not used yet is a bet on a stranger. Day one has to be worth it first. |
+
+---
+
+## 2.10 The safety floor — added 2026-09-04 (PRODUCT.md slice 0)
+
+The first slice of the v3 proposal (PRODUCT.md §6.1, §6.3, §5.3), and the
+one that had to come before any of the others: every later slice adds
+contact between strangers, and until this landed there was no way to end
+contact with one. Migration `0011_safety_floor` is hand-written and contains
+only `ADD COLUMN` and `CREATE TABLE`, for the reason 0009 records.
+
+- **Block** (`POST/DELETE /api/users/:handle/block`, `GET /api/me/blocks`).
+  Stored in one direction in `user_blocks`, read in both: the directory, the
+  feed, public profiles, buddy requests, group invites and chat history all
+  exclude a pair if either row exists, and the chat room skips the sockets of
+  anyone in a block pair with the sender. A blocked profile, request or
+  invite reads as **absence** (404), never as "blocked" — the block exists to
+  withhold exactly that. Blocking expires any pending request between the two
+  and removes the blocker from every *matched* two-person group the pair
+  share; a room of two where one has blocked the other is not a group. Chat
+  history from a blocked sender is collapsed (empty body, `blocked: true`)
+  rather than removed, so paging and replies still make sense.
+- **Mute** (`POST/DELETE /api/groups/:id/mute`, `group_mutes`). The group's
+  chat and task pushes stop reaching the member; the room is untouched.
+  `GET /api/groups/:id` returns `muted` for the caller.
+- **Leave with a reason** (`POST /api/groups/:id/leave` now takes an optional
+  `{reason, note}`; `group_departures`). Private to the leaver, kept after the
+  membership row and the group itself are gone — `group_id` is deliberately
+  not a foreign key, because the reasons a group emptied are the one thing
+  that should survive it. The body stays optional so the mobile app, which
+  posts nothing, is unaffected. `LEAVE_REASONS` is data in `packages/shared`.
+- **The adult line** (`isMinor`, `ADULT_AGE_YEARS = 18`, `adultLineCondition`).
+  A viewer under eighteen sees only users whose recorded birth date also puts
+  them under it; everyone else sees only users over it *or with no recorded
+  date*. An unrecorded age is read as adult, because every account that
+  predates the age gate has one, and treating them as unknown would empty the
+  directory. Requests across the line read as absence. Self-declared, like
+  the floor in §2.8: a line, not assurance.
+- **Quiet hours** (`users.quiet_hours_start/end`, default 23–07, local;
+  `PATCH /me` takes the pair). Applied in the queue consumer
+  (`dropQuietRecipients`), against each recipient's own local hour, and only
+  to the push types in `QUIET_PUSH_TYPES` — a buddy request or a chat message
+  is a person reaching out; quiet hours are about the product not doing so.
+  A recipient inside their window is dropped, not delayed: a nudge delivered
+  late is a nudge about nothing.
+
+Web: block on a profile (confirmed), the blocked list and quiet hours in
+profile settings, mute and leave-with-reason in group settings, collapsed
+bubbles in chat. Tests: `apps/api/test/safety.test.ts`.
+
+---
+
+## 2.11 The Session — added 2026-09-04 (PRODUCT.md slice 1)
+
+The clock the app already had (§2.4: an estimate, Start, a countdown, the
+chat lock) became an object the group can see. Migration `0012_sessions` is
+hand-written, `ADD COLUMN` and `CREATE TABLE` only, and every enum-shaped
+column on the new tables is deliberately without a CHECK — `SESSION_KINDS`,
+`SESSION_STATES` and `PARTICIPANT_STATES` in `packages/shared` are the lists
+and Zod is the gate.
+
+- **A solo session is Start.** `POST /tasks/:id/start` creates a `sessions`
+  row of kind `solo` around the task (planned minutes = the estimate), with
+  the owner present and the task attached (`tasks.session_id`). Done and
+  abandon settle the clock — the minutes go on `tasks.actual_minutes` — and
+  end the session. Nothing about the button changed.
+- **A group session is one clock for the room.** `POST /groups/:id/sessions`
+  opens one, live now or `scheduled_for` later; members `join` (with a task
+  or without), `heartbeat`, `leave`; the host `start`s a scheduled one and
+  `end`s a live one. One live group session per group. Presence is a
+  heartbeat over REST rather than a second Durable Object: the chat room
+  already reads D1 per message, and the lock's second clause — *present in
+  the group's live session* — is one more indexed read there.
+- **Credits come from minutes, not ratings** (PRODUCT.md §3.6). Half a
+  credit per minute when the clock stops (`unverified_minutes`, capped at
+  `DAILY_MINUTE_CREDIT_CAP` per local day), the other half when a reviewer
+  approves the task those minutes went into (`verified_top_up`). A group
+  session where everyone present stayed to the end pays each of them
+  `COOP_SESSION_BONUS`. The daily bonus stands. **Credits never go down**:
+  the abandon penalty is gone, and `chargeAbandon` with it. The rating is
+  still recorded and still shown to the owner; it moves no credits, which is
+  what closed the mutual-five-star loophole. **Supersedes** the 2026-08-27
+  decisions *credits = rating × 10* and *abandon costs 10*.
+- **Why `session_credits` is its own table.** `credit_ledger.reason` carries
+  a CHECK over `CREDIT_REASONS`, and widening it means the rebuild 0009
+  documents. `user_stats.total_credits` remains the balance everybody reads;
+  the new table is the append-only, unique-indexed record that makes every
+  minute award exactly-once, the same job the ledger does for approvals.
+- **The streak counts session days.** `recordSessionDay` extends it once
+  `SESSION_STREAK_MINUTES` were on a clock, in one statement with the same
+  three cases the approval streak had; `last_session_date` is what the
+  rollover reads. **Forgiveness:** declared rest days (`PUT /me/rest-days`,
+  at most `MAX_REST_DAYS_PER_WEEK`, never in arrears) and
+  `STREAK_FREEZES_PER_MONTH` freezes the rollover spends for you, writing the
+  excused day into `rest_days` so it is not spent twice. The "held while a
+  reviewer has work in front of them" rule is gone: a day earned on the clock
+  cannot be broken by somebody else's silence. **Supersedes** *streak =
+  consecutive days with an approved task* (§2.5).
+- **Stale sessions** — a laptop closed on a running clock — are ended by the
+  rollover once they pass the plan's overrun cap plus an hour, so the day is
+  settled before it is judged.
+- **The migration backfills `last_session_date` from `last_approved_date`**,
+  so a streak earned under the old rule holds under the new one instead of
+  burning both freezes and dying three rollovers later.
+- **Known, left for slice 3:** the daily bonus still pays on a day whose only
+  approved task had no minutes on a clock, so two friends approving one
+  trivial task each day earn it. The guard is one line in
+  `maybeAwardDailyBonus` (require `SESSION_STREAK_MINUTES` credited that day)
+  and belongs with the verification rewrite. Tasks whose clock was running at
+  the moment of deploy have no session; their minutes are booked but earn no
+  credits and no streak day, once. `apps/mobile` still shows the abandon
+  penalty in copy and the approval award, which is now usually 0; it is
+  outside the working agreement and is flagged for its port.
+
+Tests: `apps/api/test/sessions.test.ts`; the streak, bonus and abandon tests
+in `rollover`, `tasks`, `group-buddy` and `unreviewed-tasks` were rewritten to
+the new rules.
+
+---
+
+## 2.12 Pressure — added 2026-09-04 (PRODUCT.md slice 2)
+
+The brief's centre, and the part the build was emptiest on: nudges,
+check-ins, and the number that carries the pressure. Migration
+`0013_pressure` is `ADD COLUMN` and `CREATE TABLE` only.
+
+- **The latest start** is derived, never scheduled: the task carries the
+  time it needs and the day ends at the owner's midnight, so
+  `latestStartAt = localDayEnd(timezone, dueDate) − estimate` is returned on
+  every task list. `localDayEnd` corrects for the zone's offset twice so the
+  night the clocks change is right. The owner may set an earlier `start_by`
+  (`HH:MM`, `PATCH /tasks/:id`); later than the arithmetic is refused.
+- **Three nudges, one table.** `nudges` holds the system's start nudge, a
+  groupmate's templated one, a requested check-in and its reply, keyed on the
+  recipient's local day so the budget (PRODUCT.md §5.3:
+  `MAX_BUDDY_NUDGES_PER_DAY`, `MAX_CHECKINS_PER_DAY`) is one count. The
+  templates are data in `packages/shared` (`NUDGE_TEMPLATES`,
+  `CHECKIN_REPLIES`); there is no free text, because free text is where
+  nagging lives.
+- **The quarter-hourly job** (`jobs/pressure.ts`, cron `*/15 * * * *`,
+  branched on `controller.cron` so the rollover stays hourly) sends the start
+  nudge once per task per day inside `START_NUDGE_LEAD_MINUTES`, marks a
+  `committed` member of a live group session `late` after
+  `LATE_AFTER_MINUTES` and `no_show` after `NO_SHOW_AFTER_MINUTES` (never
+  joined), and sends due check-ins. Idempotent through the table and the
+  participant states; quiet hours are applied at delivery.
+- **A commitment is not attendance.** Starting a scheduled session now makes
+  only the host present; everyone else stays `committed` until they join,
+  which is what lets late be told from absent. Late join is always allowed
+  (PRODUCT.md §3.3). **Supersedes** slice 1's "committed become present on
+  start".
+- **Reliability** (`user_stats.reliability_pct/_sessions`): on-time
+  attendance over the last `RELIABILITY_WINDOW` committed group sessions,
+  recomputed for every participant when a group session ends;
+  `session_participants.on_time` is decided on the first join. Shown as a
+  band (`reliabilityBand`) on the card and the profile; the number only to
+  its owner. Below `RELIABILITY_SUSPEND_BELOW` with at least
+  `RELIABILITY_MIN_SESSIONS` sessions, `POST /buddy-requests` is refused
+  with the reason and the way back. Nothing here touches credits.
+- **Requested check-ins** are owner-initiated (`POST /tasks/:id/checkin`),
+  for today, to one groupmate; the buddy replies once
+  (`POST /nudges/:id/reply`) with one of three lines. The `to_user_id` of a
+  check-in row is the owner, because it is their budget and their screen.
+
+Tests: `apps/api/test/pressure.test.ts`.
 
 ---
 
@@ -169,6 +688,31 @@ reports          id, reporter_id, target_type (task|message|user), target_id, re
                  status (open|actioned|dismissed), created_at, resolved_at
 ```
 IDs are ULIDs; timestamps ISO-8601 UTC. `last_seen_at` is bumped (at most once per minute) by any authenticated request and by the chat socket, and powers the "Active now" indicator.
+
+**Widening an enum column, and why it costs a new column (0009, 2026-09-02).**
+`users` carries CHECK constraints generated from the shared enums, and SQLite
+can only change a CHECK by rebuilding the table. 0003 warned that the rebuild is
+unsafe here; 0009's commit proved it, in workerd against real D1: `PRAGMA
+foreign_keys` reads `1`, and `DROP TABLE users` took a child row with it (1 → 0).
+`PRAGMA foreign_keys=OFF` is a no-op inside the transaction D1 wraps a migration
+in, and `defer_foreign_keys=ON` does not stop the cascade either — both tested.
+**Thirty** `ON DELETE CASCADE` foreign keys point at `users`, so rebuilding it is
+not a risk to weigh but a way to empty the database.
+
+So `middle_school`, `geography`, `religious_studies` and `drama` arrived as two
+new columns — `education_level_v2` and `major_key_v2` — backfilled from the
+originals, indexed in their place, and carrying **no CHECK**. That last part
+follows `goal_keys` in 0006: a constraint that can only be widened by rebuilding
+can never be widened, and Zod already rejects any key outside the shared enums at
+the edge. The frozen columns stay exactly as they were, still holding what they
+held; `schema.ts` spells their constraints out in `FROZEN_LEVEL_KEYS` and
+`FROZEN_MAJOR_KEYS` rather than generating them, so a future addition to the
+shared lists cannot silently make drizzle-kit reach for the rebuild again.
+
+Nothing outside `schema.ts` changed: Drizzle's `educationLevel` and `majorKey`
+fields simply point at the new columns, so all twenty-odd call sites — the
+directory's match score, its filters, `PATCH /me`, the buddy card — kept working
+untouched.
 
 ### 4.3 Auth flow
 ```
@@ -337,16 +881,26 @@ apps/api/
 ### 5.2 Screens (v1)
 ```
 Auth          Welcome → Register (email, password) → Verify code → Login / Forgot password / Reset
-Onboarding    Name & @handle & avatar → Goal (chips + custom) → Occupation (chips + custom)
-              → "Willing to be a buddy?" → Buddy profile (headline, about, availability) → Done
-Tab: Today    Today's tasks across my groups; add task; mark done (+proof); buddies' tasks; review actions
-Tab: Groups   List → Group (members, tasks by day, chat) → Invite by @handle → Chat
-              (share-link invites are not in v1; @handle covers the same need)
-Tab: Buddies  Directory (cards: goal, occupation, headline, active status, stats) with filters
+Signup        Level → Institution → Major → From → Goal → Topics → Hobbies → About
+  (revised)   → "Willing to be a buddy?" → Register (name, @handle, email, password)
+              → Verify code → Done (writes everything, offers an avatar)
+              Web routes live under /start/*, outside any session guard
+Tab: Feed     Global photo feed; post a photo + caption; positive-only reactions
+  (new)       (§2.7). Replaced Today in the bar; the daily loop moved into Groups.
+Tab: Groups   List (with a needs-review count per row) → Group: tasks with a member
+  (revised)   toggle, add task with a time estimate, start/abandon with a clock,
+              review section, Buddy + verifier pickers, members, invite by @handle
+              *or* by link (§2.3), chat. Join links land at /join/:token.
+Tab: Buddies  Directory (cards: level · major, institution · country, goal, topic/hobby
+  (revised)   chips, active status, stats) with Recommended/Points sort and filters;
+              Request on the card expands in place into an optional message
               → Buddy profile (full) → Send request → pinned card with 5:00 countdown
               → Incoming request banner (Accept / Decline) for recipients
 Tab: Board    Leaderboard weekly / all-time, my rank, badges strip
-Tab: Profile  Stats, badges, streak, edit goal/occupation/buddy profile, availability toggle,
+Tab: Profile  The same ProfileView a prospective buddy reads — study, where you're from,
+  (revised)   bio, goals, topics, hobbies, track record, badges — plus Edit profile
+              (/profile/edit, which is also the only way an account predating the
+              student profile can fill one in), avatar, availability toggle,
               settings, change password, sign out, delete account
 ```
 
@@ -377,7 +931,8 @@ apps/mobile/
 ## 5.4 Web client (Next.js on Cloudflare) — added after Phase 6
 
 A browser front end at parity with the Expo app: the same 21 screens, the
-same flows, the same palette. It is a second client onto the *same* Worker,
+same flows, the same palette (until 2026-09-03 — the web client now has its
+own direction, §5.8, and its own signup, §2.9). It is a second client onto the *same* Worker,
 not a second backend — `apps/api` was not changed to accommodate it.
 
 **Stack.** Next 16 App Router, every screen a client component, Tailwind 3.4
@@ -579,6 +1134,180 @@ looking (`visibilityState` *and* `document.hasFocus()`, since a visible tab in a
 background window is the ordinary case); and it drives its own refetch while
 hidden, because TanStack Query skips interval refetches for a hidden tab and the
 two ticks therefore tile the states exactly rather than overlapping.
+
+---
+
+## 5.7 The landing page — added 2026-09-02
+
+`/` is the only route outside the phone column, and the only one written for
+somebody who has never heard of Buddy. It was reshaped against the structure a
+mature product in this space uses — unibuddy.com was the reference — because
+that structure is well tested: a nav that lets you skip, a hero with a figure
+strip under it, four alternating product sections, a proof band, a closing call
+to action, a real footer. The skeleton transferred. The contents could not, and
+the gap between those two is the whole of this section.
+
+**What was taken.** Section anchors in the sticky bar (plain `#` links — the
+page stays a server component, so a burger menu below `md` would have meant
+shipping JS to open a list of four links, and the links are simply hidden
+there instead). A four-item strip under the hero. A fourth product section, on
+groups, chat and the daily status, which had been three lines in "the details
+we argued about" and is a third of what the product is. A question block. A
+multi-column footer.
+
+**What was not, and why.** The reference page's proof is a logo wall, seven
+named testimonials, three institutional yield figures and a "65% of students
+said…" statistic. Buddy has no customers, no institutions and no cohort to
+survey. Every one of those would have to be invented, and a landing page that
+opens with a fabricated number has told you what it is on the first screen. So:
+
+- The figure strip under the hero holds *product* facts, not adoption ones —
+  badge and ladder counts, the buddy-request window, the number of education
+  levels, and a zero for downloads.
+- The proof band is "Who it is for", built from `GOALS` and `EDUCATION_LEVELS`.
+  It answers the question a logo wall answers — *is this for someone like me* —
+  from the option lists signup actually offers.
+- There are no per-section "Learn more" links. They point at product pages this
+  app does not have.
+- The footer is three columns of routes that exist, not seven columns
+  containing `/about`, `/pricing`, `/careers` and `/privacy`.
+
+**Every number is read, not typed.** The page imports `BADGES`,
+`BADGE_FAMILIES`, `BUDDY_REQUEST_TTL_MS`, `CREDITS_PER_RATING_POINT`,
+`DAILY_COMPLETION_BONUS`, `ABANDON_PENALTY`, `INVITE_LINK_MAX_USES`,
+`MIN_TASK_MINUTES`, `MAX_TASK_MINUTES`, `MAX_RATING`, `EDUCATION_LEVELS`,
+`GOALS`, `STATUSES` and `REACTIONS` from `packages/shared`. Rebalance the
+economy in §2.5 and the pitch follows on the next build. This is what stops the
+marketing copy becoming the one place in the repo where the rules are wrong,
+and it is why the constraint above is enforceable rather than a good intention.
+
+**Both calls to action go to `/start/level`** — `SIGNUP_STEPS[0]`, held in one
+`START` constant — because the web app is where Buddy runs today. The closing
+panel and the footer both say the phone apps are still coming, rather than
+putting two dead store badges on the page.
+
+**2026-09-03 — the hero became a form.** The page's first act is now the
+product's: a text box asking what you will finish today, submitted as a plain
+`GET` to `SIGNUP_STEPS[0]` with `?task=`, which `TaskFromQuery` in the intro
+layout writes into the draft. No script on the page, the same rule as before;
+the reasoning is in §2.9. The look changed with it — §5.8.
+
+---
+
+**2026-09-04 — rebuilt against a design critic.** The page was put through
+thirteen rounds of the same procedure: screenshot at 1440px, a fresh critic
+with only the screenshot (no code, no earlier rounds), asked to name the
+aesthetic, describe a top studio's execution of it, list the gaps, and score
+out of ten. The baseline scored 5.5; the rounds scored between 5.5 and 7 with
+no trend, and successive critics contradicted each other on the same
+questions — bleed both panels or contain both, one column for the questions
+or two, numerals large or small, the wall of goals larger or smaller. What
+every round agreed on is what shipped:
+
+- **One drawing of the product**, the desk with its clock running, beside
+  the question in the hero, with its surface running to the viewport's edge
+  through a pseudo-element rather than a viewport calculation.
+- **Nothing that every landing page has**: no eyebrows, no emoji, no figure
+  strip, no accordions, no card grid, no corner bracket. The numbers moved
+  into sentences; the questions are simply answered.
+- **The wall of goals as a sentence**, read from `GOALS`, straight after the
+  hero on the same ink, a size under the headline. Commas, not slashes,
+  because a sentence is allowed to wrap.
+- **One Tuesday as a log** beside what the desk shows after the clock stops,
+  the same times in the same column. Five rules at display size. Body text
+  at 18px on one measure.
+- **Two greens, one meaning each**: lime for anything that can be pressed
+  and the dot on a running clock; olive for the clock's digits and the
+  points they turn into. `people`, `live` and `success` are not used on the
+  page; faces, bars and numerals are ink.
+
+Two things were learned about the tooling. Tailwind's responsive `text-*`
+utilities carry a line-height that outranks a bare `leading-*`, so display
+type that changes size by breakpoint sets its line-height inline. And a
+`whitespace-nowrap` span with the separator inside it has nothing to break
+on; the break opportunity has to be a real space outside the span.
+
+The critic's transcripts are not kept. The procedure is recorded so that the
+next person who runs it knows the score is noisy to about a point and a half
+and should read the notes for agreement across rounds, not chase any one of
+them.
+
+---
+
+## 5.8 The creative direction — added 2026-09-03
+
+The web client's look was, until now, the mobile app's: the same indigo, the
+same `rounded-2xl`, the same system font, held byte-identical in two Tailwind
+configs so the clients could not drift. On 2026-09-03 the web client got a
+direction of its own, and this section records where it came from so it can be
+argued with rather than guessed at.
+
+**It was seeded, on purpose.** Rather than pick a palette from taste — which is
+how every student app ends up the same blue — a random string was generated and
+the direction derived from it. The string, and the script that made it, are
+here verbatim; the derivation below is reproducible from them.
+
+```sh
+#!/usr/bin/env bash
+# Generate a long random alphanumeric string to seed the creative direction.
+# `head -c` on the raw device first, then filter — a filter fed by an unbounded
+# stream dies of SIGPIPE under `pipefail` before it can print anything.
+set -eu
+LEN="${1:-96}"
+SEED=""
+while [ "${#SEED}" -lt "$LEN" ]; do
+  SEED="$SEED$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"
+done
+printf '%s\n' "${SEED:0:$LEN}"
+```
+
+```
+7WH0yz8LoJHw2stT1IperpAU8cIUzfkI4UpBYrO0qPFbR7zKjH3AZnkkTTXtmVWAOsoRPrGFsHFsEBs9cMesd1SFUUpEOpxn
+```
+
+**What is in it, and what each thing became.**
+
+| Found | Where | Became |
+| --- | --- | --- |
+| The hex-valid characters, read in order: `70821e a8cf4b 0fb73a affeb9 ced1fe` | 30 of the 96 characters | **Five colours, four of them green and one periwinkle.** That is the palette. It was not chosen; it was read. The badge ladder was already 🌱 🌿 🌳, so the product had been reaching for green without saying so. |
+| `perp`, at position 18 | the only English word in the string | **Square corners.** Perpendicular. The radius scale drops one step everywhere (`2xl → lg`, `xl → md`), chips and segmented controls lose their pill shape, and the one ornament the direction allows is a right-angle corner bracket (`.bracket` in globals.css) on the thing that matters most on a screen. Avatars, dots and progress bars stay round: a face is not a corner. |
+| `Up`, twice — positions 33 and 89 | the only repeated bigram apart from `Fs` | **The direction of every number that matters.** Streak, points, rank, the progress bar. The landing page's hero is built around it. |
+| 96 characters = 12 × 8 | the length | An 8px rhythm and, on the landing page, a 12-column grid. |
+| 45 uppercase to 39 lowercase | the case ratio | **Uppercase eyebrows** (`.eyebrow`): the one line of spaced small capitals above a heading that says where you are. |
+| `s` and `p` most frequent, 7 each; then `t` | letter frequency | *step*. The product in a word, and the name of the signup's screens (§2.9). |
+| Digit sum 50; digits at 0, 3, 6, 12, 16, 24, 32, 39, 45, 50 and then nothing until 79 | the numbers | A page that is dense at the top and then breathes: the landing page front-loads its information and lets the second half run long and quiet. |
+
+**The palette, by role.** Every value is in `apps/web/tailwind.config.js`, and
+the token *names* did not change — `brand`, `surface`, `ink`, `success` — which
+is what let 32 files restyle without an edit. Contrast figures are against the
+cream surface, computed rather than eyeballed.
+
+| Token | Value | From | Role |
+| --- | --- | --- | --- |
+| `brand` | `#55661a` | seed `#70821e`, deepened | Text, links, active states, progress. The seed olive is 4.2:1 on cream, which fails AA for body text; deepening to 6.2:1 is the one place the seed was overruled, and it was overruled by arithmetic. |
+| `accent` | `#a8cf4b` | seed, exact | **Primary buttons, with ink on them** (9.8:1). White on lime is 1.8:1, so the primary variant in `buttonStyles.ts` changed from `bg-brand text-brand-fg` to `bg-accent text-accent-fg`. This is the colour that says *go*. |
+| `live` | `#0fb73a` | seed, exact | Only for things that are happening now — a running clock, an active-now dot. Never text (2.6:1). |
+| `brand-muted` | `#e3f1d6` | seed `#affeb9`, tinted toward cream | Soft surfaces: earned badges, the self-row on the board, secondary buttons. The seed mint itself appears on the dark bands, where it is 14.8:1. |
+| `people` | `#ced1fe` | seed, exact | Avatars without a photo, and anything about a person rather than the work. The one non-green, for the one thing in the app that is not a task. |
+| `surface` / `-muted` / `-border` | `#fcfcf7` / `#f3f4ea` / `#dde2cc` | derived | Cream, not white. A white page next to four greens looks like a hospital. |
+| `ink` / `-muted` / `-subtle` | `#161b0e` / `#5b6350` / `#7f8772` | derived | A black with green in it. `ink-subtle` went from 2.6:1 (the old slate) to 3.7:1, which is the minimum for the 11px meta text it is used on. |
+| `success` / `warning` / `danger` | `#15803d` / `#b45309` / `#b91c1c` | derived | All three are used as text and all three clear 4.8:1. `success` is deliberately not `live`: one is a verdict, the other a state. |
+
+**Type.** Two faces from Google Fonts, loaded through `next/font` so they are
+fetched at build time and served from this origin — a `<link>` to
+`fonts.googleapis.com` would be blocked by the CSP's `font-src 'self'` (§5.4),
+silently. *Instrument Sans* for the body, because it is narrow enough for a
+phone column and does not draw attention to itself. *Bricolage Grotesque* for
+every `h1`–`h3` and for any number that is the point of a screen, because it
+does draw attention and that is the job. The heading rule lives in globals.css
+so no component names a font.
+
+**What this costs.** `apps/web/tailwind.config.js` and
+`apps/mobile/tailwind.config.js` are no longer identical, and the comment at the
+top of the web one says so. The mobile app keeps the indigo until somebody
+ports the direction; the token names being shared is what makes that port a
+values change. The two fonts add roughly 60 KB of woff2 to the first load,
+cached for a year.
 
 ---
 

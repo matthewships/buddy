@@ -22,6 +22,83 @@
       "when": 1787916481702,
       "tag": "0002_add_web_push_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787940973057,
+      "tag": "0003_add_second_goal",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788138116234,
+      "tag": "0004_add_student_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788142790119,
+      "tag": "0005_groups_clock_feed",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788232749431,
+      "tag": "0006_goal_list_and_other_hobby",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788238154572,
+      "tag": "0007_post_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788299257372,
+      "tag": "0008_user_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788316776254,
+      "tag": "0009_widen_level_and_major",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788322006550,
+      "tag": "0010_add_date_of_birth",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788500000000,
+      "tag": "0011_safety_floor",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1788500100000,
+      "tag": "0012_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1788500200000,
+      "tag": "0013_pressure",
+      "breakpoints": true
     }
   ]
 }
